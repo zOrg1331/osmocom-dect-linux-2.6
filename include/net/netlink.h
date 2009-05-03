@@ -414,7 +414,7 @@ static inline int nlmsg_validate(struct nlmsghdr *nlh, int hdrlen, int maxtype,
  *
  * Returns 1 if a report back to the application is requested.
  */
-static inline int nlmsg_report(struct nlmsghdr *nlh)
+static inline int nlmsg_report(const struct nlmsghdr *nlh)
 {
 	return !!(nlh->nlmsg_flags & NLM_F_ECHO);
 }

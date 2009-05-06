@@ -1,4 +1,5 @@
 com_on_air-objs				:= sc14421_firmware.o sc14421.o
+com_on_air-$(CONFIG_DECT_COA_U2785)	+= radio_u2785.o
 
 obj-$(CONFIG_DECT_COA)			+= com_on_air.o
 

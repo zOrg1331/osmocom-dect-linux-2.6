@@ -39,6 +39,8 @@ struct coa_radio_ops {
 	const char	*type;
 };
 
+extern const struct coa_radio_ops coa_u2785_radio_ops;
+
 enum coa_device_types {
 	COA_TYPE_PCI,
 	COA_TYPE_PCMCIA,

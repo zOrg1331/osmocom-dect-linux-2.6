@@ -3,6 +3,7 @@ com_on_air-$(CONFIG_DECT_COA_U2785)	+= radio_u2785.o
 com_on_air-$(CONFIG_DECT_COA_LMX3161)	+= radio_lmx3161.o
 
 obj-$(CONFIG_DECT_COA)			+= com_on_air.o
+obj-$(CONFIG_DECT_COA_CS)		+= com_on_air_cs.o
 
 $(obj)/sc14421.o:			$(obj)/sc14421_firmware.c
 $(obj)/sc14421_firmware.c:		NAME=sc14421

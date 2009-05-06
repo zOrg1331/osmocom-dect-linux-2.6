@@ -1,3 +1,14 @@
+config DECT_COA_CS
+	tristate "Com-on-Air PCMCIA DECT support"
+	depends on DECT
+	depends on PCMCIA
+	select DECT_COA
+	select DECT_COA_U2785
+	select DECT_COA_LMX3161
+	select CRC32
+	help
+	  This option enables support for the Com-on-Air DECT PCMCIA devices.
+
 config DECT_COA
 	tristate
 

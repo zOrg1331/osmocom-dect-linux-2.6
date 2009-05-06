@@ -40,6 +40,7 @@ struct coa_radio_ops {
 };
 
 extern const struct coa_radio_ops coa_u2785_radio_ops;
+extern const struct coa_radio_ops coa_lmx3161_radio_ops;
 
 enum coa_device_types {
 	COA_TYPE_PCI,

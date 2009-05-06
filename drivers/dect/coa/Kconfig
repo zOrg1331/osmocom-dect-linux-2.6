@@ -4,6 +4,9 @@ config DECT_COA
 config DECT_COA_U2785
 	bool
 
+config DECT_COA_LMX3161
+	bool
+
 config DECT_COA_FIRMWARE
 	bool "Build Com-on-Air firmware (requires ASL macro assembler)"
 	depends on DECT_COA

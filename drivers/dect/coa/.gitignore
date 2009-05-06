@@ -1,0 +1,4 @@
+bin2c
+*.p
+*.h.tmp
+*.bin

@@ -1,2 +1,12 @@
 config DECT_COA
 	tristate
+
+config DECT_COA_FIRMWARE
+	bool "Build Com-on-Air firmware (requires ASL macro assembler)"
+	depends on DECT_COA
+	help
+	  This option enables rebuild of the firmware for the Com-on-Air
+	  devices during the kernel build process. The ASL macro compiler
+	  is required for this.
+
+	  If unsure, say N.

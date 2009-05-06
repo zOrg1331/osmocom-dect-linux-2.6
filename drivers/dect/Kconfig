@@ -1,0 +1,10 @@
+menuconfig DECTDEVICES
+	bool "DECT device support"
+	help
+	  Say Y here to show DECT device driver options.
+
+if DECTDEVICES
+
+source "drivers/dect/coa/Kconfig"
+
+endif

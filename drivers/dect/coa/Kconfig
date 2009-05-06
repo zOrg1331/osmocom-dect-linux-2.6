@@ -1,0 +1,2 @@
+config DECT_COA
+	tristate

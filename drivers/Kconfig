@@ -40,6 +40,8 @@ source "drivers/net/Kconfig"
 
 source "drivers/isdn/Kconfig"
 
+source "drivers/dect/Kconfig"
+
 source "drivers/telephony/Kconfig"
 
 # input before char - char/joystick depends on it. As does USB.

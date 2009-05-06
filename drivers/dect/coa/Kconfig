@@ -1,3 +1,12 @@
+config DECT_COA_PCI
+	tristate "Com-on-Air PCI DECT support"
+	depends on DECT
+	depends on PCI
+	select DECT_COA
+	select DECT_COA_U2785
+	help
+	  This option enables support for the Com-on-Air DECT PCI devices.
+
 config DECT_COA_CS
 	tristate "Com-on-Air PCMCIA DECT support"
 	depends on DECT

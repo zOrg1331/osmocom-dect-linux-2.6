@@ -1,0 +1,59 @@
+menuconfig DECT
+	tristate "DECT protocol support"
+	help
+	  This option enables support for the DECT protocol.
+
+	  If unsure, say N.
+
+if DECT
+
+config DECT_CSF
+	tristate "DECT Cell Site Functions (CSF) support"
+	help
+	  This option enables support for DECT Cell Site Functions. A DECT
+	  cell is a radio endpoint containing one or more transceivers.
+
+	  If unsure, say N.
+
+config DECT_RAW
+	tristate "DECT raw sockets"
+	depends on DECT_CSF
+	help
+	  This option enables support for PF_DECT raw sockets. DECT raw
+	  sockets are used to receive raw frames from DECT devices.
+
+	  If unsure, say N.
+
+config DECT_CCF
+	tristate "DECT Cluster Control Functions (CCF) support"
+	help
+	  This option enables support for the DECT Cluster Control Functions.
+
+	  A DECT cluster is a Portable radio Termination (PT), containing a
+	  single cell, or a Fixed radio Termination (FT), containing up to
+	  8 cells.
+
+	  If unsure, say N.
+
+config DECT_LU1_SAP
+	tristate "DECT DLC LU1 SAP sockets"
+	select DECT_CCF
+	help
+	  This option enables support for PF_DECT DLC LU1 SAP sockets. DECT
+	  DLC LU1 SAP sockets are used for the TRUP (TRansparent UnProtected)
+	  service, most commonly used for audio.
+
+	  If unsure, say N.
+
+config DECT_CCP
+	tristate "DECT Cell Control Protocol support"
+	depends on DECT_CSF || DECT_CCF
+	select TIPC
+	help
+	  This option enables support for the DECT Cell Control Protocol.
+	  This can be used to remotely control one or multiple DECT cells
+	  by the DECT cluster control functions.
+
+	  If unsure, say N.
+
+endif

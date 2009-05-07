@@ -1,4 +1,4 @@
-com_on_air-objs				:= sc14421_firmware.o sc14421.o
+com_on_air-objs				:= sc1442x_firmware.o sc1442x.o
 com_on_air-$(CONFIG_DECT_COA_U2785)	+= radio_u2785.o
 com_on_air-$(CONFIG_DECT_COA_LMX3161)	+= radio_lmx3161.o
 
@@ -6,11 +6,11 @@ obj-$(CONFIG_DECT_COA)			+= com_on_air.o
 obj-$(CONFIG_DECT_COA_PCI)		+= com_on_air_pci.o
 obj-$(CONFIG_DECT_COA_CS)		+= com_on_air_cs.o
 
-$(obj)/sc14421.o:			$(obj)/sc14421_firmware.c
-$(obj)/sc14421_firmware.c:		NAME=sc14421
-clean-files				+= sc14421_firmware.p
-clean-files				+= sc14421_firmware.bin
-clean-files				+= sc14421_firmware.h.tmp
+$(obj)/sc1442x.o:			$(obj)/sc1442x_firmware.c
+$(obj)/sc1442x_firmware.c:		NAME=sc1442x
+clean-files				+= sc1442x_firmware.p
+clean-files				+= sc1442x_firmware.bin
+clean-files				+= sc1442x_firmware.h.tmp
 
 hostprogs-$(CONFIG_DECT_COA_FIRMWARE)	+= bin2c
 

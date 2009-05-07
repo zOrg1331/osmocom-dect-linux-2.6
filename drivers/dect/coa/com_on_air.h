@@ -57,7 +57,7 @@ struct coa_device {
 	struct coa_freq_map		freq_map;
 
 	uint				config_base;
-	u8 __iomem			*sc14421_base;
+	u8 __iomem			*sc1442x_base;
 	u16				cfg_reg;
 	u16				irq_reg;
 	u16				code_base;
@@ -67,13 +67,13 @@ struct coa_device {
 	u8				ctrl;
 };
 
-extern irqreturn_t sc14421_interrupt(int irq, void *dev_id);
-extern const struct dect_transceiver_ops sc14421_transceiver_ops;
+extern irqreturn_t sc1442x_interrupt(int irq, void *dev_id);
+extern const struct dect_transceiver_ops sc1442x_transceiver_ops;
 
-extern int sc14421_init_device(struct coa_device *dev);
-extern void sc14421_shutdown_device(struct coa_device *dev);
+extern int sc1442x_init_device(struct coa_device *dev);
+extern void sc1442x_shutdown_device(struct coa_device *dev);
 
-extern void sc14421_rfdesc_write(const struct coa_device *dev, u16 offset,
+extern void sc1442x_rfdesc_write(const struct coa_device *dev, u16 offset,
 				 const u8 *src, u16 length);
 
 #endif

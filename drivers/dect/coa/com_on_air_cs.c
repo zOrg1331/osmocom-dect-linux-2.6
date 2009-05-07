@@ -42,7 +42,7 @@ static int com_on_air_probe(struct pcmcia_device *link)
 	win_req_t req;
 	int err;
 
-	trx = dect_transceiver_alloc(&sc14421_transceiver_ops, sizeof(*dev));
+	trx = dect_transceiver_alloc(&sc1442x_transceiver_ops, sizeof(*dev));
 	if (!trx) {
 		err = -ENOMEM;
 		goto err1;
@@ -67,7 +67,7 @@ static int com_on_air_probe(struct pcmcia_device *link)
 
 	link->irq.Attributes	= IRQ_TYPE_DYNAMIC_SHARING | IRQ_HANDLE_PRESENT;
 	link->irq.IRQInfo1	= IRQ_LEVEL_ID;
-	link->irq.Handler	= sc14421_interrupt;
+	link->irq.Handler	= sc1442x_interrupt;
 	link->irq.Instance	= trx;
 
 	link->conf.Attributes	= CONF_ENABLE_IRQ;
@@ -87,8 +87,8 @@ static int com_on_air_probe(struct pcmcia_device *link)
 		goto err2;
 	}
 
-	dev->sc14421_base = ioremap_nocache(req.Base, req.Size);
-	if (!dev->sc14421_base) {
+	dev->sc1442x_base = ioremap_nocache(req.Base, req.Size);
+	if (!dev->sc1442x_base) {
 		dev_err(dev->dev, "failed to remap PCMCIA resource\n");
 		err = -EIO;
 		goto err3;
@@ -152,7 +152,7 @@ static int com_on_air_probe(struct pcmcia_device *link)
 
 	dev->irq	 = link->irq.AssignedIRQ;
 	dev->config_base = link->conf.ConfigBase;
-	err = sc14421_init_device(dev);
+	err = sc1442x_init_device(dev);
 	if (err < 0)
 		goto err5;
 
@@ -163,11 +163,11 @@ static int com_on_air_probe(struct pcmcia_device *link)
 	return 0;
 
 err6:
-	sc14421_shutdown_device(dev);
+	sc1442x_shutdown_device(dev);
 err5:
 	pcmcia_disable_device(link);
 err4:
-	iounmap(dev->sc14421_base);
+	iounmap(dev->sc1442x_base);
 err3:
 	pcmcia_release_window(link->win);
 err2:
@@ -181,9 +181,9 @@ static void com_on_air_remove(struct pcmcia_device *link)
 	struct dect_transceiver *trx = link->priv;
 	struct coa_device *dev = dect_transceiver_priv(trx);
 
-	sc14421_shutdown_device(dev);
+	sc1442x_shutdown_device(dev);
 	pcmcia_disable_device(link);
-	iounmap(dev->sc14421_base);
+	iounmap(dev->sc1442x_base);
 	pcmcia_release_window(link->win);
 	dect_unregister_transceiver(trx);
 }
@@ -193,7 +193,7 @@ static int com_on_air_suspend(struct pcmcia_device *link)
 	struct dect_transceiver *trx = link->priv;
 	struct coa_device *dev = dect_transceiver_priv(trx);
 
-	sc14421_shutdown_device(dev);
+	sc1442x_shutdown_device(dev);
 	return 0;
 }
 
@@ -202,7 +202,7 @@ static int com_on_air_resume(struct pcmcia_device *link)
 	struct dect_transceiver *trx = link->priv;
 	struct coa_device *dev = dect_transceiver_priv(trx);
 
-	return sc14421_init_device(dev);
+	return sc1442x_init_device(dev);
 }
 
 static struct pcmcia_device_id com_on_air_ids[] = {

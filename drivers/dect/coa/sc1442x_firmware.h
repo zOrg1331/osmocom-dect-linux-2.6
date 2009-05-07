@@ -1,7 +1,7 @@
-#ifndef SC14421_FIRMWARE
-#define SC14421_FIRMWARE
+#ifndef SC1442X_FIRMWARE
+#define SC1442X_FIRMWARE
 
-extern const unsigned char sc14421_firmware[509];
+extern const unsigned char sc1442x_firmware[509];
 
 #define DIP_RF_INIT 0x0
 #define RF_DESC 0x4A
@@ -48,4 +48,4 @@ extern const unsigned char sc14421_firmware[509];
 #define TransmitP32U 0x2D
 #define TransmitP32P 0x33
 
-#endif /* SC14421_FIRMWARE */
+#endif /* SC1442X_FIRMWARE */

@@ -124,7 +124,7 @@ static void u2785_write_config(const struct coa_device *dev, u16 offset,
 		[4]	= 0,
 	};
 
-	sc14421_rfdesc_write(dev, offset, init, sizeof(init));
+	sc1442x_rfdesc_write(dev, offset, init, sizeof(init));
 }
 
 static void u2785_rx_init(const struct coa_device *dev, u16 offset)
@@ -173,7 +173,7 @@ static void u2785_write_carrier(const struct coa_device *dev, u16 offset,
 		[2]	= init1 | RADIO_U2785_ADDRESS_BIT,
 	};
 
-	sc14421_rfdesc_write(dev, offset, init, sizeof(init));
+	sc1442x_rfdesc_write(dev, offset, init, sizeof(init));
 }
 
 static void u2785_set_carrier(const struct coa_device *dev, u16 offset,

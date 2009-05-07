@@ -582,8 +582,8 @@ static void dect_fa_frame_csum(const struct dect_lc *lc, struct sk_buff *skb)
 	t += c1;
 	y = (t & 0xffU) + ((t >> 8) & 0x1U);
 
-	data[skb->len - 2] = x ^ (lc->lsig >> 8);
-	data[skb->len - 1] = y ^ (lc->lsig & 0xff);
+	data[skb->len - 2] = x ^ ((__force u16)lc->lsig >> 8);
+	data[skb->len - 1] = y ^ ((__force u16)lc->lsig & 0xff);
 	lc_debug(lc, "checksum: lsig: %.4x x: %.2x y: %.2x\n",
 		 lc->lsig, x, y);
 }
@@ -596,8 +596,8 @@ static bool dect_fa_frame_csum_verify(const struct dect_lc *lc,
 	u8 c0 = 0, c1 = 0;
 	u16 t;
 
-	data[skb->len - 2] ^= lc->lsig >> 8;
-	data[skb->len - 1] ^= lc->lsig & 0xff;
+	data[skb->len - 2] ^= (__force u16)lc->lsig >> 8;
+	data[skb->len - 1] ^= (__force u16)lc->lsig & 0xff;
 
 	for (i = 0; i < skb->len; i++) {
 		t = c0 + data[i];

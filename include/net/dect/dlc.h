@@ -285,7 +285,7 @@ extern struct dect_lapc *dect_ssap_rcv_request(struct dect_lc *lc,
  */
 struct dect_lc {
 	struct dect_mac_conn	*mc;
-	u16			lsig;
+	__be16			lsig;
 
 	struct sk_buff		*rx_head;
 	u8			rx_len;

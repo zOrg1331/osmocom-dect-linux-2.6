@@ -160,6 +160,15 @@
 /* DC offset of received data to comparator reference input (DAC) */
 #define SC1442X_ST4_DC_MASK		0x3f
 
+/*
+ * Codec configuration
+ */
+
+#define SC1442X_CC_SIZE			6
+
+#define SC1442X_CC0_STANDBY		0xc2
+#define SC1442X_CC0_POWERDOWN		0x3d
+
 
 static const u8 banktable[] = {
 	SC1442X_RAMBANK1, 0,
@@ -714,6 +723,7 @@ static int sc1442x_check_dram(const struct coa_device *dev)
 
 int sc1442x_init_device(struct coa_device *dev)
 {
+	unsigned int i;
 	u8 slot;
 
 	spin_lock_init(&dev->lock);
@@ -730,6 +740,12 @@ int sc1442x_init_device(struct coa_device *dev)
 
 	/* Init DIP */
 	sc1442x_switch_to_bank(dev, SC1442X_RAMBANK0);
+
+	/* Disable Codec */
+	sc1442x_dwrite(dev, DIP_CC_INIT, SC1442X_CC0_STANDBY);
+	for (i = 1; i < SC1442X_CC_SIZE; i++)
+		sc1442x_dwrite(dev, DIP_CC_INIT + i, 0);
+
 	sc1442x_write_bmc_config(dev, DIP_RF_INIT, false, false);
 	for (slot = 0; slot < DECT_FRAME_SIZE; slot += 2)
 		sc1442x_init_slot(dev, slot);

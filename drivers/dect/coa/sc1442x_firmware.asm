@@ -30,6 +30,9 @@ BANK7_HIGH	EQU	0xf0
 
 DIP_RF_INIT	EQU	0x00
 
+; Codec Control
+DIP_CC_INIT	EQU	0x10
+
 RF_DESC		EQU	0x4A
 TX_DESC		EQU	0x50
 RX_DESC		EQU	0x58
@@ -343,8 +346,8 @@ SyncLoop:	BR	Sync
 
 InitDIP:	B_RST
 		BK_C	BANK0_LOW
-		;C_LD	0x10
-		;WT	10
+		C_LD	DIP_CC_INIT
+		WT	10
 		B_RC	DIP_RF_INIT
 		WT	8
 		B_RST
@@ -357,7 +360,7 @@ InitDIP:	B_RST
 RFStart:	BR	SyncInit
 ;-------------------------------------------------------------
 
-		SHARED	DIP_RF_INIT
+		SHARED	DIP_CC_INIT,DIP_RF_INIT
 		SHARED	RF_DESC,RX_DESC,TX_DESC,TRX_DESC_FN
 		SHARED	SD_RSSI_OFF,SD_CSUM_OFF,SD_PREAMBLE_OFF,SD_DATA_OFF
 

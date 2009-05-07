@@ -3,6 +3,7 @@
 
 extern const unsigned char sc1442x_firmware[509];
 
+#define DIP_CC_INIT 0x10
 #define DIP_RF_INIT 0x0
 #define RF_DESC 0x4A
 #define RX_DESC 0x58
@@ -36,7 +37,7 @@ extern const unsigned char sc1442x_firmware[509];
 #define JP18 0x18
 #define JP20 0x1A
 #define JP22 0x1C
-#define RFStart 0xCD
+#define RFStart 0xCF
 #define SlotTable 0x2
 #define SyncInit 0xAE
 #define Sync 0xAF

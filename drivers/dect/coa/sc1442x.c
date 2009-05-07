@@ -231,12 +231,12 @@ static const u8 sc1442x_tx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1] = {
  * Raw IO functions
  */
 
-static void sc1442x_lock_mem(struct coa_device *dev)
+static void sc1442x_lock_mem(struct coa_device *dev) __acquires(dev->lock)
 {
 	spin_lock_irq(&dev->lock);
 }
 
-static void sc1442x_unlock_mem(struct coa_device *dev)
+static void sc1442x_unlock_mem(struct coa_device *dev) __releases(dev->lock)
 {
 	mmiowb();
 	spin_unlock_irq(&dev->lock);

@@ -56,6 +56,7 @@ struct coa_device {
 	const struct coa_radio_ops	*radio_ops;
 	struct coa_freq_map		freq_map;
 
+	spinlock_t			lock;
 	uint				config_base;
 	u8 __iomem			*sc1442x_base;
 	u16				cfg_reg;

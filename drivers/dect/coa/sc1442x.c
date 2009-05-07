@@ -221,6 +221,18 @@ static const u8 sc1442x_tx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1] = {
 /*
  * Raw IO functions
  */
+
+static void sc1442x_lock_mem(struct coa_device *dev)
+{
+	spin_lock_irq(&dev->lock);
+}
+
+static void sc1442x_unlock_mem(struct coa_device *dev)
+{
+	mmiowb();
+	spin_unlock_irq(&dev->lock);
+}
+
 static u8 sc1442x_read(const struct coa_device *dev, u16 offset)
 {
 	switch (dev->type) {
@@ -371,29 +383,33 @@ static void sc1442x_enable(const struct dect_transceiver *trx)
 
 static void sc1442x_confirm(const struct dect_transceiver *trx)
 {
-	const struct coa_device *dev = dect_transceiver_priv(trx);
+	struct coa_device *dev = dect_transceiver_priv(trx);
 
 	/*
 	 * This locks the firmware into a cycle where it will receive every
 	 * 24th slot. This must happen within the time it takes to transmit
 	 * 22 slots after the interrupt to lock to the correct signal.
 	 */
+	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 	sc1442x_write_cmd(dev, SyncLoop, BR, SyncLock);
+	sc1442x_unlock_mem(dev);
 }
 
 static void sc1442x_unlock(const struct dect_transceiver *trx)
 {
-	const struct coa_device *dev = dect_transceiver_priv(trx);
+	struct coa_device *dev = dect_transceiver_priv(trx);
 
 	/* Restore jump into Sync loop */
+	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 	sc1442x_write_cmd(dev, SyncLoop, BR, Sync);
+	sc1442x_unlock_mem(dev);
 }
 
 static void sc1442x_lock(const struct dect_transceiver *trx, u8 slot)
 {
-	const struct coa_device *dev = dect_transceiver_priv(trx);
+	struct coa_device *dev = dect_transceiver_priv(trx);
 
 	/*
 	 * We're receiving the single slot "slot". Adjust the firmware so it
@@ -401,18 +417,21 @@ static void sc1442x_lock(const struct dect_transceiver *trx, u8 slot)
 	 * event. This will automagically establish the correct slot numbers
 	 * and thereby interrupt timing for all slots.
 	 */
+	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 	sc1442x_write_cmd(dev, SyncLoop, BR, jumptable[slot]);
+	sc1442x_unlock_mem(dev);
 }
 
 static void sc1442x_set_mode(const struct dect_transceiver *trx,
 			     const struct dect_channel_desc *chd,
 			     enum dect_slot_states mode)
 {
-	const struct coa_device *dev = dect_transceiver_priv(trx);
+	struct coa_device *dev = dect_transceiver_priv(trx);
 	u8 slot = chd->slot;
 	u16 off;
 
+	sc1442x_lock_mem(dev);
 	switch (mode) {
 	case DECT_SLOT_IDLE:
 		sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
@@ -438,20 +457,23 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 				  sc1442x_tx_funcs[chd->pkt][chd->b_fmt]);
 		break;
 	}
+	sc1442x_unlock_mem(dev);
 }
 
 static void sc1442x_set_carrier(const struct dect_transceiver *trx,
 				u8 slot, u8 carrier)
 {
-	const struct coa_device *dev = dect_transceiver_priv(trx);
 	const struct dect_transceiver_slot *ts = &trx->slots[slot];
+	struct coa_device *dev = dect_transceiver_priv(trx);
 	u16 off;
 
 	WARN_ON(ts->state == DECT_SLOT_IDLE);
 
+	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, banktable[slot]);
 	off = sc1442x_slot_offset(slot);
 	dev->radio_ops->set_carrier(dev, off, ts->state, carrier);
+	sc1442x_unlock_mem(dev);
 }
 
 static u64 sc1442x_set_band(const struct dect_transceiver *trx,
@@ -464,10 +486,11 @@ static u64 sc1442x_set_band(const struct dect_transceiver *trx,
 
 static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 {
-	const struct coa_device *dev = dect_transceiver_priv(trx);
+	struct coa_device *dev = dect_transceiver_priv(trx);
 	u8 slot = DECT_TRX_CB(skb)->slot;
 	u16 off;
 
+	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, banktable[slot]);
 	off = sc1442x_slot_offset(slot);
 
@@ -476,6 +499,7 @@ static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 	sc1442x_to_dmem(dev, off + SD_DATA_OFF, skb->data, skb->len);
 	sc1442x_dwrite(dev, off + TX_DESC + TRX_DESC_FN,
 		       DECT_TRX_CB(skb)->frame);
+	sc1442x_unlock_mem(dev);
 
 	kfree_skb(skb);
 }
@@ -594,8 +618,10 @@ irqreturn_t sc1442x_interrupt(int irq, void *dev_id)
 		if (event == NULL)
 			goto out;
 
+		spin_lock(&dev->lock);
 		for (slot = 6 * i; slot < 6 * (i + 1); slot += 2)
 			sc1442x_process_slot(dev, trx, event, slot);
+		spin_unlock(&dev->lock);
 
 		dect_transceiver_queue_event(trx, event);
 	}
@@ -690,6 +716,7 @@ int sc1442x_init_device(struct coa_device *dev)
 {
 	u8 slot;
 
+	spin_lock_init(&dev->lock);
 	dev->ctrl = SC1442X_DIPSTOPPED;
 
 	if (sc1442x_check_dram(dev) < 0)

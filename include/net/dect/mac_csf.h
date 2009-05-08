@@ -376,7 +376,7 @@ struct dect_scan_result {
 	struct dect_llme_req	lreq;
 	struct dect_idi		idi;
 	struct dect_si		si;
-	u8			rssi;
+	u16			rssi;
 };
 
 /**

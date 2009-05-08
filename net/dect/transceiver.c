@@ -260,8 +260,11 @@ static void dect_transceiver_tasklet(unsigned long data)
 
 again:
 	event = dect_dequeue_event(grp);
-	if (event == NULL)
+	if (event == NULL) {
+		dect_tg_process_events(grp);
 		return;
+	}
+
 	trx = event->trx;
 
 	trx_debug(trx, "event handler: trx: seq %u pos %u grp: seq %u pos %u\n",
@@ -308,8 +311,6 @@ again:
 		grp->slot_high =
 			dect_slot_add(event->slotpos, trx->ops->eventrate);
 	}
-
-	dect_tg_process_events(grp);
 
 out:
 	dect_release_transceiver_event(event);

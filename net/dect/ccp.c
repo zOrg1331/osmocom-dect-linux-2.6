@@ -340,7 +340,7 @@ static void dect_ccp_parse_mbc_conn_indicate(const struct dect_cell_handle *ch,
 
 static int dect_ccp_send_mbc_conn_notify(const struct dect_cluster_handle *clh,
 					 const struct dect_mbc_id *id,
-					 enum dect_tbc_state state)
+					 enum dect_tbc_event event)
 {
 	struct sk_buff *skb;
 

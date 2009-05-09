@@ -689,7 +689,7 @@ static int __init dect_init_band(const struct dect_band_desc *desc)
 
 	printk("RF-band %u:\n", band->band);
 	for (carrier = 0; carrier < band->carriers; carrier++) {
-		printk("  carrier %u: %u.%.3uMHz\n", carrier,
+		printk("  carrier %u: %u.%03uMHz\n", carrier,
 		       band->frequency[carrier] / 1000,
 		       band->frequency[carrier] % 1000);
 	}

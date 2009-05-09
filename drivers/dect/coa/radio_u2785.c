@@ -241,7 +241,7 @@ static u64 u2785_map_band(struct coa_device *dev, const struct dect_band *band)
 			continue;
 
 		carriers |= 1 << carrier;
-		u2785_debug(dev, "carrier %u (%u.%.3uMHz) => "
+		u2785_debug(dev, "carrier %u (%u.%03uMHz) => "
 			    "rx: div: %u sw: %u tx: div: %u sw: %u\n",
 			    carrier, frequency / 1000, frequency % 1000,
 			    fe->rx.divisor, fe->rx.swcnt,

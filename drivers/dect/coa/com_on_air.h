@@ -42,6 +42,23 @@ struct coa_radio_ops {
 extern const struct coa_radio_ops coa_u2785_radio_ops;
 extern const struct coa_radio_ops coa_lmx3161_radio_ops;
 
+/**
+ * struct sc1442x_phase_state - per-slot phase offset state
+ *
+ * @framenum:	frame number the information was last updated
+ * @tap:	sc1442x internal clock cycle which sampled the data
+ * @phase:	offset of number of symbol periods to nominal 11520 symbols per frame
+ *
+ * This structure is used to store the measured values for one particular
+ * frame. The actual phase offset is calculated from the differences of two
+ * consequitive frames.
+ */
+struct sc1442x_phase_state {
+	u8	framenum;
+	u8	tap;
+	s8	phase;
+};
+
 enum coa_device_types {
 	COA_TYPE_PCI,
 	COA_TYPE_PCMCIA,
@@ -55,6 +72,7 @@ struct coa_device {
 
 	const struct coa_radio_ops	*radio_ops;
 	struct coa_freq_map		freq_map;
+	struct sc1442x_phase_state	phase_state[DECT_FRAME_SIZE / 2];
 
 	spinlock_t			lock;
 	uint				config_base;

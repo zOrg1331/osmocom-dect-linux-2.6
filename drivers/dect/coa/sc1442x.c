@@ -149,13 +149,21 @@
  */
 #define SC1442X_ST2_TAP_SHIFT		4
 #define SC1442X_ST2_TAP_MASK		0xf0
+#define SC1442X_ST2_TAP_SCALE		(DECT_PHASE_OFFSET_SCALE * 96 / 10)
 
 /* Number of unmasked S-field errors according to BMC configuration */
 #define SC1442X_ST2_S_ERR_SHIFT		0
 #define SC1442X_ST2_S_ERR_MASK		0x0f
 
-/* Phase offset of received S-field. */
+/* Phase offset of received S-field: difference of number of symbol periods
+ * between nominal 11520 symbols per frame and actual number of symbols. The
+ * frequency deviation can be calculated from the difference of two
+ * consequitive frames as:
+ *
+ * N * T / 10m = N * 870ns / 10m = N * 87ppm
+ */
 #define SC1442X_ST3_PHASE_MASK		0xff
+#define SC1442X_ST2_PHASE_SCALE		(DECT_PHASE_OFFSET_SCALE * 87)
 
 /* DC offset of received data to comparator reference input (DAC) */
 #define SC1442X_ST4_DC_MASK		0x3f
@@ -560,18 +568,52 @@ static u8 sc1442x_clear_interrupt(const struct coa_device *dev)
 	return int2 & SC1442X_IRQ_MASK;
 }
 
-static void sc1442x_process_slot(const struct coa_device *dev,
+static void sc1442x_update_phase_offset(struct coa_device *dev,
+					struct dect_transceiver_slot *ts,
+					u8 framenum)
+{
+	struct sc1442x_phase_state *ps = &dev->phase_state[ts->chd.slot / 2];
+	u16 off = sc1442x_slot_offset(ts->chd.slot);
+	s32 phaseoff;
+	s8 phase;
+	u8 tap;
+
+	/* The phase offset is calculated from the differences of the tap and
+	 * phase status of two consequitive frames. The tap field contains
+	 * which of the nine internal clock cycles per symbol sampled the
+	 * incoming data and measures small scale frequency deviations up to
+	 * +-8 * 9.6ppm == +-86.4ppm. The phase field contains the absolute
+	 * phase offset in multiples of 87ppm.
+	 */
+	tap   = sc1442x_dread(dev, off + 2) >> SC1442X_ST2_TAP_SHIFT;
+	phase = sc1442x_dread(dev, off + 3);
+
+	if (dect_next_framenum(ps->framenum) == framenum) {
+		phaseoff = (tap - ps->tap) * SC1442X_ST2_TAP_SCALE;
+		phaseoff += (phase - ps->phase) * SC1442X_ST2_PHASE_SCALE;
+
+		ts->phaseoff = dect_average_phase_offset(ts->phaseoff, phaseoff);
+	}
+
+	ps->framenum = framenum;
+	ps->tap      = tap;
+	ps->phase    = phase;
+}
+
+static void sc1442x_process_slot(struct coa_device *dev,
 				 struct dect_transceiver *trx,
 				 struct dect_transceiver_event *event,
 				 u8 slot)
 {
 	struct dect_transceiver_slot *ts = &trx->slots[slot];
 	struct sk_buff *skb;
+	u8 status, framenum, rssi;
 	u16 off;
-	u8 rssi;
 
 	if (ts->state == DECT_SLOT_IDLE || ts->state == DECT_SLOT_TX)
 		return;
+
+	framenum = trx->cell->timer_base[DECT_TIMER_RX].framenum;
 
 	sc1442x_switch_to_bank(dev, banktable[slot]);
 	off = sc1442x_slot_offset(slot);
@@ -580,12 +622,18 @@ static void sc1442x_process_slot(const struct coa_device *dev,
 	 * The SC1442X contains a 6 bit ADC for RSSI measurement, convert to
 	 * units used by the stack.
 	 */
-	rssi = sc1442x_dread(dev, off + SD_RSSI_OFF) * DECT_RSSI_RANGE / 63;
+	status = sc1442x_dread(dev, off + SD_RSSI_OFF);
+	rssi = (status & SC1442X_ST0_ADC_MASK) * DECT_RSSI_RANGE / 63;
 
 	/* validate and clear checksum */
-	if ((sc1442x_dread(dev, off + SD_CSUM_OFF) & 0xc0) != 0xc0)
+	status = sc1442x_dread(dev, off + SD_CSUM_OFF);
+	if ((status & (SC1442X_ST1_IN_SYNC | SC1442X_ST1_A_CRC)) !=
+	    (SC1442X_ST1_IN_SYNC | SC1442X_ST1_A_CRC))
 		goto out;
 	sc1442x_dwrite(dev, off + SD_CSUM_OFF, 0);
+
+	/* calculate phase offset */
+	sc1442x_update_phase_offset(dev, ts, framenum);
 
 	skb = dect_transceiver_alloc_skb(trx, slot);
 	if (skb == NULL)
@@ -602,7 +650,7 @@ out:
 
 	/* Update frame number for next reception */
 	sc1442x_dwrite(dev, off + RX_DESC + TRX_DESC_FN,
-	       dect_next_framenum(trx->cell->timer_base[DECT_TIMER_RX].framenum));
+		       dect_next_framenum(framenum));
 }
 
 irqreturn_t sc1442x_interrupt(int irq, void *dev_id)

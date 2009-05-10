@@ -87,6 +87,15 @@ static inline u8 dect_carrier_distance(u64 rfcars, u8 from, u8 to)
 	return hweight64(rfcars);
 }
 
+#define DECT_PHASE_OFFSET_EWMA_LOG	(DECT_PHASE_OFFSET_SCALE / 4)
+
+static inline s32 dect_average_phase_offset(s32 cur, s32 phaseoff)
+{
+	cur -= cur / DECT_PHASE_OFFSET_EWMA_LOG;
+	cur += phaseoff / DECT_PHASE_OFFSET_EWMA_LOG;
+	return cur;
+}
+
 #define DECT_BAND_NUM			32
 #define DECT_DEFAULT_BAND		0
 
@@ -211,6 +220,7 @@ struct dect_channel_desc {
  * @state:		current state
  * @desc:		channel description
  * @bearer:		associated bearer
+ * @phaseoff:		measured phase offset
  * @rssi:		averaged RSSI
  * @rx_bytes:		RX byte count
  * @rx_packets:		RX packet count
@@ -222,6 +232,7 @@ struct dect_transceiver_slot {
 	struct dect_channel_desc	chd;
 	struct dect_bearer		*bearer;
 
+	s32				phaseoff;
 	u16				rssi;
 	u32				rx_bytes;
 	u32				rx_packets;
@@ -479,7 +490,8 @@ static inline void dect_set_carrier(struct dect_transceiver *trx,
 				    u8 slot, u8 carrier)
 {
 	trx->slots[slot].chd.carrier = carrier;
-	trx->slots[slot].rssi = 0;
+	trx->slots[slot].rssi	  = 0;
+	trx->slots[slot].phaseoff = 0;
 	trx->ops->set_carrier(trx, slot, carrier);
 }
 

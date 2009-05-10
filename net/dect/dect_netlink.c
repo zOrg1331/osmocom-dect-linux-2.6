@@ -935,9 +935,11 @@ static int dect_fill_slot(struct sk_buff *skb,
 	NLA_PUT_U8(skb, DECTA_SLOT_STATE, ts->state);
 	NLA_PUT_U8(skb, DECTA_SLOT_CARRIER, ts->chd.carrier);
 	NLA_PUT_U32(skb, DECTA_SLOT_FREQUENCY, trx->band->frequency[ts->chd.carrier]);
-	if (ts->state == DECT_SLOT_RX)
+	if (ts->state == DECT_SLOT_RX) {
+		NLA_PUT_U32(skb, DECTA_SLOT_PHASEOFF, ts->phaseoff);
 		NLA_PUT_U8(skb, DECTA_SLOT_RSSI,
 			   ts->rssi >> DECT_RSSI_AVG_SCALE);
+	}
 	NLA_PUT_U32(skb, DECTA_SLOT_RX_BYTES, ts->rx_bytes);
 	NLA_PUT_U32(skb, DECTA_SLOT_RX_PACKETS, ts->rx_packets);
 	NLA_PUT_U32(skb, DECTA_SLOT_TX_BYTES, ts->tx_bytes);

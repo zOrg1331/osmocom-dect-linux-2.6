@@ -662,7 +662,7 @@ static int dect_parse_extended_fixed_part_capabilities(struct dect_tail_msg *tm,
 
 static u64 dect_build_extended_fixed_part_capabilities(const struct dect_efpc *efpc)
 {
-	u64 t = t;
+	u64 t = 0;
 
 	t |= (u64)efpc->crfp << DECT_QT_EFPC_CRFP_HOPS_SHIFT;
 	t |= efpc->crfp_enc ? DECT_QT_EFPC_CRFP_ENC_FLAG : 0;

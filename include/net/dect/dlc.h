@@ -7,6 +7,8 @@
 #ifndef _NET_DECT_DLC_H
 #define _NET_DECT_DLC_H
 
+#include <linux/timer.h>
+
 /*
  * C-Plane data link service
  */

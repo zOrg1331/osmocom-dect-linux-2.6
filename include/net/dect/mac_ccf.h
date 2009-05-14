@@ -8,6 +8,7 @@
 #define _NET_DECT_MAC_CCF_H
 
 #include <linux/skbuff.h>
+#include <linux/timer.h>
 #include <net/dect/mac.h>
 
 /**

@@ -1458,6 +1458,7 @@ static struct sk_buff *dect_bc_q_dequeue(struct dect_cell *cell,
 {
 	const struct dect_si *si = &cell->si;
 	struct dect_ssi ssi;
+	struct dect_mfn mfn;
 	struct sk_buff *skb;
 	unsigned int index;
 
@@ -1495,8 +1496,8 @@ static struct sk_buff *dect_bc_q_dequeue(struct dect_cell *cell,
 			return dect_build_tail_msg(skb, DECT_TM_TYPE_EFPC,
 						   &si->efpc);
 		case DECT_QT_SI_MFN:
-			return dect_build_tail_msg(skb, DECT_TM_TYPE_MFN,
-						   &si->mfn);
+			mfn.num = dect_mfn(cell, DECT_TIMER_TX);
+			return dect_build_tail_msg(skb, DECT_TM_TYPE_MFN, &mfn);
 		default:
 			BUG();
 		}

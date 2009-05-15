@@ -663,8 +663,6 @@ static struct sk_buff *dect_lc_tx(struct dect_lc *lc)
 
 	lc_debug(lc, "tx: %sfragment len: %u\n",
 		 lc->tx_head ? "" : "last ", frag->len);
-	{ unsigned int i; for (i = 0; i< frag->len; i++) printk("%.2x ", frag->data[i]);
-	  printk("\n");}
 	return frag;
 }
 

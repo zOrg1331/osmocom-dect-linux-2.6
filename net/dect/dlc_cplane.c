@@ -753,7 +753,7 @@ static void dect_lc_rcv(struct dect_lc *lc, enum dect_data_channels chan,
 		return dect_lapc_rcv(lc->lapcs[dli.lln], skb);
 
 	/* Link establishment: new requests are only valid while no link
-	 * estabishment is in progress.
+	 * establishment is in progress.
 	 */
 	if (!(fh->addr & DECT_FA_ADDR_NLF_FLAG))
 		goto err;

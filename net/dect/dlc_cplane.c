@@ -113,6 +113,14 @@ void dect_lapc_release(struct dect_lapc *lapc)
 	kfree(lapc);
 }
 
+static void dect_lapc_reset(struct dect_lapc *lapc)
+{
+	lapc->nlf = true;
+	lapc->v_s = 0;
+	lapc->v_a = 0;
+	lapc->v_r = 0;
+}
+
 /**
  * dect_lapc_init - initialize a new LAPC entity
  */
@@ -133,7 +141,6 @@ struct dect_lapc *dect_lapc_init(const struct dect_dli *dli,
 
 	lapc->lc = lc;
 	setup_timer(&lapc->timer, dect_lapc_timeout, (unsigned long)lapc);
-	lapc->nlf = true;
 	lapc->cmd = (lc->mc->cl->mode == DECT_MODE_FP) ? true : false;
 
 	switch (lapc->dli.lln) {
@@ -148,6 +155,8 @@ struct dect_lapc *dect_lapc_init(const struct dect_dli *dli,
 		lapc->mod = DECT_LAPC_CLASS_B_MOD;
 		break;
 	}
+
+	dect_lapc_reset(lapc);
 
 	lapc_debug(lapc, "init\n");
 	return lapc;
@@ -340,6 +349,9 @@ static void dect_lapc_rcv_iframe(struct dect_lapc *lapc, struct sk_buff *skb)
 		kfree_skb(skb);
 		return;
 	}
+
+	if (fh->addr & DECT_FA_ADDR_NLF_FLAG)
+		dect_lapc_reset(lapc);
 
 	n_r = (fh->ctrl & DECT_FA_CTRL_I_NR_MASK) >> DECT_FA_CTRL_I_NR_SHIFT;
 	n_s = (fh->ctrl & DECT_FA_CTRL_I_NS_MASK) >> DECT_FA_CTRL_I_NS_SHIFT;

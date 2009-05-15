@@ -58,6 +58,22 @@ static inline bool dect_fa_seq_after(const struct dect_lapc *lapc, u8 s1, u8 s2)
 	return dect_fa_seq_before(lapc, s2, s1);
 }
 
+static void dect_lapc_transmit_skb(struct dect_lapc *lapc)
+{
+	struct sk_buff *skb = skb_peek(&lapc->retransq);
+	struct dect_fa_hdr *fh;
+
+	skb = skb_clone(skb, GFP_ATOMIC);
+	if (skb == NULL)
+		return;
+
+	fh = (struct dect_fa_hdr *)skb->data;
+	lapc_debug(lapc, "queue I-frame v_a: %u v_r: %u v_s: %u "
+		   "len: %u addr: %.2x ctrl: %.2x\n", lapc->v_a, lapc->v_r,
+		   lapc->v_s, skb->len, fh->addr, fh->ctrl);
+	skb_queue_tail(&lapc->lc->txq, skb);
+}
+
 /**
  * dect_lapc_timeout - retransmission timer
  *
@@ -77,6 +93,7 @@ static void dect_lapc_timeout(unsigned long data)
 
 	lapc_debug(lapc, "retransmission timer: cnt: %u\n", lapc->rcnt);
 	if (lapc->rcnt++ < DECT_LAPC_RETRANS_MAX) {
+		dect_lapc_transmit_skb(lapc);
 		mod_timer(&lapc->timer, jiffies + DECT_LAPC_CLASS_A_ESTABLISH_TIMEOUT);
 	} else {
 		sk = lapc->sk;
@@ -200,15 +217,7 @@ static bool dect_lapc_send_iframe(struct dect_lapc *lapc, bool pf)
 
 	lapc->v_s = lapc_seq_add(lapc, lapc->v_s, 1);
 
-	skb = skb_clone(skb, GFP_ATOMIC);
-	if (skb == NULL) {
-		/* Will be retransmitted */
-		return true;
-	}
-
-	lapc_debug(lapc, "queue I-frame v_a: %u v_r: %u v_s: %u len: %u addr: %.2x ctrl: %.2x\n",
-		   lapc->v_a, lapc->v_r, lapc->v_s, skb->len, fh->addr, fh->ctrl);
-	skb_queue_tail(&lapc->lc->txq, skb);
+	dect_lapc_transmit_skb(lapc);
 	return true;
 }
 
@@ -296,9 +305,10 @@ static bool dect_lapc_update_ack(struct dect_lapc *lapc, u8 seq)
 	if (dect_fa_seq_after(lapc, seq, lapc->v_a) &&
 	    !dect_fa_seq_after(lapc, lapc->v_s, seq)) {
 		lapc->v_a = seq;
-		if (lapc->v_a == lapc->v_s)
+		if (lapc->v_a == lapc->v_s) {
 			del_timer_sync(&lapc->timer);
-		else
+			lapc->rcnt = 0;
+		} else
 			mod_timer(&lapc->timer, jiffies + DECT_LAPC_RETRANSMISSION_TIMEOUT);
 	} else if (seq != lapc->v_a)
 		return false;

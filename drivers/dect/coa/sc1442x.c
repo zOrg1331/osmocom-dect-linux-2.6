@@ -664,7 +664,7 @@ irqreturn_t sc1442x_interrupt(int irq, void *dev_id)
 	if (!irq)
 		return IRQ_NONE;
 
-	if (unlikely(hweight8(irq) != 1))
+	if (unlikely(hweight8(irq) != 1 && net_ratelimit()))
 		dev_info(dev->dev, "lost some interrupts\n");
 
 	for (i = 0; i < 4; i++) {

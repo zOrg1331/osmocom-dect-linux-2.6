@@ -92,6 +92,7 @@ void dect_lapc_release(struct dect_lapc *lapc)
 	if (lapc->lc->lapcs[lapc->dli.lln] != NULL)
 		lapc->lc->lapcs[lapc->dli.lln] = NULL;
 	del_timer_sync(&lapc->timer);
+	skb_queue_purge(&lapc->retransq);
 	kfree(lapc);
 }
 

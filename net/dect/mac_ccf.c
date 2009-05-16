@@ -442,6 +442,7 @@ static void dect_fp_init_si(struct dect_cluster *cl)
    		      DECT_FPC_CL_UPLINK |
    		      DECT_FPC_CL_DOWNLINK |
 		      DECT_FPC_BASIC_A_FIELD_SETUP |
+		      DECT_FPC_ADV_A_FIELD_SETUP |
 		      DECT_FPC_CF_MESSAGES |
    		      DECT_FPC_IN_MIN_DELAY |
    		      DECT_FPC_IN_NORM_DELAY |
@@ -451,7 +452,10 @@ static void dect_fp_init_si(struct dect_cluster *cl)
 		      DECT_HLC_GAP_PAP_BASIC_SPEECH |
 		      DECT_HLC_CISS_SERVICE |
 		      DECT_HLC_CLMS_SERVICE |
-		      DECT_HLC_COMS_SERVICE;
+		      DECT_HLC_COMS_SERVICE |
+		      DECT_HLC_LOCATION_REGISTRATION |
+		      DECT_HLC_STANDARD_AUTHENTICATION |
+		      DECT_HLC_STANDARD_CIPHERING;
 }
 
 void dect_cluster_init(struct dect_cluster *cl)

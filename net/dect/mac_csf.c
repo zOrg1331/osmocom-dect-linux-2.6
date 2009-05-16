@@ -936,27 +936,11 @@ static u64 dect_build_basic_cctrl(const struct dect_bcctrl *bctl)
 	return t;
 }
 
-static int dect_parse_advanced_cctrl(struct dect_tail_msg *tm, u64 t)
-{
-	struct dect_bcctrl *bctl = &tm->bctl;
-
-	bctl->cmd = (t & DECT_MT_CMD_MASK);
-	bctl->fmid = (t & DECT_MT_BCCTRL_FMID_MASK) >> DECT_MT_BCCTRL_FMID_SHIFT;
-	bctl->pmid = (t & DECT_MT_BCCTRL_PMID_MASK) >> DECT_MT_BCCTRL_PMID_SHIFT;
-	tm->type = DECT_TM_TYPE_BCCTRL;
-
-	pr_debug("advanced cctrl: cmd: %llx fmid: %.3x pmid: %.5x\n",
-		 (unsigned long long)bctl->cmd, bctl->fmid, bctl->pmid);
-	return 0;
-}
-
 static int dect_parse_mac_ctrl(struct dect_tail_msg *tm, u64 t)
 {
 	switch (t & DECT_MT_HDR_MASK) {
 	case DECT_MT_BASIC_CCTRL:
 		return dect_parse_basic_cctrl(tm, t);
-	case DECT_MT_ADV_CCTRL:
-		return dect_parse_advanced_cctrl(tm, t);
 	default:
 		return -1;
 	}

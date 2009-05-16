@@ -1855,6 +1855,7 @@ static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 	tbc_debug(tbc, "destroy\n");
 	dect_timer_del(&tbc->wd_timer);
 	dect_timer_del(&tbc->wait_timer);
+	dect_timer_del(&tbc->release_timer);
 	dect_timer_del(&tbc->normal_tx_timer);
 	dect_timer_del(&tbc->tx_timer);
 	dect_bc_release(&tbc->bc);

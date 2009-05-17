@@ -250,7 +250,7 @@ static void sc1442x_unlock_mem(struct coa_device *dev) __releases(dev->lock)
 	spin_unlock_irq(&dev->lock);
 }
 
-static u8 sc1442x_read(const struct coa_device *dev, u16 offset)
+static u8 sc1442x_readb(const struct coa_device *dev, u16 offset)
 {
 	switch (dev->type) {
 	case COA_TYPE_PCI:
@@ -262,7 +262,22 @@ static u8 sc1442x_read(const struct coa_device *dev, u16 offset)
 	}
 }
 
-static void sc1442x_write(const struct coa_device *dev, u16 offset, u8 value)
+static u16 sc1442x_readw(const struct coa_device *dev, u16 offset)
+{
+	u32 tmp;
+
+	switch (dev->type) {
+	case COA_TYPE_PCI:
+		return le16_to_cpu(readw(dev->sc1442x_base + offset));
+	case COA_TYPE_PCMCIA:
+		tmp = le32_to_cpu(readl(dev->sc1442x_base + 2 * offset));
+		return (tmp >> 8) | (tmp & 0xff);
+	default:
+		BUG();
+	}
+}
+
+static void sc1442x_writeb(const struct coa_device *dev, u16 offset, u8 value)
 {
 	switch (dev->type) {
 	case COA_TYPE_PCI:
@@ -274,27 +289,42 @@ static void sc1442x_write(const struct coa_device *dev, u16 offset, u8 value)
 	}
 }
 
+static void sc1442x_writew(const struct coa_device *dev, u16 offset, u16 value)
+{
+	u32 tmp;
+
+	switch (dev->type) {
+	case COA_TYPE_PCI:
+		writew(cpu_to_le16(value), dev->sc1442x_base + offset);
+		break;
+	case COA_TYPE_PCMCIA:
+		tmp = ((value & 0xff00) << 8) | (value & 0xff);
+		writel(cpu_to_le32(tmp), dev->sc1442x_base + 2 * offset);
+		break;
+	}
+}
+
 static void sc1442x_stop_dip(struct coa_device *dev)
 {
 	/* Prevent the interrupt handler from restarting the DIP */
 	dev->ctrl = SC1442X_DIPSTOPPED;
 
 	/* Stop the DIP and wait for interrupt handler to complete */
-	sc1442x_write(dev, dev->cfg_reg, SC1442X_DIPSTOPPED);
+	sc1442x_writeb(dev, dev->cfg_reg, SC1442X_DIPSTOPPED);
 	synchronize_irq(dev->irq);
 }
 
 static void sc1442x_start_dip(struct coa_device *dev)
 {
 	dev->ctrl = 0;
-	sc1442x_write(dev, dev->cfg_reg, 0x00);
+	sc1442x_writeb(dev, dev->cfg_reg, 0x00);
 }
 
 static void sc1442x_switch_to_bank(const struct coa_device *dev, u8 bank)
 {
 	if (dev->type != COA_TYPE_PCMCIA)
 		return;
-	sc1442x_write(dev, dev->cfg_reg, bank | dev->ctrl);
+	sc1442x_writeb(dev, dev->cfg_reg, bank | dev->ctrl);
 	/* need to wait for 4 IO cycles */
 	inb_p(dev->config_base);
 	inb_p(dev->config_base);
@@ -308,8 +338,8 @@ static void sc1442x_switch_to_bank(const struct coa_device *dev, u8 bank)
 static void sc1442x_write_cmd(const struct coa_device *dev, u16 label,
 			      u8 opcode, u8 operand)
 {
-	sc1442x_write(dev, dev->code_base + 2 * label + 0, opcode);
-	sc1442x_write(dev, dev->code_base + 2 * label + 1, operand);
+	sc1442x_writeb(dev, dev->code_base + 2 * label + 0, opcode);
+	sc1442x_writeb(dev, dev->code_base + 2 * label + 1, operand);
 }
 
 static void sc1442x_to_cmem(const struct coa_device *dev,
@@ -318,39 +348,54 @@ static void sc1442x_to_cmem(const struct coa_device *dev,
 	u16 i;
 
 	for (i = 0; i < length; i++)
-		sc1442x_write(dev, dev->code_base + i, src[i]);
+		sc1442x_writeb(dev, dev->code_base + i, src[i]);
 }
 
 /*
  * Data memory IO functions
  */
-static inline u8 sc1442x_dread(const struct coa_device *dev, u16 offset)
+static inline u8 sc1442x_dreadb(const struct coa_device *dev, u16 offset)
 {
-	return sc1442x_read(dev, dev->data_base + (offset & dev->data_mask));
+	return sc1442x_readb(dev, dev->data_base + (offset & dev->data_mask));
 }
 
-static inline void sc1442x_dwrite(const struct coa_device *dev,
+static inline u16 sc1442x_dreadw(const struct coa_device *dev, u16 offset)
+{
+	return sc1442x_readw(dev, dev->data_base + (offset & dev->data_mask));
+}
+
+static inline void sc1442x_dwriteb(const struct coa_device *dev,
 				  u16 offset, u8 value)
 {
-	sc1442x_write(dev, dev->data_base + (offset & dev->data_mask), value);
+	sc1442x_writeb(dev, dev->data_base + (offset & dev->data_mask), value);
+}
+
+static inline void sc1442x_dwritew(const struct coa_device *dev,
+				   u16 offset, u16 value)
+{
+	sc1442x_writew(dev, dev->data_base + (offset & dev->data_mask), value);
 }
 
 static void sc1442x_to_dmem(const struct coa_device *dev, u16 offset,
 			    const u8 *src, u16 length)
 {
-	u16 i;
+	u16 i = 0;
 
-	for (i = 0; i < length; i++)
-		sc1442x_dwrite(dev, offset + i, src[i]);
+	for (; length >= 2; length -= 2, i += 2)
+		sc1442x_dwritew(dev, offset + i, *(u16 *)&src[i]);
+	for (; length >= 1; length -= 1, i += 1)
+		sc1442x_dwriteb(dev, offset + i, src[i]);
 }
 
 static void sc1442x_from_dmem(const struct coa_device *dev, u8 *dst,
 			      u16 offset, u16 length)
 {
-	u16 i;
+	u16 i = 0;
 
-	for (i = 0; i < length; i++)
-		dst[i] = sc1442x_dread(dev, offset + i);
+	for (; length >= 2; length -= 2, i += 2)
+		*(u16 *)&dst[i] = sc1442x_dreadw(dev, offset + i);
+	for (; length >= 1; length -= 1, i += 1)
+		dst[i] = sc1442x_dreadb(dev, offset + i);
 }
 
 static u16 sc1442x_slot_offset(u8 slot)
@@ -518,7 +563,7 @@ static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 	sc1442x_to_dmem(dev, off + SD_PREAMBLE_OFF,
 			skb_mac_header(skb), skb->mac_len);
 	sc1442x_to_dmem(dev, off + SD_DATA_OFF, skb->data, skb->len);
-	sc1442x_dwrite(dev, off + TX_DESC + TRX_DESC_FN,
+	sc1442x_dwriteb(dev, off + TX_DESC + TRX_DESC_FN,
 		       DECT_TRX_CB(skb)->frame);
 	sc1442x_unlock_mem(dev);
 
@@ -547,7 +592,7 @@ static u8 sc1442x_clear_interrupt(const struct coa_device *dev)
 {
 	u8 int1, int2, cnt = 0;
 
-	int1 = sc1442x_read(dev, dev->cfg_reg);
+	int1 = sc1442x_readb(dev, dev->cfg_reg);
 	/* is the card still plugged? */
 	if (int1 == 0xff)
 		return 0;
@@ -556,7 +601,7 @@ static u8 sc1442x_clear_interrupt(const struct coa_device *dev)
 
 	/* Clear interrupt status before checking for any remaining events */
 	if (int2 && dev->type == COA_TYPE_PCI)
-		sc1442x_write(dev, 0x1f02, 0x80);
+		sc1442x_writeb(dev, 0x1f02, 0x80);
 
 	while (int1) {
 		cnt++;
@@ -565,7 +610,7 @@ static u8 sc1442x_clear_interrupt(const struct coa_device *dev)
 			break;
 		}
 
-		int1 = sc1442x_read(dev, dev->cfg_reg) & SC1442X_IRQ_MASK;
+		int1 = sc1442x_readb(dev, dev->cfg_reg) & SC1442X_IRQ_MASK;
 		int2 |= int1;
 	}
 
@@ -589,8 +634,8 @@ static void sc1442x_update_phase_offset(struct coa_device *dev,
 	 * +-8 * 9.6ppm == +-86.4ppm. The phase field contains the absolute
 	 * phase offset in multiples of 87ppm.
 	 */
-	tap   = sc1442x_dread(dev, off + 2) >> SC1442X_ST2_TAP_SHIFT;
-	phase = sc1442x_dread(dev, off + 3);
+	tap   = sc1442x_dreadb(dev, off + 2) >> SC1442X_ST2_TAP_SHIFT;
+	phase = sc1442x_dreadb(dev, off + 3);
 
 	if (dect_next_framenum(ps->framenum) == framenum) {
 		phaseoff = (tap - ps->tap) * SC1442X_ST2_TAP_SCALE;
@@ -626,15 +671,15 @@ static void sc1442x_process_slot(struct coa_device *dev,
 	 * The SC1442X contains a 6 bit ADC for RSSI measurement, convert to
 	 * units used by the stack.
 	 */
-	status = sc1442x_dread(dev, off + SD_RSSI_OFF);
+	status = sc1442x_dreadb(dev, off + SD_RSSI_OFF);
 	rssi = (status & SC1442X_ST0_ADC_MASK) * DECT_RSSI_RANGE / 63;
 
 	/* validate and clear checksum */
-	status = sc1442x_dread(dev, off + SD_CSUM_OFF);
+	status = sc1442x_dreadb(dev, off + SD_CSUM_OFF);
 	if ((status & (SC1442X_ST1_IN_SYNC | SC1442X_ST1_A_CRC)) !=
 	    (SC1442X_ST1_IN_SYNC | SC1442X_ST1_A_CRC))
 		goto out;
-	sc1442x_dwrite(dev, off + SD_CSUM_OFF, 0);
+	sc1442x_dwriteb(dev, off + SD_CSUM_OFF, 0);
 
 	/* calculate phase offset */
 	sc1442x_update_phase_offset(dev, ts, framenum);
@@ -653,7 +698,7 @@ out:
 	dect_transceiver_record_rssi(event, slot, rssi);
 
 	/* Update frame number for next reception */
-	sc1442x_dwrite(dev, off + RX_DESC + TRX_DESC_FN,
+	sc1442x_dwriteb(dev, off + RX_DESC + TRX_DESC_FN,
 		       dect_next_framenum(framenum));
 }
 
@@ -701,27 +746,27 @@ static void sc1442x_write_bmc_config(const struct coa_device *dev,
 	cfg |= SC1442X_BC0_SENS_A;
 	if (pp && !tx)
 		cfg |= SC1442X_BC0_PP_MODE;
-	sc1442x_dwrite(dev, off + 0, cfg);
+	sc1442x_dwriteb(dev, off + 0, cfg);
 
 	/* S-field error mask */
-	sc1442x_dwrite(dev, off + 1, 0);
+	sc1442x_dwriteb(dev, off + 1, 0);
 	/* S-field sliding window error mask */
-	sc1442x_dwrite(dev, off + 2, 0x3f);
+	sc1442x_dwriteb(dev, off + 2, 0x3f);
 
 	/* DAC output */
-	sc1442x_dwrite(dev, off + 3, 0);
+	sc1442x_dwriteb(dev, off + 3, 0);
 
 	cfg  = SC1442X_BC4_ADP;
 	cfg |= 0xf;
 	cfg |= 0x80;
-	sc1442x_dwrite(dev, off + 4, cfg);
+	sc1442x_dwriteb(dev, off + 4, cfg);
 
 	cfg  = SC1442X_BC5_DO_FR;
 	cfg |= tx ? SC1442X_BC5_TDO_DIGITAL : SC1442X_BC5_TDO_POWER_DOWN;
-	sc1442x_dwrite(dev, off + 5, cfg);
+	sc1442x_dwriteb(dev, off + 5, cfg);
 
 	/* Frame number */
-	sc1442x_dwrite(dev, off + 6, 0);
+	sc1442x_dwriteb(dev, off + 6, 0);
 }
 
 static void sc1442x_init_slot(const struct coa_device *dev, u8 slot)
@@ -747,7 +792,7 @@ static int sc1442x_check_dram(const struct coa_device *dev)
 
 		off = bank * SC1442X_BANKSIZE;
 		for (i = 0; i < SC1442X_BANKSIZE - 2; i++)
-			sc1442x_dwrite(dev, off + i, bank + i);
+			sc1442x_dwriteb(dev, off + i, bank + i);
 	}
 
 	cnt = 0;
@@ -756,7 +801,7 @@ static int sc1442x_check_dram(const struct coa_device *dev)
 
 		off = bank * SC1442X_BANKSIZE;
 		for (i = 0; i < SC1442X_BANKSIZE - 2; i++) {
-			val = sc1442x_dread(dev, off + i);
+			val = sc1442x_dreadb(dev, off + i);
 			if (val != ((bank + i) & 0xff)) {
 				dev_err(dev->dev,
 					"memory error bank %.2x offset %.2x: "
@@ -764,7 +809,7 @@ static int sc1442x_check_dram(const struct coa_device *dev)
 					val, (bank + i) & 0xff);
 				cnt++;
 			}
-			sc1442x_dwrite(dev, off + i, 0);
+			sc1442x_dwriteb(dev, off + i, 0);
 		}
 	}
 
@@ -794,9 +839,9 @@ int sc1442x_init_device(struct coa_device *dev)
 	sc1442x_switch_to_bank(dev, SC1442X_RAMBANK0);
 
 	/* Disable Codec */
-	sc1442x_dwrite(dev, DIP_CC_INIT, SC1442X_CC0_STANDBY);
+	sc1442x_dwriteb(dev, DIP_CC_INIT, SC1442X_CC0_STANDBY);
 	for (i = 1; i < SC1442X_CC_SIZE; i++)
-		sc1442x_dwrite(dev, DIP_CC_INIT + i, 0);
+		sc1442x_dwriteb(dev, DIP_CC_INIT + i, 0);
 
 	sc1442x_write_bmc_config(dev, DIP_RF_INIT, false, false);
 	for (slot = 0; slot < DECT_FRAME_SIZE; slot += 2)
@@ -804,7 +849,7 @@ int sc1442x_init_device(struct coa_device *dev)
 
 	/* Enable interrupts */
 	if (dev->type == COA_TYPE_PCI)
-		sc1442x_write(dev, 0x1f06, 0x70);
+		sc1442x_writeb(dev, 0x1f06, 0x70);
 
 	return 0;
 }

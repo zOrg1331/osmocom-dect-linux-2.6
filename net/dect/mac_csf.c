@@ -1866,6 +1866,8 @@ static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 	dect_bearer_release(tbc->cell, tbc->rxb);
 
 	list_del(&tbc->list);
+	kfree_skb(tbc->c_tx_skb);
+	kfree_skb(tbc->c_tx_skb_last);
 	kfree(tbc);
 }
 
@@ -1925,7 +1927,11 @@ static void dect_tbc_normal_tx_timer(struct dect_cell *cell, void *data)
 	struct dect_tbc *tbc = data;
 
 	tbc_debug(tbc, "Normal TX timer\n");
-	if (tbc->c_tx_skb == NULL)
+	if (tbc->c_tx_skb_last != NULL) {
+		tbc_debug(tbc, "retransmit C-channel\n");
+		tbc->c_tx_skb = tbc->c_tx_skb_last;
+		tbc->c_tx_skb_last = NULL;
+	} else if (tbc->c_tx_skb == NULL)
 		clh->ops->mbc_dtr_indicate(clh, &tbc->id, DECT_MC_C_S);
 
 	if (tbc->id.service == DECT_SERVICE_IN_NORM_DELAY)
@@ -2162,6 +2168,13 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	else {
 		tbc->txb->q = 0;
 		goto err;
+	}
+
+	if (skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG &&
+	    tbc->c_tx_skb_last != NULL) {
+		tbc_debug(tbc, "ARQ acknowledgement\n");
+		kfree_skb(tbc->c_tx_skb_last);
+		tbc->c_tx_skb_last = NULL;
 	}
 
 	if (dect_parse_tail_msg(tm, skb) < 0)
@@ -2997,11 +3010,14 @@ static struct sk_buff *dect_pt_t_mux(struct dect_cell *cell,
 			tmux_debug(cell, "M-channel\n");
 			return skb;
 		}
-		if (tbc->c_tx_skb != NULL) {
-			skb = tbc->c_tx_skb;
-			tbc->c_tx_skb = NULL;
-			tmux_debug(cell, "C-channel\n");
-			return skb;
+		if (tbc != NULL && tbc->c_tx_skb != NULL) {
+			skb = skb_clone(tbc->c_tx_skb, GFP_ATOMIC);
+			if (skb != NULL) {
+				tbc->c_tx_skb_last = tbc->c_tx_skb;
+				tbc->c_tx_skb = NULL;
+				tmux_debug(cell, "C-channel\n");
+				return skb;
+			}
 		}
 	} else {
 		skb = skb_peek(&bearer->m_tx_queue);
@@ -3080,9 +3096,10 @@ static struct sk_buff *dect_rfp_t_mux(struct dect_cell *cell,
 			tmux_debug(cell, "M-channel\n");
 			return skb;
 		}
-		if (tbc != NULL) {
-			if (tbc->c_tx_skb != NULL) {
-				skb = tbc->c_tx_skb;
+		if (tbc != NULL && tbc->c_tx_skb != NULL) {
+			skb = skb_clone(tbc->c_tx_skb, GFP_ATOMIC);
+			if (skb != NULL) {
+				tbc->c_tx_skb_last = tbc->c_tx_skb;
 				tbc->c_tx_skb = NULL;
 				tmux_debug(cell, "C-channel\n");
 				return skb;

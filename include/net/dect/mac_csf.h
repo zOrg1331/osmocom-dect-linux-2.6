@@ -319,6 +319,8 @@ struct dect_tbc {
 	uint8_t				c_rx_pkt;
 	uint8_t				c_tx_pkt;
 	struct sk_buff			*c_tx_skb;
+	struct sk_buff			*c_tx_skb_last;
+
 	struct sk_buff			*b_tx_skb;
 
 	struct dect_bc			bc;

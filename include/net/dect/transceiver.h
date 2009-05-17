@@ -148,11 +148,15 @@ static inline u8 dect_slot_distance(u8 s1, u8 s2)
  * @DECT_HALF_SLOT:	Half-slot format (240 bits)
  * @DECT_FULL_SLOT:	Full-slot format (480 bits)
  * @DECT_DOUBLE_SLOT:	Double-slot format (960 bits)
+ *
+ * The numeric values must match the MAC-layer attributes-T coding.
  */
 enum dect_slot_types {
-	DECT_HALF_SLOT,
-	DECT_FULL_SLOT,
-	DECT_DOUBLE_SLOT,
+	DECT_HALF_SLOT		= 0x0,
+	DECT_FULL_SLOT		= 0x1,
+	DECT_DOUBLE_SLOT	= 0x2,
+	DECT_LONG_SLOT_640	= 0x3,
+	DECT_LONG_SLOT_672	= 0x4,
 };
 
 /**

@@ -474,7 +474,7 @@ struct dect_active_carriers {
 #define DECT_MT_CMD_SHIFT		56
 
 /**
- *
+ * enum dect_mt_hdr_type - MAC tail header types
  */
 enum dect_mt_hdr_type {
 	DECT_MT_BASIC_CCTRL			= 0x0ULL << DECT_MT_HDR_SHIFT,
@@ -489,27 +489,112 @@ enum dect_mt_hdr_type {
 	DECT_MT_REP_CCTRL			= 0x9ULL << DECT_MT_HDR_SHIFT,
 };
 
-/* basic connection control */
-enum dect_basic_cctrl_cmds {
-	DECT_BASIC_CCTRL_ACCESS_REQ		= 0x0ULL << DECT_MT_CMD_SHIFT,
-	DECT_BASIC_CCTRL_BEARER_HO_REQ		= 0x1ULL << DECT_MT_CMD_SHIFT,
-	DECT_BASIC_CCTRL_CONNECTION_HO_REQ	= 0x2ULL << DECT_MT_CMD_SHIFT,
-	DECT_BASIC_CCTRL_UNCONFIRMED_ACCESS_REQ	= 0x3ULL << DECT_MT_CMD_SHIFT,
-	DECT_BASIC_CCTRL_BEARER_CONFIRM		= 0x4ULL << DECT_MT_CMD_SHIFT,
-	DECT_BASIC_CCTRL_WAIT			= 0x5ULL << DECT_MT_CMD_SHIFT,
-	DECT_BASIC_CCTRL_RELEASE		= 0xfULL << DECT_MT_CMD_SHIFT,
+/* advanced connection control */
+enum dect_cctrl_cmds {
+	DECT_CCTRL_ACCESS_REQ			= 0x0ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_BEARER_HANDOVER_REQ		= 0x1ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_CONNECTION_HANDOVER_REQ	= 0x2ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_UNCONFIRMED_ACCESS_REQ	= 0x3ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_BEARER_CONFIRM		= 0x4ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_WAIT				= 0x5ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_ATTRIBUTES_T_REQUEST		= 0x6ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_ATTRIBUTES_T_CONFIRM		= 0x7ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_BANDWIDTH_T_REQUEST		= 0x8ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_BANDWIDTH_T_CONFIRM		= 0x9ULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_CHANNEL_LIST			= 0xaULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_UNCONFIRMED_DUMMY		= 0xbULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_UNCONFIRMED_HANDOVER		= 0xcULL << DECT_MT_CMD_SHIFT,
+	DECT_CCTRL_RELEASE			= 0xfULL << DECT_MT_CMD_SHIFT,
 };
 
-#define DECT_MT_BCCTRL_FMID_MASK	0x00fff00000000000ULL
-#define DECT_MT_BCCTRL_FMID_SHIFT	44
+/* Most messages */
+#define DECT_CCTRL_FMID_MASK			0x00fff00000000000ULL
+#define DECT_CCTRL_FMID_SHIFT			44
 
-#define DECT_MT_BCCTRL_PMID_MASK	0x00000fffff000000ULL
-#define DECT_MT_BCCTRL_PMID_SHIFT	24
+#define DECT_CCTRL_PMID_MASK			0x00000fffff000000ULL
+#define DECT_CCTRL_PMID_SHIFT			24
 
-struct dect_bcctrl {
-	enum dect_basic_cctrl_cmds	cmd;
-	u16				fmid;
-	u32				pmid;
+/* Attributes-T request/confirm */
+#define DECT_CCTRL_ATTR_ECN_MASK		0x00f0000000000000ULL
+#define DECT_CCTRL_ATTR_ECN_SHIFT		52
+
+#define DECT_CCTRL_ATTR_LBN_MASK		0x000f000000000000ULL
+#define DECT_CCTRL_ATTR_LBN_SHIFT		48
+
+#define DECT_CCTRL_ATTR_TYPE_MASK		0x0000c00000000000ULL
+#define DECT_CCTRL_ATTR_TYPE_SHIFT		46
+
+enum dect_cctrl_connection_types {
+	DECT_CCTRL_TYPE_ASYMETRIC_UPLINK	= 0x0,
+	DECT_CCTRL_TYPE_ASYMETRIC_DOWNLINK	= 0x1,
+	DECT_CCTRL_TYPE_SYMETRIC_MULTIBEARER	= 0x2,
+	DECT_CCTRL_TYPE_SYMETRIC_BEARER		= 0x3,
+};
+
+#define DECT_CCTRL_ATTR_SERVICE_MASK		0x00003f0000000000ULL
+#define DECT_CCTRL_ATTR_SERVICE_SHIFT		40
+
+enum dect_mac_service_types {
+	DECT_SERVICE_IN_MIN_DELAY		= 0x0,
+	DECT_SERVICE_IPX_ENCODED_PROTECTED	= 0x1,
+	DECT_SERVICE_IN_NORM_DELAY		= 0x2,
+	DECT_SERVICE_UNKNOWN			= 0x4,
+	DECT_SERVICE_C_ONLY			= 0x5,
+	DECT_SERVICE_IP_ERROR_DETECTION		= 0x10,
+	DECT_SERVICE_IPQ_ERROR_DETECTION	= 0x14,
+	/* Lifetime encoded in low three bits */
+	DECT_SERVICE_IP_ERROR_CORRECTION	= 0x18,
+	DECT_SERVICE_IPQ_ERROR_CORRECTION	= 0x38,
+};
+
+#define DECT_SERVICE_LIFETIME_MASK		= 0x7
+
+#define DECT_CCTRL_ATTR_SLOT_MASK		0x000000f000000000ULL
+#define DECT_CCTRL_ATTR_SLOT_SHIFT		36
+
+#define DECT_CCTRL_ATTR_CF_FLAG			0x0000000800000000ULL
+
+#define DECT_CCTRL_ATTR_BZ_EXT_MOD_MASK		0x0000000700000000ULL
+#define DECT_CCTRL_ATTR_BZ_EXT_MOD_SHIFT	32
+
+#define DECT_CCTRL_ATTR_ACR_MASK		0x00000000f0000000ULL
+#define DECT_CCTRL_ATTR_ACR_SHIFT		28
+
+enum dect_adaptive_code_rates {
+	DECT_ACR_NONE				= 0x0,
+};
+
+#define DECT_CCTRL_ATTR_A_MOD_MASK		0x000000000c000000ULL
+#define DECT_CCTRL_ATTR_A_MOD_SHIFT		26
+
+#define DECT_CCTRL_ATTR_BZ_MOD_MASK		0x0000000003000000ULL
+#define DECT_CCTRL_ATTR_BZ_MOD_SHIFT		24
+
+enum dect_modulation_type {
+	DECT_MODULATION_2_LEVEL			= 0x3,
+	DECT_MODULATION_4_LEVEL			= 0x2,
+	DECT_MODULATION_8_LEVEL			= 0x1,
+};
+
+struct dect_cctrl {
+	enum dect_cctrl_cmds		cmd;
+	union {
+		struct {
+			u16		fmid;
+			u32		pmid;
+		};
+		struct {
+			u8		ecn;
+			u8		lbn;
+			u8		type;
+			u8		service;
+			u8		slot;
+			bool		cf;
+			u8		a_mod;
+			u8		bz_mod;
+			u8		acr;
+		};
+	};
 };
 
 /* marker for T-MUX exceptions */
@@ -544,6 +629,7 @@ enum dect_tail_msg_types {
 	DECT_TM_TYPE_RFP_STATUS,
 	DECT_TM_TYPE_ACTIVE_CARRIERS,
 	DECT_TM_TYPE_BCCTRL,
+	DECT_TM_TYPE_ACCTRL,
 	DECT_TM_TYPE_CT,
 };
 
@@ -564,7 +650,7 @@ struct dect_tail_msg {
 		struct dect_rfp_id		rfp_id;
 		struct dect_rfp_status		rfp_status;
 		struct dect_active_carriers	active_carriers;
-		struct dect_bcctrl		bctl;
+		struct dect_cctrl		cctl;
 		struct dect_ct_data		ctd;
 	};
 };
@@ -656,24 +742,13 @@ enum dect_data_channels {
  * enum dect_mac_connection_types - MAC Connection types
  *
  * @DECT_MAC_CONN_BASIC:	Basic connection, always I_N_min_delay service
- * @DECT_MAC_CONN_ADV:		Advanced connection
+ * @DECT_MAC_CONN_ADVANCED:	Advanced connection
  * @DECT_MAC_CONN_COMPLEMENT:	Complementary connection
  */
 enum dect_mac_connection_types {
 	DECT_MAC_CONN_BASIC,
-	DECT_MAC_CONN_ADV,
+	DECT_MAC_CONN_ADVANCED,
 	DECT_MAC_CONN_COMPLEMENT,
-};
-
-enum dect_mac_service_types {
-	DECT_SERVICE_IN_MIN_DELAY,
-	DECT_SERVICE_IN_NORM_DELAY,
-	DECT_SERVICE_IP_ERROR_DETECTION,
-	DECT_SERVICE_IP_ERROR_CORRECTION,
-	DECT_SERVICE_U_PLANE_UNKNOWN,
-	DECT_SERVICE_C_ONLY,
-	DECT_SERVICE_IPQ_ERROR_DETECTION,
-	DECT_SERVICE_IPQ_ERROR_CORRECTION,
 };
 
 /**

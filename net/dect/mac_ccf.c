@@ -443,6 +443,7 @@ static void dect_fp_init_si(struct dect_cluster *cl)
    		      DECT_FPC_CL_UPLINK |
    		      DECT_FPC_CL_DOWNLINK |
 		      DECT_FPC_BASIC_A_FIELD_SETUP |
+		      DECT_FPC_ADV_A_FIELD_SETUP |
 		      DECT_FPC_CF_MESSAGES |
    		      DECT_FPC_IN_MIN_DELAY |
    		      DECT_FPC_IN_NORM_DELAY |

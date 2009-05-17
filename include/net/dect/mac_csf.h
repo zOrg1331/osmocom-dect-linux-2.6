@@ -288,6 +288,7 @@ enum dect_tbc_event {
  * @list:		device TBC list node
  * @cell:		DECT cell
  * @id:			ID of associated MBC
+ * @lbn:		logical bearer number
  * @txb:		TX bearer
  * @rxb:		RX bearer
  * @state:		Bearer establishment state
@@ -308,7 +309,9 @@ enum dect_tbc_event {
 struct dect_tbc {
 	struct list_head		list;
 	struct dect_cell		*cell;
+
 	struct dect_mbc_id		id;
+	u8				lbn;
 
 	struct dect_bearer		*txb;
 	struct dect_bearer		*rxb;

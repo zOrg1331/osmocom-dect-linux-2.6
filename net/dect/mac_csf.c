@@ -911,38 +911,141 @@ static int dect_parse_paging_msg(struct dect_tail_msg *tm, u64 t)
 	}
 }
 
-static int dect_parse_basic_cctrl(struct dect_tail_msg *tm, u64 t)
+static int dect_parse_cctrl_common(struct dect_cctrl *cctl, u64 t)
 {
-	struct dect_bcctrl *bctl = &tm->bctl;
+	cctl->fmid = (t & DECT_CCTRL_FMID_MASK) >> DECT_CCTRL_FMID_SHIFT;
+	cctl->pmid = (t & DECT_CCTRL_PMID_MASK) >> DECT_CCTRL_PMID_SHIFT;
 
-	bctl->cmd = (t & DECT_MT_CMD_MASK);
-	bctl->fmid = (t & DECT_MT_BCCTRL_FMID_MASK) >> DECT_MT_BCCTRL_FMID_SHIFT;
-	bctl->pmid = (t & DECT_MT_BCCTRL_PMID_MASK) >> DECT_MT_BCCTRL_PMID_SHIFT;
-	tm->type = DECT_TM_TYPE_BCCTRL;
-
-	pr_debug("basic cctrl: cmd: %llx fmid: %.3x pmid: %.5x\n",
-		 (unsigned long long)bctl->cmd, bctl->fmid, bctl->pmid);
+	pr_debug("cctrl: cmd: %llx fmid: %.3x pmid: %.5x\n",
+		 (unsigned long long)cctl->cmd, cctl->fmid, cctl->pmid);
 	return 0;
 }
 
-static u64 dect_build_basic_cctrl(const struct dect_bcctrl *bctl)
+static u64 dect_build_cctrl_common(const struct dect_cctrl *cctl)
 {
 	u64 t = 0;
 
-	t |= bctl->cmd;
-	t |= (u64)bctl->fmid << DECT_MT_BCCTRL_FMID_SHIFT;
-	t |= (u64)bctl->pmid << DECT_MT_BCCTRL_PMID_SHIFT;
-	t |= DECT_MT_BASIC_CCTRL;
+	t |= cctl->cmd;
+	t |= (u64)cctl->fmid << DECT_CCTRL_FMID_SHIFT;
+	t |= (u64)cctl->pmid << DECT_CCTRL_PMID_SHIFT;
 	return t;
+}
+
+static int dect_parse_cctrl_attr(struct dect_cctrl *cctl, u64 t)
+{
+	cctl->ecn     = (t & DECT_CCTRL_ATTR_ECN_MASK) >> DECT_CCTRL_ATTR_ECN_SHIFT;
+	cctl->lbn     = (t & DECT_CCTRL_ATTR_LBN_MASK) >> DECT_CCTRL_ATTR_LBN_SHIFT;
+	cctl->type    = (t & DECT_CCTRL_ATTR_TYPE_MASK) >> DECT_CCTRL_ATTR_TYPE_SHIFT;
+	cctl->service = (t & DECT_CCTRL_ATTR_SERVICE_MASK) >> DECT_CCTRL_ATTR_SERVICE_SHIFT;
+	cctl->slot    = (t & DECT_CCTRL_ATTR_SLOT_MASK) >> DECT_CCTRL_ATTR_SLOT_SHIFT;
+
+	pr_debug("cctrl: cmd: %llx ecn: %x lbn: %x type: %x "
+		 "service: %x slot: %x\n", (unsigned long long)cctl->cmd,
+		 cctl->ecn, cctl->lbn, cctl->type, cctl->service, cctl->slot);
+	return 0;
+}
+
+static u64 dect_build_cctrl_attr(const struct dect_cctrl *cctl)
+{
+	u64 t = 0;
+
+	t |= cctl->cmd;
+	t |= (u64)cctl->ecn << DECT_CCTRL_ATTR_ECN_SHIFT;
+	t |= (u64)cctl->lbn << DECT_CCTRL_ATTR_LBN_SHIFT;
+	t |= (u64)cctl->type << DECT_CCTRL_ATTR_TYPE_SHIFT;
+	t |= (u64)cctl->service << DECT_CCTRL_ATTR_SERVICE_SHIFT;
+	t |= (u64)cctl->slot << DECT_CCTRL_ATTR_SLOT_SHIFT;
+	return t;
+}
+
+static int dect_parse_basic_cctrl(struct dect_tail_msg *tm, u64 t)
+{
+	struct dect_cctrl *cctl = &tm->cctl;
+
+	cctl->cmd = t & DECT_MT_CMD_MASK;
+	switch (cctl->cmd) {
+	case DECT_CCTRL_ACCESS_REQ:
+	case DECT_CCTRL_BEARER_HANDOVER_REQ:
+	case DECT_CCTRL_CONNECTION_HANDOVER_REQ:
+	case DECT_CCTRL_UNCONFIRMED_ACCESS_REQ:
+	case DECT_CCTRL_BEARER_CONFIRM:
+	case DECT_CCTRL_WAIT:
+	case DECT_CCTRL_RELEASE:
+		return dect_parse_cctrl_common(cctl, t);
+	case DECT_CCTRL_ATTRIBUTES_T_REQUEST:
+	case DECT_CCTRL_ATTRIBUTES_T_CONFIRM:
+		return dect_parse_cctrl_attr(cctl, t);
+	default:
+		return -1;
+	}
+}
+
+static int dect_parse_advanced_cctrl(struct dect_tail_msg *tm, u64 t)
+{
+	struct dect_cctrl *cctl = &tm->cctl;
+
+	cctl->cmd = t & DECT_MT_CMD_MASK;
+	switch (cctl->cmd) {
+	case DECT_CCTRL_ACCESS_REQ:
+	case DECT_CCTRL_BEARER_HANDOVER_REQ:
+	case DECT_CCTRL_CONNECTION_HANDOVER_REQ:
+	case DECT_CCTRL_UNCONFIRMED_ACCESS_REQ:
+	case DECT_CCTRL_BEARER_CONFIRM:
+	case DECT_CCTRL_WAIT:
+	case DECT_CCTRL_UNCONFIRMED_DUMMY:
+	case DECT_CCTRL_UNCONFIRMED_HANDOVER:
+	case DECT_CCTRL_RELEASE:
+		return dect_parse_cctrl_common(cctl, t);
+	case DECT_CCTRL_ATTRIBUTES_T_REQUEST:
+	case DECT_CCTRL_ATTRIBUTES_T_CONFIRM:
+		return dect_parse_cctrl_attr(cctl, t);
+	case DECT_CCTRL_BANDWIDTH_T_REQUEST:
+	case DECT_CCTRL_BANDWIDTH_T_CONFIRM:
+		return -1;
+	default:
+		return -1;
+	}
 }
 
 static int dect_parse_mac_ctrl(struct dect_tail_msg *tm, u64 t)
 {
 	switch (t & DECT_MT_HDR_MASK) {
 	case DECT_MT_BASIC_CCTRL:
-		return dect_parse_basic_cctrl(tm, t);
+		if (dect_parse_basic_cctrl(tm, t) < 0)
+			return -1;
+		tm->type = DECT_TM_TYPE_BCCTRL;
+		return 0;
+	case DECT_MT_ADV_CCTRL:
+		if (dect_parse_advanced_cctrl(tm, t) < 0)
+			return -1;
+		tm->type = DECT_TM_TYPE_ACCTRL;
+		return 0;
 	default:
 		return -1;
+	}
+}
+
+static u64 dect_build_cctrl(const struct dect_cctrl *cctl)
+{
+	switch (cctl->cmd) {
+	case DECT_CCTRL_ACCESS_REQ:
+	case DECT_CCTRL_BEARER_HANDOVER_REQ:
+	case DECT_CCTRL_CONNECTION_HANDOVER_REQ:
+	case DECT_CCTRL_UNCONFIRMED_ACCESS_REQ:
+	case DECT_CCTRL_BEARER_CONFIRM:
+	case DECT_CCTRL_WAIT:
+	case DECT_CCTRL_UNCONFIRMED_DUMMY:
+	case DECT_CCTRL_UNCONFIRMED_HANDOVER:
+	case DECT_CCTRL_RELEASE:
+		return dect_build_cctrl_common(cctl);
+	case DECT_CCTRL_ATTRIBUTES_T_REQUEST:
+	case DECT_CCTRL_ATTRIBUTES_T_CONFIRM:
+		return dect_build_cctrl_attr(cctl);
+	case DECT_CCTRL_BANDWIDTH_T_REQUEST:
+	case DECT_CCTRL_BANDWIDTH_T_CONFIRM:
+	case DECT_CCTRL_CHANNEL_LIST:
+	default:
+		return 0;
 	}
 }
 
@@ -1029,7 +1132,11 @@ static struct sk_buff *dect_build_tail_msg(struct sk_buff *skb,
 		ti = DECT_TI_QT;
 		break;
 	case DECT_TM_TYPE_BCCTRL:
-		t = dect_build_basic_cctrl(data);
+		t = dect_build_cctrl(data) | DECT_MT_BASIC_CCTRL;
+		ti = DECT_TI_MT;
+		break;
+	case DECT_TM_TYPE_ACCTRL:
+		t = dect_build_cctrl(data) | DECT_MT_ADV_CCTRL;
 		ti = DECT_TI_MT;
 		break;
 	default:
@@ -1796,27 +1903,79 @@ static void dect_bc_rcv(struct dect_cell *cell, struct dect_bc *bc,
  */
 
 #define tbc_debug(tbc, fmt, args...) \
-	pr_debug("TBC (MCEI %u): PMID: %s %x FMID: %.3x: " fmt, \
+	pr_debug("TBC (MCEI %u): PMID: %s %x FMID: %.3x: ECN: %u " fmt, \
 		 (tbc)->id.mcei, \
 		 (tbc)->id.pmid.type == DECT_PMID_DEFAULT ? "default" : \
 		 (tbc)->id.pmid.type == DECT_PMID_ASSIGNED ? "assigned" : \
 		 (tbc)->id.pmid.type == DECT_PMID_EMERGENCY ? "emergency" : "?", \
-		 (tbc)->id.pmid.tpui, (tbc)->cell->fmid, ## args);
+		 (tbc)->id.pmid.tpui, (tbc)->cell->fmid, (tbc)->id.ecn, ## args);
 
 static struct sk_buff *dect_tbc_build_bcctrl(const struct dect_tbc *tbc,
-					     enum dect_basic_cctrl_cmds cmd)
+					     enum dect_cctrl_cmds cmd)
 {
+	struct dect_cctrl cctl;
 	struct sk_buff *skb;
-	struct dect_bcctrl bctl = {
-		.fmid	= tbc->cell->fmid,
-		.pmid	= dect_build_pmid(&tbc->id.pmid),
-		.cmd	= cmd,
-	};
 
 	skb = dect_t_skb_alloc();
 	if (skb == NULL)
 		return NULL;
-	return dect_build_tail_msg(skb, DECT_TM_TYPE_BCCTRL, &bctl);
+
+	cctl.fmid = tbc->cell->fmid;
+	cctl.pmid = dect_build_pmid(&tbc->id.pmid);
+	cctl.cmd = cmd;
+
+	if (tbc->id.type == DECT_MAC_CONN_BASIC)
+		return dect_build_tail_msg(skb, DECT_TM_TYPE_BCCTRL, &cctl);
+	else
+		return dect_build_tail_msg(skb, DECT_TM_TYPE_ACCTRL, &cctl);
+}
+
+static int dect_tbc_send_confirm(const struct dect_tbc *tbc)
+{
+	struct sk_buff *skb;
+
+	tbc_debug(tbc, "TX CONFIRM\n");
+	skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_BEARER_CONFIRM);
+	if (skb == NULL)
+		return -ENOMEM;
+
+	/* The first response is permitted in any frame */
+	if (tbc->state == DECT_TBC_REQ_RCVD)
+		skb->priority = DECT_MT_HIGH_PRIORITY;
+	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+	return 0;
+}
+
+static int dect_tbc_send_attributes_confirm(const struct dect_tbc *tbc)
+{
+	struct dect_cctrl cctl;
+	struct sk_buff *skb;
+
+	tbc_debug(tbc, "TX ATTRIBUTES_T_CONFIRM\n");
+
+	skb = dect_t_skb_alloc();
+	if (skb == NULL)
+		return -ENOMEM;
+
+	cctl.cmd     = DECT_CCTRL_ATTRIBUTES_T_CONFIRM;
+	cctl.ecn     = tbc->id.ecn;
+	cctl.lbn     = tbc->lbn;
+	cctl.type    = DECT_CCTRL_TYPE_SYMETRIC_BEARER;
+	cctl.service = tbc->id.service;
+	cctl.cf      = false;
+
+	cctl.slot   = DECT_FULL_SLOT;
+	cctl.a_mod  = DECT_MODULATION_2_LEVEL;
+	cctl.bz_mod = DECT_MODULATION_2_LEVEL;
+	cctl.acr    = 0;
+
+	if (tbc->id.type == DECT_MAC_CONN_BASIC)
+		dect_build_tail_msg(skb, DECT_TM_TYPE_BCCTRL, &cctl);
+	else
+		dect_build_tail_msg(skb, DECT_TM_TYPE_ACCTRL, &cctl);
+
+	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+	return 0;
 }
 
 static int dect_tbc_event(const struct dect_tbc *tbc, enum dect_tbc_event event)
@@ -1882,7 +2041,7 @@ static void dect_tbc_release_timer(struct dect_cell *cell, void *data)
 		return dect_tbc_destroy(cell, tbc);
 
 	tbc_debug(tbc, "TX RELEASE\n");
-	m_skb = dect_tbc_build_bcctrl(tbc, DECT_BASIC_CCTRL_RELEASE);
+	m_skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_RELEASE);
 	if (m_skb != NULL) {
 		/* RELEASE messages may appear in any frame */
 		m_skb->priority = DECT_MT_HIGH_PRIORITY;
@@ -2090,6 +2249,21 @@ static void dect_tbc_watchdog_reschedule(struct dect_cell *cell,
 	dect_bearer_timer_add(cell, tbc->rxb, &tbc->wd_timer, timeout);
 }
 
+static int dect_tbc_check_attributes(struct dect_cell *cell, struct dect_tbc *tbc,
+				     const struct dect_cctrl *cctl)
+{
+	const struct dect_cluster_handle *clh = cell->handle.clh;
+
+	tbc_debug(tbc, "RX ATTRIBUTES_T_REQUEST\n");
+	tbc->id.ecn = cctl->ecn;
+	tbc->lbn = cctl->lbn;
+	tbc->id.service = cctl->service;
+
+	if (clh->ops->mbc_conn_indicate(clh, &cell->handle, &tbc->id) < 0)
+		return -1;
+	return 0;
+}
+
 /**
  * dect_tbc_state_process - connection setup and maintenance state proccesing
  *
@@ -2099,7 +2273,7 @@ static void dect_tbc_watchdog_reschedule(struct dect_cell *cell,
 static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 				  const struct dect_tail_msg *tm)
 {
-	const struct dect_bcctrl *bctl = &tm->bctl;
+	const struct dect_cctrl *cctl = &tm->cctl;
 	struct sk_buff *m_skb;
 	u8 framenum;
 
@@ -2108,10 +2282,11 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 		/* Any message except RELEASE switches the bearer to
 		 * ESTABLISHED state.
 		 */
-		if (tm->type == DECT_TM_TYPE_BCCTRL &&
-		    (bctl->fmid != cell->fmid ||
-		     bctl->pmid != dect_build_pmid(&tbc->id.pmid) ||
-		     bctl->cmd == DECT_BASIC_CCTRL_RELEASE))
+		if ((tm->type == DECT_TM_TYPE_BCCTRL ||
+		     tm->type == DECT_TM_TYPE_ACCTRL) &&
+		    (cctl->fmid != cell->fmid ||
+		     cctl->pmid != dect_build_pmid(&tbc->id.pmid) ||
+		     cctl->cmd == DECT_CCTRL_RELEASE))
 			goto release;
 
 		if (dect_tbc_establish(cell, tbc) < 0)
@@ -2133,11 +2308,13 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 			return 1;
 	}
 
-	if (tm->type != DECT_TM_TYPE_BCCTRL)
+	if (tm->type != DECT_TM_TYPE_BCCTRL && tm->type != DECT_TM_TYPE_ACCTRL)
 		goto release;
 
-	if (bctl->fmid != cell->fmid ||
-	    bctl->pmid != dect_build_pmid(&tbc->id.pmid))
+	if (cctl->cmd != DECT_CCTRL_ATTRIBUTES_T_REQUEST &&
+	    cctl->cmd != DECT_CCTRL_ATTRIBUTES_T_CONFIRM &&
+	    (cctl->fmid != cell->fmid ||
+	     cctl->pmid != dect_build_pmid(&tbc->id.pmid)))
 		goto release;
 
 	switch ((int)tbc->state) {
@@ -2154,11 +2331,15 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 		 * Receiving side: waiting for LLME to create MBC. Only "WAIT"
 		 * messages are valid in both directions.
 		 */
-		tbc_debug(tbc, "RX in REQ_RCVD: %llx\n", (unsigned long long)bctl->cmd);
-		if (bctl->cmd != DECT_BASIC_CCTRL_WAIT)
+		tbc_debug(tbc, "RX in REQ_RCVD: %llx\n", (unsigned long long)cctl->cmd);
+
+		if (tbc->id.type == DECT_MAC_CONN_ADVANCED &&
+		    cctl->cmd == DECT_CCTRL_ATTRIBUTES_T_REQUEST)
+			dect_tbc_check_attributes(cell, tbc, cctl);
+		else if (cctl->cmd != DECT_CCTRL_WAIT)
 			goto release;
 
-		m_skb = dect_tbc_build_bcctrl(tbc, DECT_BASIC_CCTRL_WAIT);
+		m_skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_WAIT);
 		if (m_skb == NULL)
 			goto release;
 		skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
@@ -2171,11 +2352,11 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 		 * messages must be responded to with another "WAIT" message.
 		 */
 		tbc_debug(tbc, "Reply in REQ_SENT %u\n", tm->type);
-		if (bctl->cmd != DECT_BASIC_CCTRL_BEARER_CONFIRM) {
-			if (bctl->cmd != DECT_BASIC_CCTRL_WAIT)
+		if (cctl->cmd != DECT_CCTRL_BEARER_CONFIRM) {
+			if (cctl->cmd != DECT_CCTRL_WAIT)
 				goto release;
 
-			m_skb = dect_tbc_build_bcctrl(tbc, DECT_BASIC_CCTRL_WAIT);
+			m_skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_WAIT);
 			if (m_skb == NULL)
 				goto release;
 			skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
@@ -2183,7 +2364,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 			tbc->state = DECT_TBC_WAIT_RCVD;
 		} else {
 			tbc_debug(tbc, "Confirmed\n");
-			m_skb = dect_tbc_build_bcctrl(tbc, DECT_BASIC_CCTRL_WAIT);
+			m_skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_WAIT);
 			if (m_skb == NULL)
 				goto release;
 			skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
@@ -2193,7 +2374,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 		break;
 
 	case DECT_TBC_ESTABLISHED:
-		if (bctl->cmd != DECT_BASIC_CCTRL_RELEASE)
+		if (cctl->cmd != DECT_CCTRL_RELEASE)
 			break;
 		/* Immediate release */
 		dect_tbc_event(tbc, DECT_TBC_REMOTE_RELEASE);
@@ -2250,7 +2431,8 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 		goto err;
 
 	if (tbc->state != DECT_TBC_ESTABLISHED ||
-	    tm->type == DECT_TM_TYPE_BCCTRL) {
+	    tm->type == DECT_TM_TYPE_BCCTRL ||
+	    tm->type == DECT_TM_TYPE_ACCTRL) {
 		if (!dect_tbc_state_process(cell, tbc, tm))
 			goto err;
 	}
@@ -2328,7 +2510,7 @@ static void dect_tbc_enable_timer(struct dect_cell *cell,
 	struct sk_buff *skb;
 
 	tbc_debug(tbc, "TX ACCESS_REQUEST\n");
-	skb = dect_tbc_build_bcctrl(tbc, DECT_BASIC_CCTRL_ACCESS_REQ);
+	skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_ACCESS_REQ);
 	if (skb == NULL)
 		return;
 
@@ -2453,7 +2635,7 @@ static int dect_tbc_confirm(const struct dect_cell_handle *ch,
 {
 	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
 	struct dect_tbc *tbc;
-	struct sk_buff *skb;
+	int err;
 
 	tbc = dect_tbc_lookup(cell, id);
 	if (tbc == NULL)
@@ -2463,15 +2645,12 @@ static int dect_tbc_confirm(const struct dect_cell_handle *ch,
 
 	/* Stop wait timer and send CONFIRM */
 	dect_timer_del(&tbc->wait_timer);
-	skb = dect_tbc_build_bcctrl(tbc, DECT_BASIC_CCTRL_BEARER_CONFIRM);
-	if (skb == NULL)
-		return -ENOMEM;
-
-	/* The first response is permitted in any frame */
-	if (tbc->state == DECT_TBC_REQ_RCVD)
-		skb->priority = DECT_MT_HIGH_PRIORITY;
-	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
-
+	if (id->type == DECT_MAC_CONN_BASIC)
+		err = dect_tbc_send_confirm(tbc);
+	else
+		err = dect_tbc_send_attributes_confirm(tbc);
+	if (err < 0)
+		return err;
 	tbc->state = DECT_TBC_OTHER_WAIT;
 	return 0;
 }
@@ -2482,7 +2661,7 @@ static void dect_tbc_wait_timer(struct dect_cell *cell, void *data)
 	struct sk_buff *skb;
 
 	tbc_debug(tbc, "wait timer\n");
-	skb = dect_tbc_build_bcctrl(tbc, DECT_BASIC_CCTRL_WAIT);
+	skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_WAIT);
 	if (skb == NULL)
 		return;
 
@@ -2510,10 +2689,19 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 	struct dect_mbc_id id;
 	struct dect_tbc *tbc;
 
-	if (tm->bctl.fmid != cell->fmid)
+	if (tm->cctl.fmid != cell->fmid)
 		goto err1;
-	if (tm->bctl.cmd != DECT_BASIC_CCTRL_ACCESS_REQ)
+	switch (tm->cctl.cmd) {
+	case DECT_CCTRL_ACCESS_REQ:
+		break;
+	case DECT_CCTRL_BEARER_HANDOVER_REQ:
+	case DECT_CCTRL_CONNECTION_HANDOVER_REQ:
+		/* Handover can only be initiated by the PP */
+		if (cell->mode == DECT_MODE_FP)
+			break;
+	default:
 		goto err1;
+	}
 
 	/* Select transceivers for RX/TX and reserve resources */
 	memcpy(&rchd, &ts->chd, sizeof(rchd));
@@ -2530,12 +2718,19 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 		goto err2;
 	dect_transceiver_reserve(&cell->trg, ttrx, &tchd);
 
-	/* Basic MAC connections only support the I_N_minimal_delay service */
 	memset(&id, 0, sizeof(id));
 	memcpy(&id.ari, &cell->idi.pari, sizeof(id.ari));
-	dect_parse_pmid(&id.pmid, tm->bctl.pmid);
-	id.type    = DECT_MAC_CONN_BASIC;
-	id.service = DECT_SERVICE_IN_MIN_DELAY;
+	dect_parse_pmid(&id.pmid, tm->cctl.pmid);
+
+	if (tm->type == DECT_TM_TYPE_BCCTRL) {
+		/* Basic MAC connections only support the I_N_minimal_delay service */
+		id.type    = DECT_MAC_CONN_BASIC;
+		id.service = DECT_SERVICE_IN_MIN_DELAY;
+	} else {
+		/* Service is unknown at this time */
+		id.type    = DECT_MAC_CONN_ADVANCED;
+		id.service = DECT_SERVICE_UNKNOWN;
+	}
 
 	/* Initialize TBC */
 	tbc = dect_tbc_init(cell, &id, rtrx, ttrx, &rchd, &tchd);
@@ -2553,8 +2748,14 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 	dect_tbc_watchdog_reschedule(cell, tbc);
 	dect_tbc_enable(cell, tbc);
 
-	if (clh->ops->mbc_conn_indicate(clh, &cell->handle, &tbc->id) < 0)
-		goto err4;
+	if (tbc->id.type == DECT_MAC_CONN_BASIC) {
+		if (clh->ops->mbc_conn_indicate(clh, &cell->handle, &tbc->id) < 0)
+			goto err4;
+	} else {
+		if (dect_tbc_send_confirm(tbc) < 0)
+			goto err4;
+		tbc->state = DECT_TBC_RESPONSE_SENT;
+	}
 
 	kfree_skb(skb);
 	return;
@@ -2825,6 +3026,7 @@ static void dect_scan_bearer_rcv(struct dect_cell *cell,
 	ts = &trx->slots[DECT_TRX_CB(skb)->slot];
 	switch (tm.type) {
 	case DECT_TM_TYPE_BCCTRL:
+	case DECT_TM_TYPE_ACCTRL:
 		return dect_tbc_rcv_request(cell, ts, &tm, skb);
 	default:
 		break;

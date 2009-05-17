@@ -1097,7 +1097,7 @@ static int dect_parse_basic_cctrl(struct dect_tail_msg *tm, u64 t)
 	case DECT_CCTRL_RELEASE:
 		return dect_parse_cctrl_release(cctl, t);
 	default:
-		pr_debug("unknown basic cctrl command: %llx\n", cctl->cmd);
+		pr_debug("unknown cctrl command: %llx\n", cctl->cmd);
 		return -1;
 	}
 }
@@ -1108,26 +1108,14 @@ static int dect_parse_advanced_cctrl(struct dect_tail_msg *tm, u64 t)
 
 	cctl->cmd = t & DECT_MT_CMD_MASK;
 	switch (cctl->cmd) {
-	case DECT_CCTRL_ACCESS_REQ:
-	case DECT_CCTRL_BEARER_HANDOVER_REQ:
-	case DECT_CCTRL_CONNECTION_HANDOVER_REQ:
-	case DECT_CCTRL_UNCONFIRMED_ACCESS_REQ:
-	case DECT_CCTRL_BEARER_CONFIRM:
-	case DECT_CCTRL_WAIT:
 	case DECT_CCTRL_UNCONFIRMED_DUMMY:
 	case DECT_CCTRL_UNCONFIRMED_HANDOVER:
 		return dect_parse_cctrl_common(cctl, t);
-	case DECT_CCTRL_ATTRIBUTES_T_REQUEST:
-	case DECT_CCTRL_ATTRIBUTES_T_CONFIRM:
-		return dect_parse_cctrl_attr(cctl, t);
 	case DECT_CCTRL_BANDWIDTH_T_REQUEST:
 	case DECT_CCTRL_BANDWIDTH_T_CONFIRM:
 		return -1;
-	case DECT_CCTRL_RELEASE:
-		return dect_parse_cctrl_release(cctl, t);
 	default:
-		pr_debug("unknown adv cctrl command: %llx\n", cctl->cmd);
-		return -1;
+		return dect_parse_basic_cctrl(tm, t);
 	}
 }
 
@@ -2207,7 +2195,6 @@ static int dect_tbc_send_attributes_confirm(const struct dect_tbc *tbc)
 	struct sk_buff *skb;
 
 	tbc_debug(tbc, "TX ATTRIBUTES_T_CONFIRM\n");
-
 	skb = dect_t_skb_alloc();
 	if (skb == NULL)
 		return -ENOMEM;
@@ -2230,6 +2217,32 @@ static int dect_tbc_send_attributes_confirm(const struct dect_tbc *tbc)
 	else
 		dect_build_tail_msg(skb, DECT_TM_TYPE_ACCTRL, &cctl);
 
+	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+	return 0;
+}
+
+static int dect_tbc_send_release(const struct dect_tbc *tbc,
+				 enum dect_release_reasons reason)
+{
+	struct dect_cctrl cctl;
+	struct sk_buff *skb;
+
+	tbc_debug(tbc, "TX RELEASE: reason: %x\n", reason);
+	skb = dect_t_skb_alloc();
+	if (skb == NULL)
+		return -ENOMEM;
+
+	cctl.cmd     = DECT_CCTRL_RELEASE;
+	cctl.pmid    = dect_build_pmid(&tbc->id.pmid);
+	cctl.reason  = reason;
+
+	if (tbc->id.type == DECT_MAC_CONN_BASIC)
+		dect_build_tail_msg(skb, DECT_TM_TYPE_BCCTRL, &cctl);
+	else
+		dect_build_tail_msg(skb, DECT_TM_TYPE_ACCTRL, &cctl);
+
+	/* RELEASE messages may appear in any frame */
+	skb->priority = DECT_MT_HIGH_PRIORITY;
 	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
 	return 0;
 }
@@ -2330,20 +2343,6 @@ static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 static void dect_tbc_release_timer(struct dect_cell *cell, void *data)
 {
 	struct dect_tbc *tbc = data;
-	struct sk_buff *m_skb;
-
-	if (tbc->state == DECT_TBC_NONE ||
-	    tbc->state == DECT_TBC_REQ_SENT ||
-	    tbc->state == DECT_TBC_RELEASED)
-		return dect_tbc_destroy(cell, tbc);
-
-	tbc_debug(tbc, "TX RELEASE\n");
-	m_skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_RELEASE);
-	if (m_skb != NULL) {
-		/* RELEASE messages may appear in any frame */
-		m_skb->priority = DECT_MT_HIGH_PRIORITY;
-		skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
-	}
 
 	switch (tbc->state) {
 	default:
@@ -2352,10 +2351,22 @@ static void dect_tbc_release_timer(struct dect_cell *cell, void *data)
 	case DECT_TBC_RELEASING:
 		dect_tbc_state_change(tbc, DECT_TBC_RELEASED);
 		break;
+	case DECT_TBC_NONE:
+	case DECT_TBC_REQ_SENT:
+	case DECT_TBC_RELEASED:
+		return dect_tbc_destroy(cell, tbc);
 	}
 
+	dect_tbc_send_release(tbc, tbc->release_reason);
 	dect_bearer_timer_add(tbc->cell, tbc->txb, &tbc->release_timer,
 			      DECT_MT_FRAME_RATE);
+}
+
+static void dect_tbc_begin_release(struct dect_cell *cell, struct dect_tbc *tbc,
+				   enum dect_release_reasons reason)
+{
+	tbc->release_reason = reason;
+	dect_tbc_release_timer(cell, tbc);
 }
 
 static void dect_tbc_dis_req(const struct dect_cell_handle *ch,
@@ -2368,7 +2379,7 @@ static void dect_tbc_dis_req(const struct dect_cell_handle *ch,
 	tbc = dect_tbc_lookup(cell, id);
 	if (tbc == NULL)
 		return;
-	dect_tbc_release_timer(cell, tbc);
+	dect_tbc_begin_release(cell, tbc, reason);
 }
 
 static bool dect_ct_tail_allowed(const struct dect_cell *cell, u8 framenum)
@@ -2527,12 +2538,13 @@ static void dect_tbc_watchdog_timer(struct dect_cell *cell, void *data)
 	struct dect_tbc *tbc = data;
 
 	tbc_debug(tbc, "watchdog expire\n");
-	if (tbc->state != DECT_TBC_ESTABLISHED)
+	if (tbc->state != DECT_TBC_ESTABLISHED) {
 		dect_tbc_event(tbc, DECT_TBC_SETUP_FAILED);
-	else
+		dect_tbc_begin_release(cell, tbc, DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED);
+	} else {
 		dect_tbc_release_notify(tbc, DECT_REASON_TIMEOUT_LOST_HANDSHAKE);
-
-	dect_tbc_release_timer(cell, tbc);
+		dect_tbc_begin_release(cell, tbc, DECT_REASON_TIMEOUT_LOST_HANDSHAKE);
+	}
 }
 
 static void dect_tbc_watchdog_reschedule(struct dect_cell *cell,
@@ -2712,7 +2724,7 @@ out:
 
 release:
 	dect_tbc_event(tbc, DECT_TBC_SETUP_FAILED);
-	dect_tbc_release_timer(cell, tbc);
+	dect_tbc_begin_release(cell, tbc, DECT_REASON_UNKNOWN);
 	return 0;
 }
 
@@ -2727,7 +2739,7 @@ static void dect_tbc_enc_timer(struct dect_cell *cell, void *data)
 
 	if (++tbc->enc_msg_cnt > 5) {
 		dect_tbc_release_notify(tbc, DECT_REASON_BEARER_RELEASE);
-		return dect_tbc_release_timer(cell, tbc);
+		return dect_tbc_begin_release(cell, tbc, DECT_REASON_BEARER_RELEASE);
 	}
 
 	dect_bearer_timer_add(cell, tbc->txb, &tbc->enc_timer, 2);

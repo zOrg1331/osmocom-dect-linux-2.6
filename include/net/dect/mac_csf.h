@@ -337,6 +337,7 @@ enum dect_tbc_event {
  * @tx_timer:		Transmit activation timer
  * @wd_timer:		Receive watchdog timer
  * @release_timer:	Release timer for unacknowledged release procedure
+ * @release_reason:	release reason
  * @normal_tx_timer:	Normal transmit timer for C-channel/I_N normal delay transmission
  * @normal_rx_timer:	Normal receive timer for C-channel/I_N normal delay delivery
  * @rx_timer:		Mimimum delay receive timer
@@ -365,7 +366,9 @@ struct dect_tbc {
 	enum dect_tbc_state		state;
 	struct dect_timer		wait_timer;
 	struct dect_timer		wd_timer;
+
 	struct dect_timer		release_timer;
+	enum dect_release_reasons	release_reason;
 
 	/* Normal transmit/receive half-frame based and slot based timers */
 	struct dect_timer		normal_rx_timer;

@@ -160,17 +160,17 @@ Receive:	P_LDH	PB_RX_ON
 		P_LDL	PB_RSSI		; enable RSSI measurement
 		WT	25
 		WNT	1		; wait until beginning of slot			|
-		WT	9		;						| p: -33--25
-		B_XON			;						| p: -24
-ClockSyncOn:	P_SC	0x20
+		WT	8		;						| p: -33--26
+		B_XON			;						| p: -25
+ClockSyncOn:	P_SC	0x20		;						| p: -24
 		P_LDH	PB_DCTHRESHOLD	;						| p: -23
-		WT	4		;						| p: -22--16
+		WT	5		;						| p: -22--16
 		B_SR			; Receive S-field				| p: -17
 		EN_SL_ADJ		;						| p: -16	S: 0
 		WT	12		;						| p: -15--4	S: 1-12
 		P_LDL	PB_DCTHRESHOLD	;						| p:  -3	S: 13
-		WT	32		;						| p:  -2-30	S: 14-46
-ClockSyncOff:	P_SC	0x00
+		WT	32		;						| p:  -2-29	S: 14-45
+ClockSyncOff:	P_SC	0x00		;						| p:  30	S: 46
 		B_AR2	SD_A_FIELD_OFF	;						| p:  31	S: 47
 		WT	61		;						| p:  32-92	A:  0-60
 		RTN			;						| p:  93	A: 61

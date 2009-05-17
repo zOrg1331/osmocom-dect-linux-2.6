@@ -137,6 +137,7 @@ static void dect_mbc_release(struct dect_mbc *mbc)
 	if (ch != NULL)
 		ch->ops->tbc_release(ch, &mbc->id);
 #endif
+	kfree_skb(mbc->cs_tx_skb);
 	kfree(mbc);
 }
 
@@ -150,13 +151,9 @@ static struct dect_mbc *dect_mbc_init(struct dect_cluster *cl,
 		return NULL;
 	memcpy(&mbc->id, id, sizeof(mbc->id));
 	mbc->state = DECT_MBC_NONE;
+	mbc->cs_tx_seq = 1;
 
 	setup_timer(&mbc->timer, dect_mbc_timeout, (unsigned long)mbc);
-	skb_queue_head_init(&mbc->c_tx_queue);
-	skb_queue_head_init(&mbc->i_tx_queue);
-	skb_queue_head_init(&mbc->gf_tx_queue);
-	mbc->cs_rx_seq = 1;
-	mbc->cs_tx_seq = 1;
 	list_add_tail(&mbc->list, &cl->mbcs);
 	return mbc;
 }
@@ -279,41 +276,18 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 		default:
 			return WARN_ON(-1);
 		}
+	case DECT_TBC_ACK_RECEIVED:
+		if (mbc->cs_tx_skb != NULL) {
+			kfree_skb(mbc->cs_tx_skb);
+			mbc->cs_tx_skb = NULL;
+		}
+		return 0;
 	case DECT_TBC_HANDSHAKE_TIMEOUT:
 	case DECT_TBC_REMOTE_RELEASE:
 		return dect_dlc_mac_conn_disconnect(cl, id->mcei);
 	default:
 		return WARN_ON(-1);
 	}
-}
-
-int dect_mbc_co_data_request(struct dect_cluster *cl, u32 mcei,
-			     enum dect_mac_channels chan,
-			     struct sk_buff *skb)
-{
-	struct dect_mbc *mbc;
-
-	mbc = dect_mbc_get_by_mcei(cl, mcei);
-	if (mbc == NULL) {
-		kfree_skb(skb);
-		return -ENOTCONN;
-	}
-
-	switch (chan) {
-	case DECT_MC_C_S:
-		skb_queue_tail(&mbc->c_tx_queue, skb);
-		break;
-	case DECT_MC_I_N:
-		skb_queue_tail(&mbc->i_tx_queue, skb);
-		break;
-	case DECT_MC_G_F:
-		skb_queue_tail(&mbc->gf_tx_queue, skb);
-		break;
-	default:
-		BUG();
-	}
-
-	return 0;
 }
 
 static void dect_mbc_data_indicate(const struct dect_cluster_handle *clh,
@@ -327,6 +301,18 @@ static void dect_mbc_data_indicate(const struct dect_cluster_handle *clh,
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
 	if (mbc == NULL)
 		goto err;
+
+	switch (chan) {
+	case DECT_MC_C_S:
+		/* Drop duplicate segments */
+		if (DECT_CS_CB(skb)->seq == mbc->cs_rx_seq)
+			goto err;
+		mbc->cs_rx_seq = !mbc->cs_rx_seq;
+		break;
+	default:
+		break;
+	}
+
 	return dect_dlc_mac_co_data_indicate(cl, mbc->id.mcei, chan, skb);
 
 err:
@@ -344,14 +330,29 @@ static void dect_mbc_dtr_indicate(const struct dect_cluster_handle *clh,
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
 	if (mbc == NULL)
 		return;
-
 	mbc_debug(mbc, "DTR-indicate\n");
-	skb = dect_dlc_mac_co_dtr_indicate(cl, mbc->id.mcei, chan);
-	if (skb == NULL)
-		return;
 
-	mbc->ch->ops->tbc_data_request(mbc->ch, &mbc->id, chan, skb);
-	mbc->cs_tx_seq++;
+	switch (chan) {
+	case DECT_MC_C_S:
+		if (mbc->cs_tx_skb == NULL) {
+			/* Queue a new segment for transmission */
+			skb = dect_dlc_mac_co_dtr_indicate(cl, mbc->id.mcei, chan);
+			if (skb == NULL)
+				return;
+			DECT_CS_CB(skb)->seq = mbc->cs_tx_seq;
+			mbc->cs_tx_seq = !mbc->cs_tx_seq;
+			mbc->cs_tx_skb = skb;
+		}
+
+		skb = skb_clone(mbc->cs_tx_skb, GFP_ATOMIC);
+		break;
+	default:
+		skb = dect_dlc_mac_co_dtr_indicate(cl, mbc->id.mcei, chan);
+		break;
+	}
+
+	if (skb != NULL)
+		mbc->ch->ops->tbc_data_request(mbc->ch, &mbc->id, chan, skb);
 }
 
 static void dect_cluster_unbind_cell(struct dect_cluster_handle *clh,
@@ -451,7 +452,8 @@ static void dect_fp_init_si(struct dect_cluster *cl)
 		      DECT_HLC_GAP_PAP_BASIC_SPEECH |
 		      DECT_HLC_CISS_SERVICE |
 		      DECT_HLC_CLMS_SERVICE |
-		      DECT_HLC_COMS_SERVICE;
+		      DECT_HLC_COMS_SERVICE |
+		      DECT_HLC_LOCATION_REGISTRATION;
 }
 
 void dect_cluster_init(struct dect_cluster *cl)

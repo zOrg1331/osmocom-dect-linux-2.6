@@ -42,6 +42,11 @@ struct dect_cmc {
 
 };
 
+struct dect_cs_skb_cb {
+	u8				seq;
+};
+#define DECT_CS_CB(skb)			((struct dect_cs_skb_cb *)(skb)->cb)
+
 enum dect_mbc_state {
 	DECT_MBC_NONE,
 	DECT_MBC_INITIATED,
@@ -59,9 +64,6 @@ enum dect_mbc_state {
  * @timer:		Connection setup timer (T200)
  * @ch:			Cell handling associated traffic bearer
  * @setup_cnt:		number of setup attempts (N200)
- * @c_tx_queue:		C-channel TX-queue
- * @i_tx_queue:		I-channel TX-queue
- * @gf_tx_queue:	G_F-channel TX-queue
  * @cs_rx_seq:		C_S receive sequence number
  * @cs_tx_seq:		C_S transmit sequence number
  */
@@ -77,11 +79,9 @@ struct dect_mbc {
 	const struct dect_cell_handle	*ch;
 	u8				setup_cnt;
 
-	struct sk_buff_head		c_tx_queue;
-	struct sk_buff_head		i_tx_queue;
-	struct sk_buff_head		gf_tx_queue;
 	u8				cs_rx_seq;
 	u8				cs_tx_seq;
+	struct sk_buff			*cs_tx_skb;
 };
 
 #define DECT_MBC_SETUP_TIMEOUT		(5 * HZ)	/* seconds */

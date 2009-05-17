@@ -270,12 +270,14 @@ enum dect_tbc_state {
  *
  * @DECT_TBC_SETUP_FAILED:	Bearer setup failed
  * @DECT_TBC_SETUP_COMPLETE:	Bearer setup complete
+ * @DECT_TBC_ACK_RECEIVED:	Acknowledgement for C_S data received
  * @DECT_TBC_HANDSHAKE_TIMEOUT:	RFPI handshake timeout
  * @DECT_TBC_REMOTE_RELEASE:	Release procedure initiated by remote side
  */
 enum dect_tbc_event {
 	DECT_TBC_SETUP_FAILED,
 	DECT_TBC_SETUP_COMPLETE,
+	DECT_TBC_ACK_RECEIVED,
 	DECT_TBC_HANDSHAKE_TIMEOUT,
 	DECT_TBC_REMOTE_RELEASE,
 };
@@ -293,11 +295,14 @@ enum dect_tbc_event {
  * @wd_timer:		Receive watchdog timer
  * @release_timer:	Release timer for unacknowledged release procedure
  * @normal_tx_timer:	Normal transmit timer for C-channel/I_N normal delay transmission
+ * @normal_rx_timer:	Normal receive timer for C-channel/I_N normal delay delivery
+ * @rx_timer:		Mimimum delay receive timer
  * @tx_timer:		Minimum delay transmit timer
- * @c_rx_pkt:		Sequence number of last received C_S segment
- * @c_tx_pkt:		Sequence number of last transmitted C_S segment
- * @c_tx_skb:		C_S segment for next TDMA frame
- * @b_tx_skb:		B-field data segment for next TDMA frame
+ * @c_rx_skb:		C_S segment for delivery to DLC
+ * @c_tx_skb:		C_S segment for transmission in next TDMA frame
+ * @c_tx_ok:		C_S segment was successfully transmitted
+ * @b_rx_skb:		B-field data segment for delivery to DLC
+ * @b_tx_skb:		B-field data segment for transmission in next TDMA frame
  * @bc:			Broadcast Control
  */
 struct dect_tbc {
@@ -313,14 +318,18 @@ struct dect_tbc {
 	struct dect_timer		wd_timer;
 	struct dect_timer		release_timer;
 
+	/* Normal transmit/receive half-frame based and slot based timers */
+	struct dect_timer		normal_rx_timer;
 	struct dect_timer		normal_tx_timer;
+	struct dect_timer		rx_timer;
 	struct dect_timer		tx_timer;
 
-	uint8_t				c_rx_pkt;
-	uint8_t				c_tx_pkt;
+	/* C_S channel */
+	struct sk_buff			*c_rx_skb;
 	struct sk_buff			*c_tx_skb;
-	struct sk_buff			*c_tx_skb_last;
+	bool				c_tx_ok;
 
+	struct sk_buff			*b_rx_skb;
 	struct sk_buff			*b_tx_skb;
 
 	struct dect_bc			bc;
@@ -523,6 +532,12 @@ static inline u8 dect_normal_transmit_base(const struct dect_cell *cell)
 static inline u8 dect_normal_receive_base(const struct dect_cell *cell)
 {
 	return cell->mode == DECT_MODE_FP ? DECT_HALF_FRAME_SIZE : 0;
+}
+
+static inline u8 dect_normal_receive_end(const struct dect_cell *cell)
+{
+	return cell->mode == DECT_MODE_FP ? DECT_FRAME_SIZE - 1 :
+					    DECT_HALF_FRAME_SIZE - 1;
 }
 
 #define dect_foreach_transmit_slot(slot, end, cell) \

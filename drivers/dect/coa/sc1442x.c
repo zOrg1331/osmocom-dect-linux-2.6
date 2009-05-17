@@ -656,7 +656,7 @@ static void sc1442x_process_slot(struct coa_device *dev,
 {
 	struct dect_transceiver_slot *ts = &trx->slots[slot];
 	struct sk_buff *skb;
-	u8 status, framenum, rssi;
+	u8 status, framenum, csum, rssi;
 	u16 off;
 
 	if (ts->state == DECT_SLOT_IDLE || ts->state == DECT_SLOT_TX)
@@ -676,10 +676,16 @@ static void sc1442x_process_slot(struct coa_device *dev,
 
 	/* validate and clear checksum */
 	status = sc1442x_dreadb(dev, off + SD_CSUM_OFF);
-	if ((status & (SC1442X_ST1_IN_SYNC | SC1442X_ST1_A_CRC)) !=
-	    (SC1442X_ST1_IN_SYNC | SC1442X_ST1_A_CRC))
+	if (!(status & SC1442X_ST1_IN_SYNC))
 		goto out;
 	sc1442x_dwriteb(dev, off + SD_CSUM_OFF, 0);
+
+	if (!(status & SC1442X_ST1_A_CRC)) {
+		if (ts->chd.pkt == DECT_PACKET_P00)
+			goto out;
+		csum = 0;
+	} else
+		csum = DECT_CHECKSUM_A_CRC_OK;
 
 	/* calculate phase offset */
 	sc1442x_update_phase_offset(dev, ts, framenum);
@@ -688,6 +694,7 @@ static void sc1442x_process_slot(struct coa_device *dev,
 	if (skb == NULL)
 		goto out;
 	sc1442x_from_dmem(dev, skb->data, off + SD_DATA_OFF, skb->len);
+	DECT_TRX_CB(skb)->csum = csum;
 	DECT_TRX_CB(skb)->rssi = rssi;
 	__skb_queue_tail(&event->rx_queue, skb);
 

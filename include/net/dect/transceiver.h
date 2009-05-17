@@ -182,6 +182,17 @@ enum dect_packet_sizes {
 #define DECT_PREAMBLE_SIZE	4
 
 /**
+ * enum dect_checksum - DECT hardware checksum results
+ *
+ * @DECT_CHECKSUM_A_CRC_OK:	A-field CRC OK
+ * @DECT_CHECKSUM_B_CRC_OK:	Unprotected B-field CRC OK
+ */
+enum dect_checksum {
+	DECT_CHECKSUM_A_CRC_OK	= 0x1,
+	DECT_CHECKSUM_B_CRC_OK	= 0x2,
+};
+
+/**
  * enum dect_b_formats - DECT B-Field formats
  *
  * @DECT_B_NONE:	No B-field
@@ -277,6 +288,7 @@ struct dect_skb_trx_cb {
 	u32			mfn;
 	u8			frame;
 	u8			slot;
+	u8			csum;
 	u8			rssi;
 };
 

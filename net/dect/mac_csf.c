@@ -2236,14 +2236,13 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	struct dect_tbc *tbc = bearer->tbc;
 	struct dect_tail_msg _tm, *tm = &_tm;
 
-	/* Verify A-field checksum. For traffic bearers, the Q2 bit indicates
-	 * checksum success of the last received databurst. */
-	if (*(__be16 *)&skb->data[DECT_RA_FIELD_OFF] == 0)
+	/* Verify A-field checksum. Sucessful reception of the A-field is
+	 * indicated by transmitting the Q2 bit in the reverse direction.
+	 */
+	if (DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_A_CRC_OK)
 		tbc->txb->q = DECT_HDR_Q2_FLAG;
-	else {
-		tbc->txb->q = 0;
+	else
 		goto err;
-	}
 
 	tbc->rxb->q = skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG;
 

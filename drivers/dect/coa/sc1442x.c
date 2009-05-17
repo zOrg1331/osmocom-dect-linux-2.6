@@ -560,6 +560,8 @@ static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 	sc1442x_switch_to_bank(dev, banktable[slot]);
 	off = sc1442x_slot_offset(slot);
 
+	/* Duplicate first byte for transmission during ramp-up */
+	sc1442x_dwriteb(dev, off + SD_PREAMBLE_OFF - 1, *skb_mac_header(skb));
 	sc1442x_to_dmem(dev, off + SD_PREAMBLE_OFF,
 			skb_mac_header(skb), skb->mac_len);
 	sc1442x_to_dmem(dev, off + SD_DATA_OFF, skb->data, skb->len);

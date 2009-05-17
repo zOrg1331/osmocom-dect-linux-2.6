@@ -946,12 +946,13 @@ static int dect_parse_mac_ctrl(struct dect_tail_msg *tm, u64 t)
 	}
 }
 
-static int dect_parse_ct_data(struct dect_tail_msg *tm, u64 t)
+static int dect_parse_ct_data(struct dect_tail_msg *tm, u64 t, u8 seq)
 {
 	struct dect_ct_data *ctd = &tm->ctd;
 
-	ctd->pkt_0 = 0;
+	ctd->seq = seq;
 	tm->type = DECT_TM_TYPE_CT;
+	pr_debug("C_S tail sequence number %u\n", seq);
 	return 0;
 }
 
@@ -970,11 +971,9 @@ static int dect_parse_tail_msg(struct dect_tail_msg *tm,
 
 	switch (dect_parse_tail(skb)) {
 	case DECT_TI_CT_PKT_0:
-		pr_debug("C_S tail seq 0\n");
-		return dect_parse_ct_data(tm, t);
+		return dect_parse_ct_data(tm, t, 0);
 	case DECT_TI_CT_PKT_1:
-		pr_debug("C_S tail seq 1\n");
-		return dect_parse_ct_data(tm, t);
+		return dect_parse_ct_data(tm, t, 1);
 	case DECT_TI_NT_CL:
 		pr_debug("connectionless: ");
 	case DECT_TI_NT:
@@ -2131,9 +2130,13 @@ release:
 }
 
 static void dect_tbc_queue_cs_data(struct dect_cell *cell, struct dect_tbc *tbc,
-				   struct sk_buff *skb)
+				   struct sk_buff *skb,
+				   const struct dect_tail_msg *tm)
 {
 	const struct dect_cluster_handle *clh = cell->handle.clh;
+
+	if (tm->ctd.seq == tbc->c_rx_pkt)
+		return;
 
 	skb = skb_clone(skb, GFP_ATOMIC);
 	if (skb == NULL)
@@ -2141,6 +2144,7 @@ static void dect_tbc_queue_cs_data(struct dect_cell *cell, struct dect_tbc *tbc,
 	skb_pull(skb, DECT_T_FIELD_OFF);
 	skb_trim(skb, DECT_C_S_SDU_SIZE);
 
+	tbc->c_rx_pkt = tm->ctd.seq;
 	return clh->ops->mbc_data_indicate(clh, &tbc->id, DECT_MC_C_S, skb);
 }
 
@@ -2179,7 +2183,7 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	if (tbc->state != DECT_TBC_REQ_RCVD &&
 	    tbc->state != DECT_TBC_RESPONSE_SENT) {
 		if (tm->type == DECT_TM_TYPE_CT)
-			dect_tbc_queue_cs_data(cell, tbc, skb);
+			dect_tbc_queue_cs_data(cell, tbc, skb, tm);
 	}
 
 	skb_pull(skb, DECT_A_FIELD_SIZE);
@@ -3124,6 +3128,7 @@ static struct sk_buff *dect_a_map(struct dect_cell *cell,
 	skb_push(skb, DECT_HDR_FIELD_SIZE);
 	skb->data[DECT_HDR_FIELD_OFF] = DECT_A_CB(skb)->id;
 	skb->data[DECT_HDR_FIELD_OFF] |= bearer->q;
+	bearer->q = 0;
 	return skb;
 }
 

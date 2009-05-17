@@ -294,8 +294,9 @@ enum dect_tbc_event {
  * @release_timer:	Release timer for unacknowledged release procedure
  * @normal_tx_timer:	Normal transmit timer for C-channel/I_N normal delay transmission
  * @tx_timer:		Minimum delay transmit timer
+ * @c_rx_pkt:		Sequence number of last received C_S segment
+ * @c_tx_pkt:		Sequence number of last transmitted C_S segment
  * @c_tx_skb:		C_S segment for next TDMA frame
- * @c_tx_pkt:		C_S segment sequence number
  * @b_tx_skb:		B-field data segment for next TDMA frame
  * @bc:			Broadcast Control
  */
@@ -315,6 +316,7 @@ struct dect_tbc {
 	struct dect_timer		normal_tx_timer;
 	struct dect_timer		tx_timer;
 
+	uint8_t				c_rx_pkt;
 	uint8_t				c_tx_pkt;
 	struct sk_buff			*c_tx_skb;
 	struct sk_buff			*b_tx_skb;

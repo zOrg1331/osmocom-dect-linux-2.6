@@ -522,7 +522,7 @@ struct dect_bcctrl {
 #define DECT_C_S_SDU_SIZE		5
 
 struct dect_ct_data {
-	bool				pkt_0;
+	u8				seq;
 };
 
 /*

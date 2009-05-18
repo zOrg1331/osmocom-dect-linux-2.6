@@ -2696,7 +2696,8 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 	case DECT_CCTRL_BEARER_HANDOVER_REQ:
 	case DECT_CCTRL_CONNECTION_HANDOVER_REQ:
 		/* Handover can only be initiated by the PP */
-		if (cell->mode == DECT_MODE_FP)
+		/* FIXME: temporarily disabled since not handled */
+		if (0 && cell->mode == DECT_MODE_FP)
 			break;
 	default:
 		goto err1;

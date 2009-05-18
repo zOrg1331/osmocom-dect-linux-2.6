@@ -1165,7 +1165,6 @@ static struct sk_buff *dect_t_skb_alloc(void)
 
 	/* Reserve space for preamble */
 	skb_reset_mac_header(skb);
-	skb->mac_len = DECT_PREAMBLE_SIZE;
 	skb_reserve(skb, DECT_PREAMBLE_SIZE);
 
 	skb_reset_network_header(skb);
@@ -1665,7 +1664,7 @@ static struct sk_buff *dect_bc_p_dequeue(struct dect_cell *cell,
 	skb = skb_copy_expand(skb, headroom, tailroom, GFP_ATOMIC);
 	if (skb == NULL)
 		return NULL;
-	skb->mac_len = DECT_PREAMBLE_SIZE;
+	/* Reserve space for preamble */
 	skb_set_mac_header(skb, -headroom);
 
 	DECT_A_CB(skb)->id = DECT_TI_PT;
@@ -3479,12 +3478,12 @@ static void dect_mac_xmit_frame(struct dect_transceiver *trx,
 
 	switch (cell->mode) {
 	case DECT_MODE_FP:
-		memcpy(skb_mac_header(skb), dect_fp_preamble,
-		       sizeof(dect_fp_preamble));
+		skb->mac_len = sizeof(dect_fp_preamble);
+		memcpy(skb_mac_header(skb), dect_fp_preamble, skb->mac_len);
 		break;
 	case DECT_MODE_PP:
-		memcpy(skb_mac_header(skb), dect_pp_preamble,
-		       sizeof(dect_pp_preamble));
+		skb->mac_len = sizeof(dect_pp_preamble);
+		memcpy(skb_mac_header(skb), dect_pp_preamble, skb->mac_len);
 		break;
 	case DECT_MODE_MONITOR:
 		BUG();

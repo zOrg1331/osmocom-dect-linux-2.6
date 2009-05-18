@@ -665,7 +665,6 @@ static struct sk_buff *dect_lc_tx(struct dect_lc *lc)
 
 		skb_put(skb, DECT_FA_CSUM_SIZE);
 		dect_fa_frame_csum(lc, skb);
-		WARN_ON(!dect_fa_frame_csum_verify(lc, skb));
 
 		lc->tx_head = skb;
 		lc->tx_len = flen;

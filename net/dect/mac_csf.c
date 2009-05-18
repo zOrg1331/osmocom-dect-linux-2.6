@@ -2739,6 +2739,9 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 	tbc->state = DECT_TBC_REQ_RCVD;
 	tbc_debug(tbc, "RCV ACCESS_REQUEST\n");
 
+	/* Set Q2 bit on first response */
+	tbc->txb->q = DECT_HDR_Q2_FLAG;
+
 	/* Start the WAIT transmit timer */
 	dect_timer_setup(&tbc->wait_timer, dect_tbc_wait_timer, tbc);
 	dect_bearer_timer_add(cell, tbc->txb, &tbc->wait_timer, 1);

@@ -74,6 +74,14 @@ static void dect_lapc_transmit_skb(struct dect_lapc *lapc)
 	skb_queue_tail(&lapc->lc->txq, skb);
 }
 
+static void dect_lapc_error_report(struct dect_lapc *lapc, int err)
+{
+	struct sock *sk = lapc->sk;
+
+	sk->sk_err = err;
+	sk->sk_error_report(sk);
+}
+
 /**
  * dect_lapc_timeout - retransmission timer
  *
@@ -89,17 +97,13 @@ static void dect_lapc_transmit_skb(struct dect_lapc *lapc)
 static void dect_lapc_timeout(unsigned long data)
 {
 	struct dect_lapc *lapc = (struct dect_lapc *)data;
-	struct sock *sk;
 
 	lapc_debug(lapc, "retransmission timer: cnt: %u\n", lapc->rcnt);
 	if (lapc->rcnt++ < DECT_LAPC_RETRANS_MAX) {
 		dect_lapc_transmit_skb(lapc);
 		mod_timer(&lapc->timer, jiffies + DECT_LAPC_CLASS_A_ESTABLISH_TIMEOUT);
-	} else {
-		sk = lapc->sk;
-		sk->sk_err = ETIMEDOUT;
-		sk->sk_error_report(sk);
-	}
+	} else
+		dect_lapc_error_report(lapc, ETIMEDOUT);
 }
 
 void dect_lapc_release(struct dect_lapc *lapc)
@@ -836,7 +840,7 @@ void dect_cplane_notify_state_change(struct dect_mac_conn *mc)
 		for (i = 0; i < ARRAY_SIZE(lc->lapcs); i++) {
 			if (lc->lapcs[i] == NULL)
 				continue;
-			break;
+			dect_lapc_error_report(lc->lapcs[i], ECONNRESET);
 		}
 		break;
 	}

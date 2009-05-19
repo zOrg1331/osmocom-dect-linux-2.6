@@ -166,6 +166,39 @@ static unsigned int dect_poll(struct file *file, struct socket *sock,
 	return mask;
 }
 
+static int dect_shutdown(struct socket *sock, int how)
+{
+	struct sock *sk = sock->sk;
+	int err = 0;
+
+	how++;
+	if ((how & ~SHUTDOWN_MASK) || !how)
+		return -EINVAL;
+
+	lock_sock(sk);
+
+	if (sock->state == SS_CONNECTING &&
+	    sk->sk_state == DECT_SK_ESTABLISH_PENDING)
+		sock->state = SS_DISCONNECTING;
+
+	switch (sk->sk_state) {
+	case DECT_SK_RELEASED:
+		err = -ENOTCONN;
+		break;
+	case DECT_SK_LISTEN:
+		if (!(how & RCV_SHUTDOWN))
+			break;
+	default:
+		sk->sk_shutdown |= how;
+		sk->sk_prot->shutdown(sk, how);
+	}
+
+	/* wake up processes sleeping in poll() */
+	sk->sk_state_change(sk);
+	release_sock(sk);
+	return err;
+}
+
 static int dect_connect(struct socket *sock, struct sockaddr *uaddr, int len,
 			int flags)
 {
@@ -207,6 +240,7 @@ static int dect_connect(struct socket *sock, struct sockaddr *uaddr, int len,
 			goto out;
 	}
 
+	/* Connection establishment was aborted or failed */
 	if (sk->sk_state == DECT_SK_RELEASED)
 		goto sock_error;
 
@@ -215,8 +249,10 @@ static int dect_connect(struct socket *sock, struct sockaddr *uaddr, int len,
 out:
 	release_sock(sk);
 	return err;
+
 sock_error:
-	// FIXME
+	err = sock_error(sk) ? : -ECONNABORTED;
+	sock->state = SS_UNCONNECTED;
 	goto out;
 }
 
@@ -312,7 +348,7 @@ const struct proto_ops dect_stream_ops = {
 	.ioctl		= sock_no_ioctl,
 	.listen		= dect_listen,
 	.accept		= dect_accept,
-	.shutdown	= sock_no_shutdown,
+	.shutdown	= dect_shutdown,
 	.setsockopt	= sock_no_setsockopt,
 	.getsockopt	= sock_no_getsockopt,
 	.sendmsg	= dect_sendmsg,

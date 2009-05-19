@@ -502,18 +502,19 @@ static int dect_ssap_sendmsg(struct kiocb *kiocb, struct sock *sk,
 	if (len > DECT_FA_I_MAX)
 		return -EMSGSIZE;
 
+	lock_sock(sk);
 	if (sk->sk_type == SOCK_SEQPACKET) {
-		lock_sock(sk);
 		if (sk->sk_state != DECT_SK_ESTABLISHED) {
 			timeo = sock_sndtimeo(sk, msg->msg_flags & MSG_DONTWAIT);
 			err = sk_stream_wait_connect(sk, &timeo);
-			if (err < 0) {
-				release_sock(sk);
-				return err;
-			}
+			if (err < 0)
+				goto err1;
 		}
-		release_sock(sk);
 	}
+
+	err = -EPIPE;
+	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
+		goto err1;
 
 	skb = sock_alloc_send_skb(sk, len + 16, msg->msg_flags & MSG_DONTWAIT, &err);
 	if (skb == NULL)
@@ -525,12 +526,16 @@ static int dect_ssap_sendmsg(struct kiocb *kiocb, struct sock *sk,
 		goto err2;
 
 	skb_queue_tail(&sk->sk_write_queue, skb);
+	release_sock(sk);
+
 	dect_lapc_transmit(ssap->lapc);
 	return len;
 
 err2:
 	kfree_skb(skb);
 err1:
+	err = sk_stream_error(sk, msg->msg_flags, err);
+	release_sock(sk);
 	return err;
 }
 

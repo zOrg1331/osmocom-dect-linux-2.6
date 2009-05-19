@@ -1902,7 +1902,7 @@ static void dect_bc_rcv(struct dect_cell *cell, struct dect_bc *bc,
  */
 
 #define tbc_debug(tbc, fmt, args...) \
-	pr_debug("TBC (MCEI %u): PMID: %s %x FMID: %.3x: ECN: %u " fmt, \
+	pr_debug("TBC (MCEI %u): PMID: %s %x FMID: %.3x ECN: %u: " fmt, \
 		 (tbc)->id.mcei, \
 		 (tbc)->id.pmid.type == DECT_PMID_DEFAULT ? "default" : \
 		 (tbc)->id.pmid.type == DECT_PMID_ASSIGNED ? "assigned" : \

@@ -785,14 +785,9 @@ err:
 void dect_cplane_rcv(struct dect_mac_conn *mc, enum dect_data_channels chan,
 		     struct sk_buff *skb)
 {
-	struct dect_fa_hdr *fh = (struct dect_fa_hdr *)skb->data;
 	struct dect_lc *lc;
 
 	if (mc->lc == NULL) {
-#if 0
-		if (!(fh->addr & DECT_FA_ADDR_NLF_FLAG))
-			goto err;
-#endif
 		lc = dect_lc_init(mc, GFP_ATOMIC);
 		if (lc == NULL)
 			goto err;

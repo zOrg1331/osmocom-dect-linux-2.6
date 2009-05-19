@@ -108,7 +108,9 @@ static void dect_ssap_close(struct sock *sk, long timeout)
 	struct sock *req;
 
 	printk("close sock %p\n", sk);
+	spin_lock_bh(&dect_ssap_lock);
 	dect_ssap_unlink(sk);
+	spin_unlock_bh(&dect_ssap_lock);
 
 	if (ssap->lapc != NULL) {
 		sock_put(ssap->lapc->sk);
@@ -119,7 +121,10 @@ static void dect_ssap_close(struct sock *sk, long timeout)
 		__sk_del_bind_node(sk);
 
 	while ((req = dect_ssap_acceptq_dequeue(ssap)) != NULL) {
+		spin_lock_bh(&dect_ssap_lock);
 		dect_ssap_unlink(req);
+		spin_unlock_bh(&dect_ssap_lock);
+
 		dect_lapc_release(dect_ssap(req)->lapc);
 		sock_put(req);
 	}

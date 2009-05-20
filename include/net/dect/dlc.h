@@ -402,7 +402,10 @@ extern int dect_dlc_mac_conn_confirm(struct dect_cluster *cl, u32 mcei,
 
 extern int dect_dlc_mac_conn_indicate(struct dect_cluster *cl,
 				      const struct dect_mbc_id *id);
-extern int dect_dlc_mac_conn_disconnect(struct dect_cluster *cl, u32 mcei);
+
+extern void dect_dlc_mac_dis_request(struct dect_mac_conn *mc);
+extern int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
+				     enum dect_release_reasons reason);
 
 extern void dect_cplane_notify_state_change(struct dect_mac_conn *mc);
 extern void dect_cplane_rcv(struct dect_mac_conn *mc,

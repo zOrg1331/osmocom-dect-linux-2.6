@@ -133,10 +133,6 @@ static void dect_mbc_release(struct dect_mbc *mbc)
 {
 	del_timer_sync(&mbc->timer);
 	list_del(&mbc->list);
-#if 0
-	if (ch != NULL)
-		ch->ops->tbc_release(ch, &mbc->id);
-#endif
 	kfree_skb(mbc->cs_tx_skb);
 	kfree(mbc);
 }
@@ -212,6 +208,18 @@ err1:
 	return err;
 }
 
+void dect_mbc_dis_request(struct dect_cluster *cl, const struct dect_mbc_id *id)
+{
+	struct dect_mbc *mbc;
+
+	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
+	if (mbc == NULL)
+		return;
+	mbc_debug(mbc, "disconnect\n");
+	mbc->ch->ops->tbc_release(mbc->ch, &mbc->id, DECT_REASON_CONNECTION_RELEASE);
+	dect_mbc_release(mbc);
+}
+
 static int dect_mbc_conn_indicate(const struct dect_cluster_handle *clh,
 				  const struct dect_cell_handle *ch,
 				  const struct dect_mbc_id *id)
@@ -262,7 +270,8 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 		case DECT_MBC_INITIATED:
 			if (++mbc->setup_cnt > DECT_MBC_SETUP_MAX_ATTEMPTS ||
 			    dect_mbc_setup_tbc(mbc) < 0)
-				return dect_dlc_mac_conn_disconnect(cl, id->mcei);
+				return dect_dlc_mac_dis_indicate(cl, id->mcei,
+					       DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED);
 			return 0;
 		default:
 			return WARN_ON(-1);
@@ -282,12 +291,23 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 			mbc->cs_tx_skb = NULL;
 		}
 		return 0;
-	case DECT_TBC_HANDSHAKE_TIMEOUT:
-	case DECT_TBC_REMOTE_RELEASE:
-		return dect_dlc_mac_conn_disconnect(cl, id->mcei);
 	default:
 		return WARN_ON(-1);
 	}
+}
+
+static void dect_mbc_dis_indicate(const struct dect_cluster_handle *clh,
+				  const struct dect_mbc_id *id,
+				  enum dect_release_reasons reason)
+{
+	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_mbc *mbc;
+
+	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
+	if (mbc == NULL)
+		return;
+	mbc_debug(mbc, "disconnect reason: %u\n", reason);
+	dect_dlc_mac_dis_indicate(cl, id->mcei, reason);
 }
 
 static void dect_mbc_data_indicate(const struct dect_cluster_handle *clh,
@@ -414,6 +434,7 @@ static const struct dect_ccf_ops dect_ccf_ops = {
 	.mac_info_indicate	= dect_mac_info_indicate,
 	.mbc_conn_indicate	= dect_mbc_conn_indicate,
 	.mbc_conn_notify	= dect_mbc_conn_notify,
+	.mbc_dis_indicate	= dect_mbc_dis_indicate,
 	.mbc_data_indicate	= dect_mbc_data_indicate,
 	.mbc_dtr_indicate	= dect_mbc_dtr_indicate,
 	.bmc_page_indicate	= dect_bmc_page_indicate,

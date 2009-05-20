@@ -958,6 +958,31 @@ static u64 dect_build_cctrl_attr(const struct dect_cctrl *cctl)
 	return t;
 }
 
+static int dect_parse_cctrl_release(struct dect_cctrl *cctl, u64 t)
+{
+	cctl->lbn    = (t & DECT_CCTRL_RELEASE_LBN_MASK) >>
+		       DECT_CCTRL_RELEASE_LBN_SHIFT;
+	cctl->reason = (t & DECT_CCTRL_RELEASE_REASON_MASK) >>
+		       DECT_CCTRL_RELEASE_REASON_SHIFT;
+	cctl->pmid   = (t & DECT_CCTRL_RELEASE_PMID_MASK) >>
+		       DECT_CCTRL_RELEASE_PMID_SHIFT;
+
+	pr_debug("cctrl: release: pmid: %.5x lbn: %x reason: %x\n",
+		 cctl->pmid, cctl->lbn, cctl->reason);
+	return 0;
+}
+
+static u64 dect_build_cctrl_release(const struct dect_cctrl *cctl)
+{
+	u64 t = 0;
+
+	t |= cctl->cmd;
+	t |= (u64)cctl->lbn << DECT_CCTRL_RELEASE_LBN_SHIFT;
+	t |= (u64)cctl->reason << DECT_CCTRL_RELEASE_REASON_SHIFT;
+	t |= (u64)cctl->pmid << DECT_CCTRL_RELEASE_PMID_SHIFT;
+	return t;
+}
+
 static int dect_parse_basic_cctrl(struct dect_tail_msg *tm, u64 t)
 {
 	struct dect_cctrl *cctl = &tm->cctl;
@@ -970,11 +995,12 @@ static int dect_parse_basic_cctrl(struct dect_tail_msg *tm, u64 t)
 	case DECT_CCTRL_UNCONFIRMED_ACCESS_REQ:
 	case DECT_CCTRL_BEARER_CONFIRM:
 	case DECT_CCTRL_WAIT:
-	case DECT_CCTRL_RELEASE:
 		return dect_parse_cctrl_common(cctl, t);
 	case DECT_CCTRL_ATTRIBUTES_T_REQUEST:
 	case DECT_CCTRL_ATTRIBUTES_T_CONFIRM:
 		return dect_parse_cctrl_attr(cctl, t);
+	case DECT_CCTRL_RELEASE:
+		return dect_parse_cctrl_release(cctl, t);
 	default:
 		return -1;
 	}
@@ -994,7 +1020,6 @@ static int dect_parse_advanced_cctrl(struct dect_tail_msg *tm, u64 t)
 	case DECT_CCTRL_WAIT:
 	case DECT_CCTRL_UNCONFIRMED_DUMMY:
 	case DECT_CCTRL_UNCONFIRMED_HANDOVER:
-	case DECT_CCTRL_RELEASE:
 		return dect_parse_cctrl_common(cctl, t);
 	case DECT_CCTRL_ATTRIBUTES_T_REQUEST:
 	case DECT_CCTRL_ATTRIBUTES_T_CONFIRM:
@@ -1002,6 +1027,8 @@ static int dect_parse_advanced_cctrl(struct dect_tail_msg *tm, u64 t)
 	case DECT_CCTRL_BANDWIDTH_T_REQUEST:
 	case DECT_CCTRL_BANDWIDTH_T_CONFIRM:
 		return -1;
+	case DECT_CCTRL_RELEASE:
+		return dect_parse_cctrl_release(cctl, t);
 	default:
 		return -1;
 	}
@@ -1036,7 +1063,6 @@ static u64 dect_build_cctrl(const struct dect_cctrl *cctl)
 	case DECT_CCTRL_WAIT:
 	case DECT_CCTRL_UNCONFIRMED_DUMMY:
 	case DECT_CCTRL_UNCONFIRMED_HANDOVER:
-	case DECT_CCTRL_RELEASE:
 		return dect_build_cctrl_common(cctl);
 	case DECT_CCTRL_ATTRIBUTES_T_REQUEST:
 	case DECT_CCTRL_ATTRIBUTES_T_CONFIRM:
@@ -1044,6 +1070,9 @@ static u64 dect_build_cctrl(const struct dect_cctrl *cctl)
 	case DECT_CCTRL_BANDWIDTH_T_REQUEST:
 	case DECT_CCTRL_BANDWIDTH_T_CONFIRM:
 	case DECT_CCTRL_CHANNEL_LIST:
+		return 0;
+	case DECT_CCTRL_RELEASE:
+		return dect_build_cctrl_release(cctl);
 	default:
 		return 0;
 	}
@@ -1984,6 +2013,14 @@ static int dect_tbc_event(const struct dect_tbc *tbc, enum dect_tbc_event event)
 	return clh->ops->mbc_conn_notify(clh, &tbc->id, event);
 }
 
+static void dect_tbc_release_notify(const struct dect_tbc *tbc,
+				    enum dect_release_reasons reason)
+{
+	const struct dect_cluster_handle *clh = tbc->cell->handle.clh;
+
+	clh->ops->mbc_dis_indicate(clh, &tbc->id, reason);
+}
+
 static void dect_tdd_channel_desc(struct dect_channel_desc *dst,
 				  const struct dect_channel_desc *chd)
 {
@@ -2061,7 +2098,8 @@ static void dect_tbc_release_timer(struct dect_cell *cell, void *data)
 }
 
 static void dect_tbc_release(const struct dect_cell_handle *ch,
-			     const struct dect_mbc_id *id)
+			     const struct dect_mbc_id *id,
+			     enum dect_release_reasons reason)
 {
 	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
 	struct dect_tbc *tbc;
@@ -2116,7 +2154,7 @@ static void dect_tbc_normal_rx_timer(struct dect_cell *cell, void *data)
 	    tbc->c_tx_ok) {
 		if (tbc->rxb->q) {
 			tbc_debug(tbc, "ARQ acknowledgement\n");
-			clh->ops->mbc_conn_notify(clh, &tbc->id, DECT_TBC_ACK_RECEIVED);
+			dect_tbc_event(tbc, DECT_TBC_ACK_RECEIVED);
 		} else
 			tbc_debug(tbc, "C-channel data lost\n");
 	}
@@ -2229,7 +2267,7 @@ static void dect_tbc_watchdog_timer(struct dect_cell *cell, void *data)
 	if (tbc->state != DECT_TBC_ESTABLISHED)
 		dect_tbc_event(tbc, DECT_TBC_SETUP_FAILED);
 	else
-		dect_tbc_event(tbc, DECT_TBC_HANDSHAKE_TIMEOUT);
+		dect_tbc_release_notify(tbc, DECT_REASON_TIMEOUT_LOST_HANDSHAKE);
 
 	dect_tbc_release_timer(cell, tbc);
 }
@@ -2310,11 +2348,21 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 	if (tm->type != DECT_TM_TYPE_BCCTRL && tm->type != DECT_TM_TYPE_ACCTRL)
 		goto release;
 
-	if (cctl->cmd != DECT_CCTRL_ATTRIBUTES_T_REQUEST &&
-	    cctl->cmd != DECT_CCTRL_ATTRIBUTES_T_CONFIRM &&
-	    (cctl->fmid != cell->fmid ||
-	     cctl->pmid != dect_build_pmid(&tbc->id.pmid)))
-		goto release;
+	switch (cctl->cmd) {
+	case DECT_CCTRL_ATTRIBUTES_T_REQUEST:
+	case DECT_CCTRL_ATTRIBUTES_T_CONFIRM:
+	case DECT_CCTRL_BANDWIDTH_T_REQUEST:
+	case DECT_CCTRL_BANDWIDTH_T_CONFIRM:
+	case DECT_CCTRL_CHANNEL_LIST:
+		break;
+	default:
+		if (cctl->fmid != cell->fmid)
+			goto release;
+		/* fall through */
+	case DECT_CCTRL_RELEASE:
+		if (cctl->pmid != dect_build_pmid(&tbc->id.pmid))
+			goto release;
+	}
 
 	switch ((int)tbc->state) {
 	case DECT_TBC_NONE:
@@ -2376,13 +2424,21 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 		if (cctl->cmd != DECT_CCTRL_RELEASE)
 			break;
 		/* Immediate release */
-		dect_tbc_event(tbc, DECT_TBC_REMOTE_RELEASE);
+		dect_tbc_release_notify(tbc, DECT_REASON_BEARER_RELEASE);
 		dect_tbc_destroy(cell, tbc);
 		return 0;
 
 	case DECT_TBC_RELEASING:
+		/*
+		 * Unacknowledged release procedure in progress, ignore the
+		 * packet unless its a release message, in which case the
+		 * bearer can be destroyed immediately (crossed bearer release
+		 * procedure).
+		 */
+		if (cctl->cmd == DECT_CCTRL_RELEASE)
+			dect_tbc_destroy(cell, tbc);
+
 	case DECT_TBC_RELEASED:
-		/* Release in progress, ignore further packets */
 		return 0;
 	}
 

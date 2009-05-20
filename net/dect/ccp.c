@@ -286,7 +286,7 @@ static void dect_ccp_parse_tbc_release(const struct dect_cell_handle *ch,
 
 	if (!dect_ccp_parse_mbc_msg(&id, skb))
 		return;
-	ch->ops->tbc_release(ch, &id);
+	ch->ops->tbc_release(ch, &id, 0);
 }
 
 static int dect_ccp_send_tbc_confirm(const struct dect_cell_handle *ch,
@@ -302,7 +302,8 @@ static int dect_ccp_send_tbc_confirm(const struct dect_cell_handle *ch,
 }
 
 static void dect_ccp_send_tbc_release(const struct dect_cell_handle *ch,
-				      const struct dect_mbc_id *id)
+				      const struct dect_mbc_id *id,
+				      enum dect_release_reasons reason)
 {
 	struct sk_buff *skb;
 

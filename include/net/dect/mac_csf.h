@@ -289,15 +289,11 @@ enum dect_tbc_state {
  * @DECT_TBC_SETUP_FAILED:	Bearer setup failed
  * @DECT_TBC_SETUP_COMPLETE:	Bearer setup complete
  * @DECT_TBC_ACK_RECEIVED:	Acknowledgement for C_S data received
- * @DECT_TBC_HANDSHAKE_TIMEOUT:	RFPI handshake timeout
- * @DECT_TBC_REMOTE_RELEASE:	Release procedure initiated by remote side
  */
 enum dect_tbc_event {
 	DECT_TBC_SETUP_FAILED,
 	DECT_TBC_SETUP_COMPLETE,
 	DECT_TBC_ACK_RECEIVED,
-	DECT_TBC_HANDSHAKE_TIMEOUT,
-	DECT_TBC_REMOTE_RELEASE,
 };
 
 /**
@@ -448,7 +444,8 @@ struct dect_csf_ops {
 	int	(*tbc_confirm)(const struct dect_cell_handle *,
 			       const struct dect_mbc_id *);
 	void	(*tbc_release)(const struct dect_cell_handle *,
-			       const struct dect_mbc_id *);
+			       const struct dect_mbc_id *,
+			       enum dect_release_reasons);
 	void	(*tbc_data_request)(const struct dect_cell_handle *,
 				    const struct dect_mbc_id *,
 				    enum dect_data_channels chan,

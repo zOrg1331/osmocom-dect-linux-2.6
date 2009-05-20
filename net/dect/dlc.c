@@ -127,7 +127,8 @@ int dect_dlc_mac_conn_indicate(struct dect_cluster *cl,
 	return 0;
 }
 
-int dect_dlc_mac_conn_disconnect(struct dect_cluster *cl, u32 mcei)
+int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
+			      enum dect_release_reasons reason)
 {
 	struct dect_mac_conn *mc;
 

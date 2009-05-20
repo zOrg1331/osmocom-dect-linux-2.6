@@ -2851,6 +2851,7 @@ static void dect_dbc_quality_control_timer(struct dect_cell *cell, void *data)
 	case DECT_BEARER_QCTRL_WAIT:
 		dbc_debug(dbc, "quality control: confirm quality\n");
 		dect_set_channel_mode(bearer->trx, &bearer->chd, DECT_SLOT_RX);
+		dect_set_carrier(bearer->trx, bearer->chd.slot, bearer->chd.carrier);
 		dbc->qctrl = DECT_BEARER_QCTRL_CONFIRM;
 		dect_timer_add(cell, &dbc->qctrl_timer, DECT_TIMER_TX,
 			       1, bearer->chd.slot);
@@ -2858,6 +2859,7 @@ static void dect_dbc_quality_control_timer(struct dect_cell *cell, void *data)
 	case DECT_BEARER_QCTRL_CONFIRM:
 		dbc_debug(dbc, "quality control: wait\n");
 		dect_set_channel_mode(bearer->trx, &bearer->chd, DECT_SLOT_TX);
+		dect_set_carrier(bearer->trx, bearer->chd.slot, bearer->chd.carrier);
 		dbc->qctrl = DECT_BEARER_QCTRL_WAIT;
 		dect_timer_add(cell, &dbc->qctrl_timer, DECT_TIMER_TX,
 			       DECT_BEARER_QCTRL_PERIOD - 1, bearer->chd.slot);

@@ -209,18 +209,36 @@ struct dect_bc {
 	struct sk_buff			*p_rx_skb;
 };
 
+/*
+ * enum dect_bearer_qctrl_state - DECT bearer quality control state
+ *
+ * @DECT_BEARER_QCTRL_WAIT:	waiting for next quality control event
+ * @DECT_BEARER_QCTRL_CONFIRM:	performing quality control
+ */
+enum dect_bearer_qctrl_state {
+	DECT_BEARER_QCTRL_WAIT,
+	DECT_BEARER_QCTRL_CONFIRM,
+};
+
+#define DECT_BEARER_QCTRL_FRAMENUM	15	/* must not affect paging */
+#define DECT_BEARER_QCTRL_PERIOD	256	/* frames */
+
 /**
  * struct dect_dbc - dummy bearer control
  *
  * @list:		cell dbc list node
  * @cell:		DECT cell
  * @bearer:		dummy bearer
+ * @qctrl_timer:	quality control timer
+ * @qctrl_state:	qaulity control state
  * @bc:			broadcast controller
  */
 struct dect_dbc {
 	struct list_head		list;
 	struct dect_cell		*cell;
 	struct dect_bearer		*bearer;
+	struct dect_timer		qctrl_timer;
+	enum dect_bearer_qctrl_state	qctrl;
 	struct dect_bc			bc;
 };
 

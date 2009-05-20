@@ -2820,6 +2820,10 @@ static struct dect_cbc *dect_cbc_init(struct dect_cell *cell,
  * Dummy Bearer Control (DBC)
  */
 
+#define dbc_debug(dbc, fmt, args...) \
+	pr_debug("DBC slot %u carrier %u: " fmt, \
+		 (dbc)->bearer->chd.slot, (dbc)->bearer->chd.carrier, ## args)
+
 static void dect_dbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 			 struct sk_buff *skb)
 {
@@ -2835,17 +2839,56 @@ static void dect_dbc_report_rssi(struct dect_cell *cell,
 				 struct dect_bearer *bearer,
 				 u8 slot, u8 rssi)
 {
-	pr_debug("dbc report RSSI %u\n", rssi);
+	dbc_debug(bearer->dbc, "RSSI: selection: %u now: %u\n", bearer->rssi, rssi);
+}
+
+static void dect_dbc_quality_control_timer(struct dect_cell *cell, void *data)
+{
+	struct dect_dbc *dbc = data;
+	struct dect_bearer *bearer = dbc->bearer;
+
+	switch (dbc->qctrl) {
+	case DECT_BEARER_QCTRL_WAIT:
+		dbc_debug(dbc, "quality control: confirm quality\n");
+		dect_set_channel_mode(bearer->trx, &bearer->chd, DECT_SLOT_RX);
+		dbc->qctrl = DECT_BEARER_QCTRL_CONFIRM;
+		dect_timer_add(cell, &dbc->qctrl_timer, DECT_TIMER_TX,
+			       1, bearer->chd.slot);
+		break;
+	case DECT_BEARER_QCTRL_CONFIRM:
+		dbc_debug(dbc, "quality control: wait\n");
+		dect_set_channel_mode(bearer->trx, &bearer->chd, DECT_SLOT_TX);
+		dbc->qctrl = DECT_BEARER_QCTRL_WAIT;
+		dect_timer_add(cell, &dbc->qctrl_timer, DECT_TIMER_TX,
+			       DECT_BEARER_QCTRL_PERIOD - 1, bearer->chd.slot);
+		break;
+	}
+}
+
+static void dect_dbc_enable(struct dect_cell *cell, struct dect_bearer *bearer)
+{
+	struct dect_dbc *dbc = bearer->dbc;
+	u8 framenum = dect_framenum(cell, DECT_TIMER_TX);
+	u8 extra;
+
+	extra = DECT_BEARER_QCTRL_FRAMENUM - framenum;
+	dbc->qctrl = DECT_BEARER_QCTRL_WAIT;
+	dect_timer_add(cell, &dbc->qctrl_timer, DECT_TIMER_TX,
+		       DECT_BEARER_QCTRL_PERIOD + extra, bearer->chd.slot);
+
+	dect_bearer_enable(bearer);
 }
 
 static const struct dect_bearer_ops dect_dbc_ops = {
 	.state		= DECT_DUMMY_BEARER,
+	.enable		= dect_dbc_enable,
 	.report_rssi	= dect_dbc_report_rssi,
 	.rcv		= dect_dbc_rcv,
 };
 
 static void dect_dbc_release(struct dect_dbc *dbc)
 {
+	dect_timer_del(&dbc->qctrl_timer);
 	dect_bc_release(&dbc->bc);
 	kfree(dbc);
 }
@@ -2887,6 +2930,7 @@ static struct dect_dbc *dect_dbc_init(struct dect_cell *cell,
 	if (dbc == NULL)
 		goto err2;
 	dbc->cell = cell;
+	dect_timer_setup(&dbc->qctrl_timer, dect_dbc_quality_control_timer, dbc);
 	dect_bc_init(cell, &dbc->bc);
 
 	dbc->bearer = dect_bearer_init(cell, &dect_dbc_ops, DECT_SIMPLEX_BEARER,

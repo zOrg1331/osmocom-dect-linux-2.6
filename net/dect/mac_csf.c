@@ -3466,6 +3466,24 @@ static struct sk_buff *dect_a_map(struct dect_cell *cell,
 	return skb;
 }
 
+static struct sk_buff *dect_raw_tx(struct dect_cell *cell)
+{
+	struct sk_buff *skb;
+
+	skb = skb_peek(&cell->raw_tx_queue);
+	if (skb == NULL)
+		return NULL;
+
+	if (DECT_TRX_CB(skb)->mfn > dect_mfn(cell, DECT_TIMER_TX) ||
+	    DECT_TRX_CB(skb)->frame > dect_framenum(cell, DECT_TIMER_TX) ||
+	    DECT_TRX_CB(skb)->slot > dect_slotnum(cell, DECT_TIMER_TX))
+		return NULL;
+
+	tx_debug(cell, "raw transmit\n");
+	skb_unlink(skb, &cell->raw_tx_queue);
+	return skb;
+}
+
 /**
  * dect_d_map - DECT D-Field mapping
  *
@@ -3478,6 +3496,10 @@ static struct sk_buff *dect_d_map(struct dect_cell *cell,
 				  struct dect_bearer *bearer)
 {
 	struct sk_buff *skb_a, *skb_b, *skb;
+
+	skb = dect_raw_tx(cell);
+	if (skb != NULL)
+		return skb;
 
 	skb_a = dect_a_map(cell, bearer);
 	if (skb_a == NULL)
@@ -3845,6 +3867,7 @@ void dect_cell_shutdown(struct dect_cell *cell)
 	dect_foreach_transceiver(trx, &cell->trg)
 		dect_cell_detach_transceiver(cell, trx);
 	dect_cell_bmc_disable(cell);
+	skb_queue_purge(&cell->raw_tx_queue);
 }
 
 /**
@@ -3860,6 +3883,7 @@ void dect_cell_init(struct dect_cell *cell)
 	INIT_LIST_HEAD(&cell->chanlists);
 	INIT_LIST_HEAD(&cell->timer_base[DECT_TIMER_RX].timers);
 	INIT_LIST_HEAD(&cell->timer_base[DECT_TIMER_TX].timers);
+	skb_queue_head_init(&cell->raw_tx_queue);
 	dect_cell_bmc_init(cell);
 	dect_transceiver_group_init(&cell->trg);
 	cell->handle.ops = &dect_csf_ops;

@@ -541,6 +541,9 @@ struct dect_cell {
 	struct dect_channel_list	*chl_next;
 	struct dect_channel_list	*chl;
 
+	/* raw transmission queue */
+	struct sk_buff_head		raw_tx_queue;
+
 	struct dect_timer_base		timer_base[DECT_TIMER_BASE_MAX + 1];
 	struct dect_transceiver_group	trg;
 };

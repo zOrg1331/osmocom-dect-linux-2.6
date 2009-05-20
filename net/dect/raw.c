@@ -154,6 +154,76 @@ out:
 	return err ? : copied;
 }
 
+static int dect_raw_sendmsg(struct kiocb *iocb, struct socket *sock,
+			    struct msghdr *msg, size_t len)
+{
+	struct sockaddr_dect *addr = msg->msg_name;
+	struct dect_raw_auxdata *aux = NULL;
+	struct sock *sk = sock->sk;
+	struct dect_cell *cell;
+	struct sk_buff *skb;
+	struct cmsghdr *cmsg;
+	size_t size;
+	int index;
+	int err;
+
+	if (msg->msg_namelen) {
+		if (addr->dect_family != AF_DECT)
+			return -EINVAL;
+		index = addr->dect_index;
+	} else
+		index = sk->sk_bound_dev_if;
+
+	cell = dect_cell_get_by_index(index);
+	if (cell == NULL)
+		return -ENODEV;
+
+	for (cmsg = CMSG_FIRSTHDR(msg); cmsg != NULL; cmsg = CMSG_NXTHDR(msg, cmsg)) {
+		if (!CMSG_OK(msg, cmsg))
+			return -EINVAL;
+		if (cmsg->cmsg_level != SOL_DECT)
+			continue;
+
+		switch (cmsg->cmsg_type) {
+		case DECT_RAW_AUXDATA:
+			if (cmsg->cmsg_len != CMSG_LEN(sizeof(*aux)))
+				return -EINVAL;
+			aux = (struct dect_raw_auxdata *)CMSG_DATA(cmsg);
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	if (aux == NULL)
+		return -EINVAL;
+
+	size = DECT_PREAMBLE_SIZE + len;
+	skb = sock_alloc_send_skb(sk, size, msg->msg_flags & MSG_DONTWAIT, &err);
+	if (skb == NULL)
+		goto err1;
+
+	/* Reserve space for preamble */
+	skb_reset_mac_header(skb);
+	skb_reserve(skb, DECT_PREAMBLE_SIZE);
+
+	err = memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len);
+	if (err < 0)
+		goto err2;
+
+	DECT_TRX_CB(skb)->mfn   = aux->mfn;
+	DECT_TRX_CB(skb)->frame = aux->frame;
+	DECT_TRX_CB(skb)->slot  = aux->slot;
+
+	skb_queue_tail(&cell->raw_tx_queue, skb);
+	return len;
+
+err2:
+	kfree_skb(skb);
+err1:
+	return err;
+}
+
 static const struct proto_ops dect_raw_ops = {
 	.family		= PF_DECT,
 	.owner		= THIS_MODULE,
@@ -168,7 +238,7 @@ static const struct proto_ops dect_raw_ops = {
 	.shutdown	= sock_no_shutdown,
 	.setsockopt	= sock_no_setsockopt,
 	.getsockopt	= sock_no_getsockopt,
-	.sendmsg	= sock_no_sendmsg,
+	.sendmsg	= dect_raw_sendmsg,
 	.recvmsg	= dect_raw_recvmsg,
 	.mmap		= sock_no_mmap,
 	.sendpage	= sock_no_sendpage,

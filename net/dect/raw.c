@@ -56,20 +56,16 @@ static void __dect_raw_rcv(struct sk_buff *skb)
 	}
 }
 
-static int dect_raw_release(struct socket *sock)
+static void dect_raw_close(struct sock *sk, long timeout)
 {
-	struct sock *sk = sock->sk;
-
 	if (!hlist_unhashed(&sk->sk_bind_node))
 		__sk_del_bind_node(sk);
 	sock_put(sk);
-	return 0;
 }
 
-static int dect_raw_bind(struct socket *sock, struct sockaddr *uaddr, int len)
+static int dect_raw_bind(struct sock *sk, struct sockaddr *uaddr, int len)
 {
 	struct sockaddr_dect *addr = (struct sockaddr_dect *)uaddr;
-	struct sock *sk = sock->sk;
 
 	if (len < sizeof(*addr) || addr->dect_family != AF_DECT)
 		return -EINVAL;
@@ -87,11 +83,10 @@ static int dect_raw_bind(struct socket *sock, struct sockaddr *uaddr, int len)
 	return 0;
 }
 
-static int dect_raw_getname(struct socket *sock, struct sockaddr *uaddr,
-			    int *len, int peer)
+static int dect_raw_getname(struct sock *sk, struct sockaddr *uaddr, int *len,
+			    int peer)
 {
 	struct sockaddr_dect *addr = (struct sockaddr_dect *)uaddr;
-	struct sock *sk = sock->sk;
 
 	if (peer)
 		return -EOPNOTSUPP;
@@ -102,21 +97,19 @@ static int dect_raw_getname(struct socket *sock, struct sockaddr *uaddr,
 	return 0;
 }
 
-static int dect_raw_recvmsg(struct kiocb *iocb, struct socket *sock,
-			    struct msghdr *msg, size_t len, int flags)
+static int dect_raw_recvmsg(struct kiocb *iocb, struct sock *sk,
+			    struct msghdr *msg, size_t len,
+			    int noblock, int flags, int *addrlen)
 {
 	struct sockaddr_dect *addr;
 	struct dect_raw_auxdata aux;
-	struct sock *sk = sock->sk;
 	struct sk_buff *skb;
-	int noblock = flags & MSG_DONTWAIT;
 	size_t copied = 0;
 	int err;
 
 	if (flags & MSG_OOB)
 		return -EOPNOTSUPP;
 
-	noblock = flags & MSG_DONTWAIT;
 	skb = skb_recv_datagram(sk, flags, noblock, &err);
 	if (skb == NULL)
 		goto out;
@@ -154,12 +147,11 @@ out:
 	return err ? : copied;
 }
 
-static int dect_raw_sendmsg(struct kiocb *iocb, struct socket *sock,
+static int dect_raw_sendmsg(struct kiocb *iocb, struct sock *sk,
 			    struct msghdr *msg, size_t len)
 {
 	struct sockaddr_dect *addr = msg->msg_name;
 	struct dect_raw_auxdata *aux = NULL;
-	struct sock *sk = sock->sk;
 	struct dect_cell *cell;
 	struct sk_buff *skb;
 	struct cmsghdr *cmsg;
@@ -224,34 +216,19 @@ err1:
 	return err;
 }
 
-static const struct proto_ops dect_raw_ops = {
-	.family		= PF_DECT,
-	.owner		= THIS_MODULE,
-	.release	= dect_raw_release,
-	.bind		= dect_raw_bind,
-	.connect	= sock_no_connect,
-	.socketpair	= sock_no_socketpair,
-	.getname	= dect_raw_getname,
-	.poll		= datagram_poll,
-	.ioctl		= sock_no_ioctl,
-	.listen		= sock_no_listen,
-	.shutdown	= sock_no_shutdown,
-	.setsockopt	= sock_no_setsockopt,
-	.getsockopt	= sock_no_getsockopt,
-	.sendmsg	= dect_raw_sendmsg,
-	.recvmsg	= dect_raw_recvmsg,
-	.mmap		= sock_no_mmap,
-	.sendpage	= sock_no_sendpage,
-};
-
 static struct dect_proto dect_raw_proto = {
 	.type		= SOCK_RAW,
 	.protocol	= DECT_RAW,
 	.capability	= CAP_NET_RAW,
-	.ops		= &dect_raw_ops,
+	.ops		= &dect_dgram_ops,
 	.proto.name	= "DECT_RAW",
 	.proto.owner	= THIS_MODULE,
 	.proto.obj_size	= sizeof(struct dect_raw_sk),
+	.proto.close	= dect_raw_close,
+	.proto.bind	= dect_raw_bind,
+	.proto.recvmsg	= dect_raw_recvmsg,
+	.proto.sendmsg	= dect_raw_sendmsg,
+	.getname	= dect_raw_getname,
 };
 
 static int __init dect_raw_init(void)

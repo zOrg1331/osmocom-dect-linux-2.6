@@ -356,6 +356,7 @@ const struct proto_ops dect_stream_ops = {
 	.mmap		= sock_no_mmap,
 	.sendpage	= sock_no_sendpage,
 };
+EXPORT_SYMBOL_GPL(dect_stream_ops);
 
 const struct proto_ops dect_dgram_ops = {
 	.family		= PF_DECT,
@@ -377,6 +378,7 @@ const struct proto_ops dect_dgram_ops = {
 	.mmap		= sock_no_mmap,
 	.sendpage	= sock_no_sendpage,
 };
+EXPORT_SYMBOL_GPL(dect_dgram_ops);
 
 static struct net_proto_family dect_family_ops = {
 	.family		= PF_DECT,

@@ -17,6 +17,7 @@
 #include <net/sock.h>
 #include <net/dect/dect.h>
 
+static DEFINE_SPINLOCK(dect_bsap_lock);
 static HLIST_HEAD(dect_bsap_sockets);
 
 struct dect_bsap {
@@ -34,6 +35,7 @@ void dect_bsap_rcv(const struct dect_cluster *cl, struct sk_buff *skb)
 	struct sk_buff *skb2;
 	struct sock *sk;
 
+	spin_lock(&dect_bsap_lock);
 	sk_for_each(sk, node, &dect_bsap_sockets) {
 		if (sk->sk_bound_dev_if &&
 		    sk->sk_bound_dev_if != cl->index)
@@ -46,11 +48,15 @@ void dect_bsap_rcv(const struct dect_cluster *cl, struct sk_buff *skb)
 		} else if (dect_sock_queue_rcv_skb(sk, skb2) < 0)
 			kfree_skb(skb2);
 	}
+	spin_unlock(&dect_bsap_lock);
 }
 
 static void dect_bsap_close(struct sock *sk, long timeout)
 {
+	spin_lock_bh(&dect_bsap_lock);
 	sk_del_node_init(sk);
+	spin_unlock_bh(&dect_bsap_lock);
+
 	sock_put(sk);
 }
 
@@ -72,7 +78,11 @@ static int dect_bsap_bind(struct sock *sk, struct sockaddr *uaddr, int len)
 		goto out;
 
 	sk->sk_bound_dev_if = addr->dect_index;
+
+	spin_lock_bh(&dect_bsap_lock);
 	sk_add_node(sk, &dect_bsap_sockets);
+	spin_unlock_bh(&dect_bsap_lock);
+
 	err = 0;
 out:
 	release_sock(sk);

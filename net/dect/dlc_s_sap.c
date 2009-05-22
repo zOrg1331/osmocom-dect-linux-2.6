@@ -112,10 +112,8 @@ static void dect_ssap_close(struct sock *sk, long timeout)
 	dect_ssap_unlink(sk);
 	spin_unlock_bh(&dect_ssap_lock);
 
-	if (ssap->lapc != NULL) {
-		sock_put(ssap->lapc->sk);
-		dect_lapc_release(ssap->lapc);
-	}
+	if (sk->sk_state != DECT_SK_RELEASED && ssap->lapc != NULL)
+		dect_lapc_release(ssap->lapc, false);
 
 	if (!hlist_unhashed(&sk->sk_bind_node))
 		__sk_del_bind_node(sk);
@@ -125,8 +123,7 @@ static void dect_ssap_close(struct sock *sk, long timeout)
 		dect_ssap_unlink(req);
 		spin_unlock_bh(&dect_ssap_lock);
 
-		dect_lapc_release(dect_ssap(req)->lapc);
-		sock_put(req);
+		dect_lapc_release(dect_ssap(req)->lapc, false);
 	}
 
 	sk_common_release(sk);
@@ -230,11 +227,9 @@ struct dect_lapc *dect_ssap_rcv_request(struct dect_lc *lc,
 	newsk->sk_protocol = sk->sk_protocol;
 	newsk->sk_destruct = sk->sk_destruct;
 
-	lapc = dect_lapc_init(dli, sapi, lc, GFP_ATOMIC);
+	lapc = dect_lapc_init(newsk, dli, sapi, lc, GFP_ATOMIC);
 	if (lapc == NULL)
 		goto err1;
-	sock_hold(newsk);
-	lapc->sk = newsk;
 
 	newssap = dect_ssap(newsk);
 	memcpy(&newssap->dlei.mci, &dli->mci, sizeof(newssap->dlei.mci));
@@ -398,12 +393,10 @@ static int dect_ssap_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 	memcpy(&dli.mci, &dlei.mci, sizeof(dli.mci));
 	dli.lln = dlei.lln;
 
-	lapc = dect_lapc_init(&dli, dlei.sapi, lc, GFP_KERNEL);
+	lapc = dect_lapc_init(sk, &dli, dlei.sapi, lc, GFP_KERNEL);
 	if (lapc == NULL)
 		goto err3;
 	ssap->lapc = lapc;
-	sock_hold(sk);
-	lapc->sk = sk;
 
 	lc->lapcs[dlei.lln] = lapc;
 
@@ -435,6 +428,17 @@ static int dect_ssap_getname(struct sock *sk, struct sockaddr *uaddr, int *len,
 	dect_build_dlei(addr, &ssap->dlei);
 	*len = sizeof(*addr);
 	return 0;
+}
+
+static void dect_ssap_shutdown(struct sock *sk, int how)
+{
+	struct dect_ssap *ssap = dect_ssap(sk);
+
+	if (!(how & SEND_SHUTDOWN))
+		return;
+
+	if (sk->sk_state == DECT_SK_ESTABLISHED)
+		dect_lapc_release(ssap->lapc, true);
 }
 
 static int dect_ssap_recvmsg(struct kiocb *iocb, struct sock *sk,
@@ -555,6 +559,7 @@ static struct dect_proto dect_ssap_proto __read_mostly = {
 	.proto.unhash	= dect_ssap_unhash,
 	.proto.accept	= dect_ssap_accept,
 	.proto.connect	= dect_ssap_connect,
+	.proto.shutdown	= dect_ssap_shutdown,
 	.proto.recvmsg	= dect_ssap_recvmsg,
 	.proto.sendmsg	= dect_ssap_sendmsg,
 	.getname	= dect_ssap_getname,

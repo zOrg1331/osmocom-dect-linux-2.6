@@ -78,8 +78,18 @@ static void dect_lapc_error_report(struct dect_lapc *lapc, int err)
 {
 	struct sock *sk = lapc->sk;
 
+	lapc_debug(lapc, "socket error: %d\n", err);
 	sk->sk_err = err;
 	sk->sk_error_report(sk);
+}
+
+static void dect_lapc_state_change(struct dect_lapc *lapc, int state)
+{
+	struct sock *sk = lapc->sk;
+
+	lapc_debug(lapc, "socket state change: %d\n", state);
+	sk->sk_state = state;
+	sk->sk_state_change(sk);
 }
 
 /**
@@ -106,14 +116,21 @@ static void dect_lapc_timeout(unsigned long data)
 		dect_lapc_error_report(lapc, ETIMEDOUT);
 }
 
-void dect_lapc_release(struct dect_lapc *lapc)
+static bool dect_lapc_done(const struct dect_lapc *lapc)
 {
-	lapc_debug(lapc, "release\n");
+	return skb_queue_empty(&lapc->sk->sk_write_queue) &&
+	       skb_queue_empty(&lapc->retransmit_queue);
+}
+
+static void dect_lapc_destroy(struct dect_lapc *lapc)
+{
+	lapc_debug(lapc, "destroy\n");
 
 	if (lapc->lc->lapcs[lapc->dli.lln] != NULL)
 		lapc->lc->lapcs[lapc->dli.lln] = NULL;
 	del_timer_sync(&lapc->timer);
 	skb_queue_purge(&lapc->retransmit_queue);
+	sock_put(lapc->sk);
 	kfree(lapc);
 }
 
@@ -128,15 +145,18 @@ static void dect_lapc_reset(struct dect_lapc *lapc)
 /**
  * dect_lapc_init - initialize a new LAPC entity
  */
-struct dect_lapc *dect_lapc_init(const struct dect_dli *dli,
-				 enum dect_sapis sapi,
-				 struct dect_lc *lc, gfp_t gfp)
+struct dect_lapc *dect_lapc_init(struct sock *sk, const struct dect_dli *dli,
+				 enum dect_sapis sapi, struct dect_lc *lc,
+				 gfp_t gfp)
 {
 	struct dect_lapc *lapc;
 
 	lapc = kzalloc(sizeof(*lapc), gfp);
 	if (lapc == NULL)
 		return NULL;
+
+	lapc->sk = sk;
+	sock_hold(sk);
 
 	memcpy(&lapc->dli, dli, sizeof(lapc->dli));
 	lapc->sapi = sapi;
@@ -332,6 +352,14 @@ static bool dect_lapc_update_ack(struct dect_lapc *lapc, u8 seq)
 		kfree_skb(skb_dequeue(&lapc->retransmit_queue));
 		v_a = lapc_seq_add(lapc, v_a, 1);
 	}
+
+	if (lapc->sk->sk_state == DECT_SK_RELEASE_PENDING &&
+	    dect_lapc_done(lapc)) {
+		dect_lapc_state_change(lapc, DECT_SK_RELEASED);
+		dect_lapc_destroy(lapc);
+		return false;
+	}
+
 	return true;
 }
 
@@ -417,9 +445,7 @@ static void dect_lapc_rcv_sframe(struct dect_lapc *lapc, struct sk_buff *skb)
 			lapc_debug(lapc, "established\n");
 			lapc->lc->elapc = NULL;
 			del_timer_sync(&lapc->timer);
-
-			lapc->sk->sk_state = DECT_SK_ESTABLISHED;
-			lapc->sk->sk_state_change(lapc->sk);
+			dect_lapc_state_change(lapc, DECT_SK_ESTABLISHED);
 		}
 
 		dect_lapc_send_iframe(lapc, pf);
@@ -533,6 +559,19 @@ int dect_lapc_establish(struct dect_lapc *lapc)
 
 	mod_timer(&lapc->timer, jiffies + DECT_LAPC_CLASS_A_ESTABLISH_TIMEOUT);
 	return 0;
+}
+
+/*
+ * Initiate link release.
+ */
+void dect_lapc_release(struct dect_lapc *lapc, bool normal)
+{
+	lapc_debug(lapc, "release normal: %u\n", normal);
+	if (dect_lapc_done(lapc) || !normal) {
+		lapc->sk->sk_state = DECT_SK_RELEASED;
+		dect_lapc_destroy(lapc);
+	} else
+		dect_lapc_state_change(lapc, DECT_SK_RELEASE_PENDING);
 }
 
 /*

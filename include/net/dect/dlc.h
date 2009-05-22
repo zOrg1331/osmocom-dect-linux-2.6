@@ -261,10 +261,10 @@ struct dect_lapc {
 #define DECT_LAPC_CONNECTION_HANDOVER_TIMEOUT	(10 * HZ)
 #define DECT_LAPC_CONNECTION_HANDOVER_INTERVAL	(4 * HZ)
 
-extern struct dect_lapc *dect_lapc_init(const struct dect_dli *dli,
-					enum dect_sapis sapi,
-					struct dect_lc *lc, gfp_t gfp);
-extern void dect_lapc_release(struct dect_lapc *lapc);
+extern struct dect_lapc *dect_lapc_init(struct sock *sk, const struct dect_dli *dli,
+					enum dect_sapis sapi, struct dect_lc *lc,
+					gfp_t gfp);
+extern void dect_lapc_release(struct dect_lapc *lapc, bool normal);
 
 extern int dect_lapc_transmit(struct dect_lapc *lapc);
 extern int dect_lapc_establish(struct dect_lapc *lapc);

@@ -190,7 +190,8 @@ static int dect_shutdown(struct socket *sock, int how)
 			break;
 	default:
 		sk->sk_shutdown |= how;
-		sk->sk_prot->shutdown(sk, how);
+		if (sk->sk_prot->shutdown != NULL)
+			sk->sk_prot->shutdown(sk, how);
 	}
 
 	/* wake up processes sleeping in poll() */

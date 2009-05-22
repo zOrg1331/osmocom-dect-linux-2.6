@@ -90,8 +90,7 @@ struct dect_mbc {
 extern u32 dect_mbc_alloc_mcei(struct dect_cluster *cl);
 extern int dect_mbc_con_request(struct dect_cluster *cl,
 				const struct dect_mbc_id *id);
-extern void dect_mbc_dis_request(struct dect_cluster *cl,
-				 const struct dect_mbc_id *id);
+extern void dect_mbc_dis_request(struct dect_cluster *cl, u32 mcei);
 
 extern void dect_bmc_mac_page_request(struct dect_cluster *cl,
 				      struct sk_buff *skb, bool expedited);

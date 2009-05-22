@@ -410,7 +410,7 @@ static int dect_ssap_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 err3:
 err2:
 	if (new_mc)
-		dect_dlc_mac_conn_release(mc);
+		dect_dlc_mac_conn_destroy(mc);
 err1:
 	return err;
 }

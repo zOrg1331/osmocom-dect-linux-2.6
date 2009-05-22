@@ -391,6 +391,7 @@ struct dect_mac_conn {
 	enum dect_mac_conn_states	state;
 	enum dect_mac_service_types	service;
 
+	u8				use;
 	struct dect_lc			*lc;
 	struct dect_fbx			*fbx;
 };
@@ -398,14 +399,16 @@ struct dect_mac_conn {
 extern struct dect_mac_conn *dect_mac_conn_init(struct dect_cluster *cl,
 						const struct dect_mci *mci,
 						const struct dect_mbc_id *id);
+extern void dect_dlc_mac_conn_destroy(struct dect_mac_conn *mc);
 extern struct dect_mac_conn *dect_mac_conn_get_by_mci(const struct dect_cluster *cl,
 						      const struct dect_mci *mci);
+
+extern void dect_dlc_mac_conn_bind(struct dect_mac_conn *mc);
+extern void dect_dlc_mac_conn_unbind(struct dect_mac_conn *mc);
 extern int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc);
-extern void dect_dlc_mac_conn_release(struct dect_mac_conn *mc);
 
 extern int dect_dlc_mac_conn_confirm(struct dect_cluster *cl, u32 mcei,
 				     enum dect_mac_service_types service);
-
 extern int dect_dlc_mac_conn_indicate(struct dect_cluster *cl,
 				      const struct dect_mbc_id *id);
 
@@ -414,6 +417,9 @@ extern int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
 				     enum dect_release_reasons reason);
 
 extern void dect_cplane_notify_state_change(struct dect_mac_conn *mc);
+extern void dect_cplane_mac_dis_indicate(const struct dect_mac_conn *mc,
+					 enum dect_release_reasons reason);
+
 extern void dect_cplane_rcv(struct dect_mac_conn *mc,
 			    enum dect_data_channels chan,
 			    struct sk_buff *skb);

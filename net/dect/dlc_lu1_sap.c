@@ -92,6 +92,7 @@ static void dect_lu1_close(struct sock *sk, long timeout)
 
 	if (sk->sk_state == DECT_SK_ESTABLISHED) {
 		lu1->mc->fbx = NULL;
+		dect_dlc_mac_conn_unbind(lu1->mc);
 		sock_prot_inuse_add(sock_net(sk), sk->sk_prot, -1);
 	}
 
@@ -151,6 +152,7 @@ static int dect_lu1_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 	lu1->lux.ops = &dect_lu1_ops;
 	lu1->mc = mc;
 	mc->fbx = &lu1->lux.fbx;
+	dect_dlc_mac_conn_bind(lu1->mc);
 	printk("LU1: bound to MCEI %u\n", mc->mcei);
 	return 0;
 

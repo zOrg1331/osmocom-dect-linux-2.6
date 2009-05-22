@@ -594,6 +594,8 @@ void dect_lapc_release(struct dect_lapc *lapc, bool normal)
 
 void dect_lc_destroy(struct dect_lc *lc)
 {
+	lc_debug(lc, "destroy\n");
+	dect_dlc_mac_conn_unbind(lc->mc);
 	kfree_skb(lc->rx_head);
 	kfree_skb(lc->tx_head);
 	__skb_queue_purge(&lc->txq);
@@ -610,7 +612,6 @@ static void dect_lc_unbind(struct dect_lc *lc, struct dect_lapc *lapc)
 	if (--lc->use > 0)
 		return;
 
-	lc->mc->lc = NULL;
 	dect_lc_destroy(lc);
 }
 
@@ -629,9 +630,11 @@ struct dect_lc *dect_lc_init(struct dect_mac_conn *mc, gfp_t gfp)
 	lc = kzalloc(sizeof(*lc), gfp);
 	if (lc == NULL)
 		return NULL;
-	lc->mc = mc;
-	lc_debug(lc, "init\n");
 
+	lc->mc = mc;
+	dect_dlc_mac_conn_bind(mc);
+
+	lc_debug(lc, "init\n");
 	skb_queue_head_init(&lc->txq);
 	switch (mc->mci.pmid.type) {
 	case DECT_PMID_ASSIGNED:
@@ -894,11 +897,40 @@ void dect_cplane_notify_state_change(struct dect_mac_conn *mc)
 		}
 		break;
 	case DECT_MAC_CONN_CLOSED:
-		for (i = 0; i < ARRAY_SIZE(lc->lapcs); i++) {
-			if (lc->lapcs[i] == NULL)
-				continue;
-			dect_lapc_error_report(lc->lapcs[i], ECONNRESET);
-		}
 		break;
+	}
+}
+
+void dect_cplane_mac_dis_indicate(const struct dect_mac_conn *mc,
+				  enum dect_release_reasons reason)
+{
+	struct dect_lc *lc = mc->lc;
+	unsigned int i;
+	int err;
+
+	if (lc == NULL)
+		return;
+
+	switch (reason) {
+	case DECT_REASON_BEARER_RELEASE:
+		err = 0;
+		break;
+	case DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED:
+		err = EHOSTUNREACH;
+		break;
+	case DECT_REASON_TIMEOUT_LOST_HANDSHAKE:
+		err = ETIMEDOUT;
+		break;
+	default:
+		err = -EIO;
+		break;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(lc->lapcs); i++) {
+		if (lc->lapcs[i] == NULL)
+			continue;
+		lc->lapcs[i]->sk->sk_state = DECT_SK_RELEASED;
+		dect_lapc_error_report(lc->lapcs[i], err);
+		dect_lapc_destroy(lc->lapcs[i]);
 	}
 }

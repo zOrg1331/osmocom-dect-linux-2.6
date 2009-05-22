@@ -18,6 +18,10 @@
 #include <linux/dect.h>
 #include <net/dect/dect.h>
 
+#define mc_debug(mc, fmt, args...) \
+	pr_debug("MC (MCEI %u state %u): " fmt, \
+		 (mc)->mcei, (mc)->state, ## args)
+
 static struct dect_mac_conn *
 dect_mac_conn_get_by_mcei(const struct dect_cluster *cl, u32 mcei)
 {
@@ -44,6 +48,30 @@ dect_mac_conn_get_by_mci(const struct dect_cluster *cl, const struct dect_mci *m
 	return NULL;
 }
 
+void dect_dlc_mac_conn_destroy(struct dect_mac_conn *mc)
+{
+	mc_debug(mc, "destroy\n");
+	list_del(&mc->list);
+	kfree(mc);
+}
+
+void dect_dlc_mac_conn_bind(struct dect_mac_conn *mc)
+{
+	mc_debug(mc, "bind use %u\n", mc->use);
+	mc->use++;
+}
+
+void dect_dlc_mac_conn_unbind(struct dect_mac_conn *mc)
+{
+	mc_debug(mc, "unbind use %u\n", mc->use);
+	if (--mc->use)
+		return;
+
+	if (mc->state == DECT_MAC_CONN_OPEN)
+		dect_mbc_dis_request(mc->cl, mc->mcei);
+	dect_dlc_mac_conn_destroy(mc);
+}
+
 struct dect_mac_conn *dect_mac_conn_init(struct dect_cluster *cl,
 					 const struct dect_mci *mci,
 					 const struct dect_mbc_id *id)
@@ -58,20 +86,16 @@ struct dect_mac_conn *dect_mac_conn_init(struct dect_cluster *cl,
 	mc->mcei  = id != NULL ? id->mcei : dect_mbc_alloc_mcei(cl);
 	memcpy(&mc->mci, mci, sizeof(mc->mci));
 	mc->state = DECT_MAC_CONN_CLOSED;
+	mc_debug(mc, "init\n");
 
 	list_add_tail(&mc->list, &cl->mac_connections);
 	return mc;
 }
 
-void dect_dlc_mac_conn_release(struct dect_mac_conn *mc)
-{
-	list_del(&mc->list);
-	kfree(mc);
-}
-
 static void dect_mac_conn_state_change(struct dect_mac_conn *mc,
 				       enum dect_mac_conn_states state)
 {
+	mc_debug(mc, "state change %u->%u\n", mc->state, state);
 	mc->state = state;
 	dect_cplane_notify_state_change(mc);
 }
@@ -137,7 +161,7 @@ int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
 		return -ENOENT;
 
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_CLOSED);
-	dect_dlc_mac_conn_release(mc);
+	dect_cplane_mac_dis_indicate(mc, reason);
 	return 0;
 }
 
@@ -151,7 +175,7 @@ void dect_dlc_mac_co_data_indicate(struct dect_cluster *cl, u32 mcei,
 	if (WARN_ON(mc == NULL))
 		goto err;
 
-	pr_debug("dlc: data mcei %u mc %p chan %u len %u\n", mcei, mc, chan, skb->len);
+	mc_debug(mc, "data chan %u len %u\n", chan, skb->len);
 	switch (chan) {
 	case DECT_MC_C_S:
 	case DECT_MC_C_F:
@@ -178,7 +202,7 @@ struct sk_buff *dect_dlc_mac_co_dtr_indicate(struct dect_cluster *cl, u32 mcei,
 		return NULL;
 	}
 
-	pr_debug("dlc: dtr mcei %u mc %p chan %u\n", mcei, mc, chan);
+	mc_debug(mc, "dtr chan %u\n", chan);
 	switch (chan) {
 	case DECT_MC_C_S:
 	case DECT_MC_C_F:

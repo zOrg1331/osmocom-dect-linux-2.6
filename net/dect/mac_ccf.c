@@ -208,11 +208,11 @@ err1:
 	return err;
 }
 
-void dect_mbc_dis_request(struct dect_cluster *cl, const struct dect_mbc_id *id)
+void dect_mbc_dis_request(struct dect_cluster *cl, u32 mcei)
 {
 	struct dect_mbc *mbc;
 
-	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
+	mbc = dect_mbc_get_by_mcei(cl, mcei);
 	if (mbc == NULL)
 		return;
 	mbc_debug(mbc, "disconnect\n");

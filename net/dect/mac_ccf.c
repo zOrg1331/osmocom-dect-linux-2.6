@@ -131,6 +131,7 @@ static void dect_mbc_timeout(unsigned long data)
 
 static void dect_mbc_release(struct dect_mbc *mbc)
 {
+	mbc_debug(mbc, "release\n");
 	del_timer_sync(&mbc->timer);
 	list_del(&mbc->list);
 	kfree_skb(mbc->cs_tx_skb);
@@ -269,9 +270,11 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 			return 0;
 		case DECT_MBC_INITIATED:
 			if (++mbc->setup_cnt > DECT_MBC_SETUP_MAX_ATTEMPTS ||
-			    dect_mbc_setup_tbc(mbc) < 0)
-				return dect_dlc_mac_dis_indicate(cl, id->mcei,
+			    dect_mbc_setup_tbc(mbc) < 0) {
+				dect_dlc_mac_dis_indicate(cl, id->mcei,
 					       DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED);
+				dect_mbc_release(mbc);
+			}
 			return 0;
 		default:
 			return WARN_ON(-1);
@@ -308,6 +311,7 @@ static void dect_mbc_dis_indicate(const struct dect_cluster_handle *clh,
 		return;
 	mbc_debug(mbc, "disconnect reason: %u\n", reason);
 	dect_dlc_mac_dis_indicate(cl, id->mcei, reason);
+	dect_mbc_release(mbc);
 }
 
 static void dect_mbc_data_indicate(const struct dect_cluster_handle *clh,

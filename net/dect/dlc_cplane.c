@@ -36,6 +36,8 @@ static void dect_fa_parse_len(struct dect_fa_len *len, const struct sk_buff *skb
  * LAPC entity
  */
 
+static void dect_lc_unbind(struct dect_lc *lc, struct dect_lapc *lapc);
+
 #define lapc_debug(lapc, fmt, args...) \
 	pr_debug("LAPC (MCEI: %u LLN: %u): " fmt, \
 		 (lapc)->lc->mc->mcei, (lapc)->dli.lln, ## args)
@@ -126,10 +128,9 @@ static void dect_lapc_destroy(struct dect_lapc *lapc)
 {
 	lapc_debug(lapc, "destroy\n");
 
-	if (lapc->lc->lapcs[lapc->dli.lln] != NULL)
-		lapc->lc->lapcs[lapc->dli.lln] = NULL;
 	del_timer_sync(&lapc->timer);
 	skb_queue_purge(&lapc->retransmit_queue);
+	dect_lc_unbind(lapc->lc, lapc);
 	sock_put(lapc->sk);
 	kfree(lapc);
 }
@@ -591,12 +592,34 @@ void dect_lapc_release(struct dect_lapc *lapc, bool normal)
 #define lc_debug(lc, fmt, args...) \
 	pr_debug("Lc (MCEI %x): " fmt, (lc)->mc->mcei, ## args)
 
-void dect_lc_release(struct dect_lc *lc)
+void dect_lc_destroy(struct dect_lc *lc)
 {
 	kfree_skb(lc->rx_head);
 	kfree_skb(lc->tx_head);
 	__skb_queue_purge(&lc->txq);
 	kfree(lc);
+}
+
+static void dect_lc_unbind(struct dect_lc *lc, struct dect_lapc *lapc)
+{
+	lc_debug(lc, "unbind LLN: %u use: %u\n", lapc->dli.lln, lc->use);
+	if (WARN_ON(lc->lapcs[lapc->dli.lln] == NULL))
+		return;
+
+	lc->lapcs[lapc->dli.lln] = NULL;
+	if (--lc->use > 0)
+		return;
+
+	lc->mc->lc = NULL;
+	dect_lc_destroy(lc);
+}
+
+void dect_lc_bind(struct dect_lc *lc, struct dect_lapc *lapc)
+{
+	lc_debug(lc, "bind LLN: %u use: %u\n", lapc->dli.lln, lc->use);
+
+	lc->lapcs[lapc->dli.lln] = lapc;
+	lc->use++;
 }
 
 struct dect_lc *dect_lc_init(struct dect_mac_conn *mc, gfp_t gfp)
@@ -812,7 +835,7 @@ static void dect_lc_rcv(struct dect_lc *lc, enum dect_data_channels chan,
 	lapc = dect_ssap_rcv_request(lc, &dli, sapi);
 	if (lapc == NULL)
 		goto err;
-	lc->lapcs[dli.lln] = lapc;
+	dect_lc_bind(lc, lapc);
 
 	return dect_lapc_rcv(lapc, skb);
 

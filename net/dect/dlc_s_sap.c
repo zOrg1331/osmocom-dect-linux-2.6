@@ -398,7 +398,7 @@ static int dect_ssap_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 		goto err3;
 	ssap->lapc = lapc;
 
-	lc->lapcs[dlei.lln] = lapc;
+	dect_lc_bind(lc, lapc);
 
 	if (new_mc)
 		err = dect_dlc_mac_conn_establish(mc);

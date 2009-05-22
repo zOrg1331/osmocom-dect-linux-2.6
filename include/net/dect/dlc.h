@@ -282,6 +282,7 @@ extern struct dect_lapc *dect_ssap_rcv_request(struct dect_lc *lc,
  * @txq:	transmit queue
  * @tx_head:	current TX LAPC frame
  * @tx_len:	TX target fragment length
+ * @use:	usage count
  * @lapcs:	LAPC entities associated with the Lc
  * @e_lapc:	LAPC performing establishment procedures
  *
@@ -299,6 +300,7 @@ struct dect_lc {
 	struct sk_buff		*tx_head;
 	u8			tx_len;
 
+	u8			use;
 	struct dect_lapc	*lapcs[DECT_LLN_MAX + 1];
 	struct dect_lapc	*elapc;
 };
@@ -306,6 +308,7 @@ struct dect_lc {
 #define DECT_LC_LSIG_MASK	0xffff
 
 extern struct dect_lc *dect_lc_init(struct dect_mac_conn *mc, gfp_t gfp);
+extern void dect_lc_bind(struct dect_lc *lc, struct dect_lapc *lapc);
 
 /**
  * struct dect_lb - DECT Lb entity (C-plane broadcast service)

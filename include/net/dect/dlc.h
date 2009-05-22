@@ -196,19 +196,21 @@ enum dect_lapc_states {
 /**
  * struct dect_lapc - DECT LAPC entity
  *
- * @lc:		Associated Lc entity
- * @dli:	Data Link Identifier
- * @sapi:	Service Access Point Identifier
- * @cmd:	CR bit setting for commands (PT: 1, FT: 0)
- * @nlf:	New link flag
- * @v_s:	Send state Variable V(S): sequence number of next I-frame
- * @v_a:	Acknowledge state Variable V(A): last I-frame that has been acknowledged
- * @v_r:	Receive state Variable V(R): next expected sequence number
- * @peer_busy:	Peer is in receiver busy condition
- * @window:	maximum number of oustanding unacknowledged I-frames
- * @mod:	modulus for sequence number calculations
- * @timer:	Retransmission timer (DL.04)
- * @rcnt:	Retransmission counter
+ * @lc:			Associated Lc entity
+ * @dli:		Data Link Identifier
+ * @sapi:		Service Access Point Identifier
+ * @cmd:		CR bit setting for commands (PT: 1, FT: 0)
+ * @nlf:		New link flag
+ * @v_s:		Send state Variable V(S): sequence number of next I-frame
+ * @v_a:		Acknowledge state Variable V(A): last I-frame that has been acknowledged
+ * @v_r:		Receive state Variable V(R): next expected sequence number
+ * busy:		LAPC is in receiver busy condition
+ * @peer_busy:		Peer is in receiver busy condition
+ * @window:		maximum number of oustanding unacknowledged I-frames
+ * @mod:		modulus for sequence number calculations
+ * @retransmit_cnt:	Retransmission counter
+ * @retransmit_queue:	Retransmission queue
+ * @timer:		Retransmission timer (DL.04)
  */
 struct dect_lapc {
 	struct sock		*sk;
@@ -223,16 +225,17 @@ struct dect_lapc {
 	u8			v_s;
 	u8			v_a;
 	u8			v_r;
-	struct sk_buff_head	retransq;
 
 	bool			busy;
 	bool			peer_busy;
 
 	u8			window;
 	u8			mod;
-	u8			rcnt;
 
+	u8			retransmit_cnt;
+	struct sk_buff_head	retransmit_queue;
 	struct timer_list	timer;
+
 	struct sk_buff		*rcv_head;
 };
 
@@ -246,7 +249,7 @@ struct dect_lapc {
 #define DECT_LAPC_CLASS_B_MOD			8
 
 /* maximum number of retransmissions */
-#define DECT_LAPC_RETRANS_MAX			3
+#define DECT_LAPC_RETRANSMIT_MAX		3
 
 /* various timer parameters specified in Annex A */
 #define DECT_LAPC_CLASS_A_ESTABLISH_TIMEOUT	(2 * HZ)

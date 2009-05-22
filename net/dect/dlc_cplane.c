@@ -60,7 +60,7 @@ static inline bool dect_fa_seq_after(const struct dect_lapc *lapc, u8 s1, u8 s2)
 
 static void dect_lapc_transmit_skb(struct dect_lapc *lapc)
 {
-	struct sk_buff *skb = skb_peek(&lapc->retransq);
+	struct sk_buff *skb = skb_peek(&lapc->retransmit_queue);
 	struct dect_fa_hdr *fh;
 
 	skb = skb_clone(skb, GFP_ATOMIC);
@@ -98,8 +98,8 @@ static void dect_lapc_timeout(unsigned long data)
 {
 	struct dect_lapc *lapc = (struct dect_lapc *)data;
 
-	lapc_debug(lapc, "retransmission timer: cnt: %u\n", lapc->rcnt);
-	if (lapc->rcnt++ < DECT_LAPC_RETRANS_MAX) {
+	lapc_debug(lapc, "retransmission timer: cnt: %u\n", lapc->retransmit_cnt);
+	if (lapc->retransmit_cnt++ < DECT_LAPC_RETRANSMIT_MAX) {
 		dect_lapc_transmit_skb(lapc);
 		mod_timer(&lapc->timer, jiffies + DECT_LAPC_CLASS_A_ESTABLISH_TIMEOUT);
 	} else
@@ -113,7 +113,7 @@ void dect_lapc_release(struct dect_lapc *lapc)
 	if (lapc->lc->lapcs[lapc->dli.lln] != NULL)
 		lapc->lc->lapcs[lapc->dli.lln] = NULL;
 	del_timer_sync(&lapc->timer);
-	skb_queue_purge(&lapc->retransq);
+	skb_queue_purge(&lapc->retransmit_queue);
 	kfree(lapc);
 }
 
@@ -141,7 +141,7 @@ struct dect_lapc *dect_lapc_init(const struct dect_dli *dli,
 	memcpy(&lapc->dli, dli, sizeof(lapc->dli));
 	lapc->sapi = sapi;
 	lapc->state = DECT_LAPC_ULI;
-	skb_queue_head_init(&lapc->retransq);
+	skb_queue_head_init(&lapc->retransmit_queue);
 
 	lapc->lc = lc;
 	setup_timer(&lapc->timer, dect_lapc_timeout, (unsigned long)lapc);
@@ -224,7 +224,7 @@ static bool dect_lapc_send_iframe(struct dect_lapc *lapc, bool pf)
 	fh->ctrl |= pf ? DECT_FA_CTRL_I_P_FLAG : 0;
 
 	/* Append to retransmission queue and (re)start retransmission timer */
-	skb_queue_tail(&lapc->retransq, skb);
+	skb_queue_tail(&lapc->retransmit_queue, skb);
 	if (!timer_pending(&lapc->timer))
 		mod_timer(&lapc->timer, jiffies + DECT_LAPC_RETRANSMISSION_TIMEOUT);
 
@@ -320,7 +320,7 @@ static bool dect_lapc_update_ack(struct dect_lapc *lapc, u8 seq)
 		lapc->v_a = seq;
 		if (lapc->v_a == lapc->v_s) {
 			del_timer_sync(&lapc->timer);
-			lapc->rcnt = 0;
+			lapc->retransmit_cnt = 0;
 		} else
 			mod_timer(&lapc->timer, jiffies + DECT_LAPC_RETRANSMISSION_TIMEOUT);
 	} else if (seq != lapc->v_a)
@@ -329,7 +329,7 @@ static bool dect_lapc_update_ack(struct dect_lapc *lapc, u8 seq)
 	/* Purge acknowledged frames from transmit queue */
 	while (v_a != lapc->v_a) {
 		lapc_debug(lapc, "purge retransmit queue seq: %u\n", v_a);
-		kfree_skb(skb_dequeue(&lapc->retransq));
+		kfree_skb(skb_dequeue(&lapc->retransmit_queue));
 		v_a = lapc_seq_add(lapc, v_a, 1);
 	}
 	return true;

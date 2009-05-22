@@ -225,15 +225,16 @@ struct dect_lapc *dect_ssap_rcv_request(struct dect_lc *lc,
 	if (newsk == NULL)
 		goto out;
 
+	sock_init_data(NULL, newsk);
+	newsk->sk_type     = sk->sk_type;
+	newsk->sk_protocol = sk->sk_protocol;
+	newsk->sk_destruct = sk->sk_destruct;
+
 	lapc = dect_lapc_init(dli, sapi, lc, GFP_ATOMIC);
 	if (lapc == NULL)
 		goto err1;
 	sock_hold(newsk);
 	lapc->sk = newsk;
-
-	sock_init_data(NULL, newsk);
-	newsk->sk_protocol = sk->sk_protocol;
-	newsk->sk_destruct = sk->sk_destruct;
 
 	newssap = dect_ssap(newsk);
 	memcpy(&newssap->dlei.mci, &dli->mci, sizeof(newssap->dlei.mci));

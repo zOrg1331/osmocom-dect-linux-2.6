@@ -479,7 +479,10 @@ static void dect_fp_init_si(struct dect_cluster *cl)
 		      DECT_HLC_CISS_SERVICE |
 		      DECT_HLC_CLMS_SERVICE |
 		      DECT_HLC_COMS_SERVICE |
-		      DECT_HLC_LOCATION_REGISTRATION;
+		      DECT_HLC_LOCATION_REGISTRATION |
+		      DECT_HLC_ACCESS_RIGHT_REQUESTS |
+		      DECT_HLC_STANDARD_AUTHENTICATION |
+		      DECT_HLC_STANDARD_CIPHERING;
 }
 
 void dect_cluster_init(struct dect_cluster *cl)

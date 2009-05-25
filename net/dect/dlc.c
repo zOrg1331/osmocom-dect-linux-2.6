@@ -161,7 +161,11 @@ int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
 		return -ENOENT;
 
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_CLOSED);
-	dect_cplane_mac_dis_indicate(mc, reason);
+	/* If nothing is using the connection, release immediately */
+	if (mc->use == 0)
+		dect_dlc_mac_conn_destroy(mc);
+	else
+		dect_cplane_mac_dis_indicate(mc, reason);
 	return 0;
 }
 

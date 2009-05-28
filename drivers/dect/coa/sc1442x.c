@@ -766,12 +766,12 @@ irqreturn_t sc1442x_interrupt(int irq, void *dev_id)
 	if (unlikely(hweight8(irq) != 1 && net_ratelimit()))
 		dev_info(dev->dev, "lost some interrupts\n");
 
+	if (irq & SC1442X_IRQ_SLOT_0_5)
+		sc1442x_toggle_led(dev);
+
 	for (i = 0; i < 4; i++) {
 		if (!(irq & (1 << i)))
 			continue;
-
-		if (irq & SC1442X_IRQ_SLOT_0_5)
-			sc1442x_toggle_led(dev);
 
 		event = dect_transceiver_event(trx, i % 2, i * 6);
 		if (event == NULL)

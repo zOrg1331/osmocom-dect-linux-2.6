@@ -3697,6 +3697,9 @@ void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 	}
 
 	dect_foreach_transceiver(trx, grp) {
+		if (trx->state != DECT_TRANSCEIVER_LOCKED)
+			continue;
+
 		switch ((int)trx->slots[slot].state) {
 		case DECT_SLOT_SCANNING:
 			dect_set_carrier(trx, slot, trx->irc->tx_scn);

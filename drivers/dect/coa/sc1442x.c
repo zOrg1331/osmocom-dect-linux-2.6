@@ -26,8 +26,15 @@
 #include "dip_opcodes.h"
 
 /*
- * The com-on-air devices contain a 2k data RAM and 512b code RAM. The address
- * space is layed out as follows:
+ * The sc1442x contain a 2k data RAM and 512b code RAM. The two primary
+ * methods for memory access are direct and indirect access. In indirect
+ * mode, the access goes through the DIP and the memory bank needs to be
+ * mapped by writting its number to the control register. In direct mode
+ * the memory can be accessed directly, the three modes differ only in
+ * the address space layout. The choice between direct and indirect mode
+ * is made by the device vendor.
+ *
+ * The address space is layed out as follows:
  *
  * PCI - size 8k:
  *
@@ -41,14 +48,22 @@
  * 0x0200 - 0x02ff:	DIP control and status registers
  *
  * Memory of the PCMCIA device is addressed in 16 bit little endian quantities.
- * To access data or code memory, the corresponding bank needs to be mapped
- * into the memory window.
  *
  * The first bank of the data memory contains DIP specific control data,
  * the remaining banks are used to store packet and slot configuration data.
  */
 
 #define SC1442X_DIPSTOPPED		0x80
+#define SC1442X_PRESCALER_ENABLED	0x40
+#define SC1442X_TIMER_INTERRUPT_ENABLED	0x02
+
+/* Memory access modes */
+#define SC1442X_LINEAR_MODE		0x01
+#define SC1442X_LINEAR_MODE_0		(SC14421_LINEAR_MODE | 0x0)
+#define SC1442X_LINEAR_MODE_1		(SC14421_LINEAR_MODE | 0x2)
+#define SC1442X_LINEAR_MODE_2		(SC14421_LINEAR_MODE | 0x3)
+
+/* Indirect mode RAM bank select */
 #define SC1442X_RAMBANK0		0x00
 #define SC1442X_RAMBANK1		0x04
 #define SC1442X_RAMBANK2		0x08
@@ -65,7 +80,21 @@
 #define SC1442X_IRQ_SLOT_6_11		0x02
 #define SC1442X_IRQ_SLOT_12_17		0x04
 #define SC1442X_IRQ_SLOT_18_23		0x08
+#define SC1442X_IRQ_TIMER		0x10
 #define SC1442X_IRQ_MASK		0x0f
+
+/* Interrupt status 1: DIP/CLK100/TIM1/TIM0/SPI/UART/P10/KEYB */
+#define SC14424_RESET_INT_PENDING_1	0x1f02
+
+/* DIP_INT and CLK100_INT priority level */
+#define SC14424_INT_PRIORITY_1		0x1f06
+
+/* P1 output control */
+#define SC14424_P1_SET_OUTPUT_DATA	0x1f21
+#define SC14424_P1_RESET_OUTPUT_DATA	0x1f22
+
+/* P1 input/output direction */
+#define SC14424_P1_DIR_REG		0x1f23
 
 /*
  * Burst Mode Controller control information
@@ -330,6 +359,18 @@ static void sc1442x_switch_to_bank(const struct coa_device *dev, u8 bank)
 	inb_p(dev->config_base);
 	inb_p(dev->config_base);
 	inb_p(dev->config_base);
+}
+
+static void sc1442x_toggle_led(struct coa_device *dev)
+{
+	if (dev->type != COA_TYPE_PCI)
+		return;
+
+	if ((dev->led & 0xf) > 0x7)
+		sc1442x_writeb(dev, SC14424_P1_SET_OUTPUT_DATA, 0x40);
+	else
+		sc1442x_writeb(dev, SC14424_P1_RESET_OUTPUT_DATA, 0x40);
+	dev->led++;
 }
 
 /*
@@ -603,7 +644,7 @@ static u8 sc1442x_clear_interrupt(const struct coa_device *dev)
 
 	/* Clear interrupt status before checking for any remaining events */
 	if (int2 && dev->type == COA_TYPE_PCI)
-		sc1442x_writeb(dev, 0x1f02, 0x80);
+		sc1442x_writeb(dev, SC14424_RESET_INT_PENDING_1, 0x80);
 
 	while (int1) {
 		cnt++;
@@ -728,6 +769,9 @@ irqreturn_t sc1442x_interrupt(int irq, void *dev_id)
 	for (i = 0; i < 4; i++) {
 		if (!(irq & (1 << i)))
 			continue;
+
+		if (irq & SC1442X_IRQ_SLOT_0_5)
+			sc1442x_toggle_led(dev);
 
 		event = dect_transceiver_event(trx, i % 2, i * 6);
 		if (event == NULL)
@@ -856,10 +900,13 @@ int sc1442x_init_device(struct coa_device *dev)
 	for (slot = 0; slot < DECT_FRAME_SIZE; slot += 2)
 		sc1442x_init_slot(dev, slot);
 
-	/* Enable interrupts */
-	if (dev->type == COA_TYPE_PCI)
-		sc1442x_writeb(dev, 0x1f06, 0x70);
+	if (dev->type == COA_TYPE_PCI) {
+		/* Enable DIP interrupt */
+		sc1442x_writeb(dev, SC14424_INT_PRIORITY_1, 0x70);
 
+		/* Enable SPI */
+		sc1442x_writeb(dev, SC14424_P1_DIR_REG, 0xd6);
+	}
 	return 0;
 }
 EXPORT_SYMBOL_GPL(sc1442x_init_device);
@@ -867,6 +914,11 @@ EXPORT_SYMBOL_GPL(sc1442x_init_device);
 void sc1442x_shutdown_device(struct coa_device *dev)
 {
 	sc1442x_stop_dip(dev);
+
+	if (dev->type == COA_TYPE_PCI) {
+		/* Reset LED */
+		sc1442x_writeb(dev, SC14424_P1_RESET_OUTPUT_DATA, 0x40);
+	}
 }
 EXPORT_SYMBOL_GPL(sc1442x_shutdown_device);
 

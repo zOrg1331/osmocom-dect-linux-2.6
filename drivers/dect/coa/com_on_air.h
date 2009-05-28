@@ -84,6 +84,7 @@ struct coa_device {
 	u16				data_mask;
 
 	u8				ctrl;
+	u8				led;
 };
 
 extern irqreturn_t sc1442x_interrupt(int irq, void *dev_id);

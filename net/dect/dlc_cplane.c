@@ -590,7 +590,7 @@ void dect_lapc_release(struct dect_lapc *lapc, bool normal)
  */
 
 #define lc_debug(lc, fmt, args...) \
-	pr_debug("Lc (MCEI %x): " fmt, (lc)->mc->mcei, ## args)
+	pr_debug("Lc (MCEI %u): " fmt, (lc)->mc->mcei, ## args)
 
 void dect_lc_destroy(struct dect_lc *lc)
 {

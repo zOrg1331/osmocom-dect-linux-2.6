@@ -20,11 +20,9 @@
 #include <net/dect/ccp.h>
 #include <asm/unaligned.h>
 
-#ifdef DEBUG
 /* avoid <KERN_DEBUG> for continuation lines */
-#undef pr_debug
-#define pr_debug	printk
-#endif
+#undef KERN_DEBUG
+#define KERN_DEBUG
 
 static const u8 dect_fp_preamble[]	= { 0x55, 0x55, 0xe9, 0x8a};
 static const u8 dect_pp_preamble[]	= { 0xaa, 0xaa, 0x16, 0x75};

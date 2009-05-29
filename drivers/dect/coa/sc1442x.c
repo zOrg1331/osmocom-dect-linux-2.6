@@ -192,7 +192,7 @@
  * N * T / 10m = N * 870ns / 10m = N * 87ppm
  */
 #define SC1442X_ST3_PHASE_MASK		0xff
-#define SC1442X_ST2_PHASE_SCALE		(DECT_PHASE_OFFSET_SCALE * 87)
+#define SC1442X_ST3_PHASE_SCALE		(DECT_PHASE_OFFSET_SCALE * 87)
 
 /* DC offset of received data to comparator reference input (DAC) */
 #define SC1442X_ST4_DC_MASK		0x3f
@@ -682,7 +682,7 @@ static void sc1442x_update_phase_offset(struct coa_device *dev,
 
 	if (dect_next_framenum(ps->framenum) == framenum) {
 		phaseoff = (tap - ps->tap) * SC1442X_ST2_TAP_SCALE;
-		phaseoff += (phase - ps->phase) * SC1442X_ST2_PHASE_SCALE;
+		phaseoff += (phase - ps->phase) * SC1442X_ST3_PHASE_SCALE;
 
 		ts->phaseoff = dect_average_phase_offset(ts->phaseoff, phaseoff);
 	}

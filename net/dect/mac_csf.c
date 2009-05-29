@@ -3944,6 +3944,7 @@ void dect_cell_init(struct dect_cell *cell)
 	INIT_LIST_HEAD(&cell->timer_base[DECT_TIMER_TX].timers);
 	skb_queue_head_init(&cell->raw_tx_queue);
 	dect_cell_bmc_init(cell);
+	cell->blind_full_slots = ~DECT_SLOT_MASK,
 	dect_transceiver_group_init(&cell->trg);
 	cell->handle.ops = &dect_csf_ops;
 }

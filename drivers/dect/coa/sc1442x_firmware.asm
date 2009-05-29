@@ -166,7 +166,7 @@ ClockSyncOn:	P_SC	0x20		;						| p: -24
 		P_LDH	PB_DCTHRESHOLD	;						| p: -23
 		WT	5		;						| p: -22--16
 		B_SR			; Receive S-field				| p: -17
-		EN_SL_ADJ		;						| p: -16	S: 0
+ClockAdjust:	EN_SL_ADJ		;						| p: -16	S: 0
 		WT	12		;						| p: -15--4	S: 1-12
 		P_LDL	PB_DCTHRESHOLD	;						| p:  -3	S: 13
 		WT	32		;						| p:  -2-29	S: 14-45
@@ -371,7 +371,7 @@ RFStart:	BR	SyncInit
 
 		SHARED	RFStart,SlotTable
 		SHARED	SyncInit,Sync,SyncLock,SyncLoop
-		SHARED	ClockSyncOn,ClockSyncOff
+		SHARED	ClockSyncOn,ClockSyncOff,ClockAdjust
 		SHARED	RecvP32U
 		SHARED	RecvP32P
 		SHARED	TransmitP00

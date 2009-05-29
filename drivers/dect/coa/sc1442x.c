@@ -477,11 +477,13 @@ static void sc1442x_enable(const struct dect_transceiver *trx)
 	if (trx->mode == DECT_TRANSCEIVER_MASTER) {
 		sc1442x_write_cmd(dev, RFStart, BR, SlotTable);
 		sc1442x_write_cmd(dev, ClockSyncOn, WT, 1);
+		sc1442x_write_cmd(dev, ClockAdjust, WT, 1);
 		sc1442x_write_cmd(dev, ClockSyncOff, WT, 1);
 	} else {
 		sc1442x_write_cmd(dev, RFStart, BR, SyncInit);
 		sc1442x_write_cmd(dev, SyncLoop, BR, Sync);
 		sc1442x_write_cmd(dev, ClockSyncOn, P_SC, 0x20);
+		sc1442x_write_cmd(dev, ClockAdjust, EN_SL_ADJ, 1);
 		sc1442x_write_cmd(dev, ClockSyncOff, P_SC, 0x00);
 	}
 

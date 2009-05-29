@@ -45,6 +45,7 @@ extern const unsigned char sc1442x_firmware[509];
 #define SyncLoop 0xC4
 #define ClockSyncOn 0x46
 #define ClockSyncOff 0x4E
+#define ClockAdjust 0x4A
 #define RecvP32U 0x20
 #define RecvP32P 0x26
 #define TransmitP00 0x29

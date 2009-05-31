@@ -54,8 +54,11 @@ void dect_uplane_rcv(struct dect_mac_conn *mc, enum dect_data_channels chan,
 
 	fbx = mc->fbx;
 	if (fbx == NULL)
-		return;
-	fbx->ops->enqueue(fbx, skb);
+		goto err;
+	return fbx->ops->enqueue(fbx, skb);
+
+err:
+	kfree_skb(skb);
 }
 
 void dect_uplane_notify_state_change(struct dect_mac_conn *mc)

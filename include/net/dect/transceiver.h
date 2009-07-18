@@ -239,6 +239,7 @@ struct dect_channel_desc {
  * @rssi:		averaged RSSI
  * @rx_bytes:		RX byte count
  * @rx_packets:		RX packet count
+ * @rx_a_crc_errors:	RX A-field CRC errors
  * @tx_bytes:		TX byte count
  * @tx_packets:		TX packet count
  */
@@ -251,6 +252,7 @@ struct dect_transceiver_slot {
 	u16				rssi;
 	u32				rx_bytes;
 	u32				rx_packets;
+	u32				rx_a_crc_errors;
 	u32				tx_bytes;
 	u32				tx_packets;
 };

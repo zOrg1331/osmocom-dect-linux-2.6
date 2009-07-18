@@ -942,6 +942,7 @@ static int dect_fill_slot(struct sk_buff *skb,
 	}
 	NLA_PUT_U32(skb, DECTA_SLOT_RX_BYTES, ts->rx_bytes);
 	NLA_PUT_U32(skb, DECTA_SLOT_RX_PACKETS, ts->rx_packets);
+	NLA_PUT_U32(skb, DECTA_SLOT_RX_A_CRC_ERRORS, ts->rx_a_crc_errors);
 	NLA_PUT_U32(skb, DECTA_SLOT_TX_BYTES, ts->tx_bytes);
 	NLA_PUT_U32(skb, DECTA_SLOT_TX_PACKETS, ts->tx_packets);
 	return 0;

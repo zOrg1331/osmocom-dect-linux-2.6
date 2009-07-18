@@ -726,6 +726,7 @@ static void sc1442x_process_slot(struct coa_device *dev,
 	sc1442x_dwriteb(dev, off + SD_CSUM_OFF, 0);
 
 	if (!(status & SC1442X_ST1_A_CRC)) {
+		ts->rx_a_crc_errors++;
 		if (ts->chd.pkt == DECT_PACKET_P00)
 			goto out;
 		csum = 0;

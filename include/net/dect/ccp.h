@@ -19,11 +19,14 @@ enum dect_ccp_primitives {
 	DECT_CCP_PRELOAD,
 	DECT_CCP_TBC_INITIATE,
 	DECT_CCP_TBC_CONFIRM,
+	DECT_CCP_TBC_DATA_REQUEST,
 	DECT_CCP_TBC_RELEASE,
 	/* CSF -> CCF */
 	DECT_CCP_MBC_CONN_INDICATE,
 	DECT_CCP_MBC_CONN_NOTIFY,
+	DECT_CCP_MBC_DTR_INDICATE,
 	DECT_CCP_MBC_DATA_INDICATE,
+	DECT_CCP_MBC_DIS_INDICATE,
 };
 
 struct dect_ccp_msg_hdr {
@@ -59,6 +62,7 @@ struct dect_ccp_mbc_msg {
 	__be32		pmid;
 	__be64		ari;
 	u8		ecn;
+	u8		data;
 } __attribute__((packed));
 
 struct dect_ccp_data_msg {

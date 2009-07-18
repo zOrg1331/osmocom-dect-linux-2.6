@@ -68,7 +68,8 @@ static int dect_ccp_send_to_cluster(const struct dect_cluster_handle *clh,
 	return err;
 }
 
-static void dect_ccp_build_mbc_msg(struct sk_buff *skb, const struct dect_mbc_id *id)
+static void dect_ccp_build_mbc_msg(struct sk_buff *skb, const struct dect_mbc_id *id,
+				   u8 data)
 {
 	struct dect_ccp_mbc_msg *msg;
 
@@ -77,9 +78,11 @@ static void dect_ccp_build_mbc_msg(struct sk_buff *skb, const struct dect_mbc_id
 	msg->pmid = cpu_to_be32(dect_build_pmid(&id->pmid));
 	msg->ari  = cpu_to_be64(dect_build_ari(&id->ari));
 	msg->ecn  = id->ecn;
+	msg->data = data;
 }
 
-static bool dect_ccp_parse_mbc_msg(struct dect_mbc_id *id, struct sk_buff *skb)
+static bool dect_ccp_parse_mbc_msg(struct dect_mbc_id *id, u8 *data,
+				   struct sk_buff *skb)
 {
 	struct dect_ccp_mbc_msg *msg;
 
@@ -93,6 +96,8 @@ static bool dect_ccp_parse_mbc_msg(struct dect_mbc_id *id, struct sk_buff *skb)
 	if (!dect_parse_ari(&id->ari, be64_to_cpu(msg->ari)))
 		return false;
 	id->ecn = msg->ecn;
+	if (data != NULL)
+		*data = msg->data;
 	return true;
 }
 
@@ -255,7 +260,7 @@ static int dect_ccp_send_tbc_initiate(const struct dect_cell_handle *ch,
 	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
 	if (skb == NULL)
 		return -ENOMEM;
-	dect_ccp_build_mbc_msg(skb, id);
+	dect_ccp_build_mbc_msg(skb, id, 0);
 	return dect_ccp_send_to_cell(ch, skb, DECT_CCP_TBC_INITIATE);
 }
 
@@ -264,41 +269,9 @@ static void dect_ccp_parse_tbc_initiate(const struct dect_cell_handle *ch,
 {
 	struct dect_mbc_id id;
 
-	if (!dect_ccp_parse_mbc_msg(&id, skb))
+	if (!dect_ccp_parse_mbc_msg(&id, NULL, skb))
 		return;
 	ch->ops->tbc_initiate(ch, &id, NULL);
-}
-
-static void dect_ccp_parse_tbc_confirm(const struct dect_cell_handle *ch,
-				       struct sk_buff *skb)
-{
-	struct dect_mbc_id id;
-
-	if (!dect_ccp_parse_mbc_msg(&id, skb))
-		return;
-	ch->ops->tbc_confirm(ch, &id);
-}
-
-static void dect_ccp_parse_tbc_release(const struct dect_cell_handle *ch,
-				       struct sk_buff *skb)
-{
-	struct dect_mbc_id id;
-
-	if (!dect_ccp_parse_mbc_msg(&id, skb))
-		return;
-	ch->ops->tbc_release(ch, &id, 0);
-}
-
-static int dect_ccp_send_tbc_confirm(const struct dect_cell_handle *ch,
-				     const struct dect_mbc_id *id)
-{
-	struct sk_buff *skb;
-
-	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
-	if (skb == NULL)
-		return -ENOMEM;
-	dect_ccp_build_mbc_msg(skb, id);
-	return dect_ccp_send_to_cell(ch, skb, DECT_CCP_TBC_CONFIRM);
 }
 
 static void dect_ccp_send_tbc_release(const struct dect_cell_handle *ch,
@@ -310,8 +283,55 @@ static void dect_ccp_send_tbc_release(const struct dect_cell_handle *ch,
 	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
 	if (skb == NULL)
 		return;
-	dect_ccp_build_mbc_msg(skb, id);
+	dect_ccp_build_mbc_msg(skb, id, reason);
 	dect_ccp_send_to_cell(ch, skb, DECT_CCP_TBC_RELEASE);
+}
+
+static void dect_ccp_parse_tbc_release(const struct dect_cell_handle *ch,
+				       struct sk_buff *skb)
+{
+	struct dect_mbc_id id;
+	u8 reason;
+
+	if (!dect_ccp_parse_mbc_msg(&id, &reason, skb))
+		return;
+	ch->ops->tbc_release(ch, &id, reason);
+}
+
+static int dect_ccp_send_tbc_confirm(const struct dect_cell_handle *ch,
+				     const struct dect_mbc_id *id)
+{
+	struct sk_buff *skb;
+
+	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
+	if (skb == NULL)
+		return -ENOMEM;
+	dect_ccp_build_mbc_msg(skb, id, 0);
+	return dect_ccp_send_to_cell(ch, skb, DECT_CCP_TBC_CONFIRM);
+}
+
+static void dect_ccp_parse_tbc_confirm(const struct dect_cell_handle *ch,
+				       struct sk_buff *skb)
+{
+	struct dect_mbc_id id;
+
+	if (!dect_ccp_parse_mbc_msg(&id, NULL, skb))
+		return;
+	ch->ops->tbc_confirm(ch, &id);
+}
+
+static void dect_ccp_send_tbc_data_request(const struct dect_cell_handle *ch,
+					   const struct dect_mbc_id *id,
+					   enum dect_data_channels chan,
+					   struct sk_buff *skb)
+{
+	dect_ccp_build_mbc_msg(skb, id, chan);
+	dect_ccp_send_to_cell(ch, skb, DECT_CCP_TBC_DATA_REQUEST);
+}
+
+static void dect_ccp_send_scan_report(const struct dect_cluster_handle *clh,
+				      const struct dect_scan_result *res)
+{
 }
 
 static int dect_ccp_send_mbc_conn_indicate(const struct dect_cluster_handle *clh,
@@ -323,7 +343,7 @@ static int dect_ccp_send_mbc_conn_indicate(const struct dect_cluster_handle *clh
 	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
 	if (skb == NULL)
 		return -ENOMEM;
-	dect_ccp_build_mbc_msg(skb, id);
+	dect_ccp_build_mbc_msg(skb, id, 0);
 
 	return dect_ccp_send_to_cluster(clh, skb, DECT_CCP_MBC_CONN_INDICATE);
 }
@@ -334,7 +354,7 @@ static void dect_ccp_parse_mbc_conn_indicate(const struct dect_cell_handle *ch,
 	const struct dect_cluster_handle *clh = ch->clh;
 	struct dect_mbc_id id;
 
-	if (!dect_ccp_parse_mbc_msg(&id, skb))
+	if (!dect_ccp_parse_mbc_msg(&id, NULL, skb))
 		return;
 	clh->ops->mbc_conn_indicate(clh, ch, &id);
 }
@@ -348,7 +368,7 @@ static int dect_ccp_send_mbc_conn_notify(const struct dect_cluster_handle *clh,
 	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
 	if (skb == NULL)
 		return -ENOMEM;
-	dect_ccp_build_mbc_msg(skb, id);
+	dect_ccp_build_mbc_msg(skb, id, event);
 
 	return dect_ccp_send_to_cluster(clh, skb, DECT_CCP_MBC_CONN_NOTIFY);
 }
@@ -358,11 +378,11 @@ static void dect_ccp_parse_mbc_conn_notify(const struct dect_cell_handle *ch,
 {
 	const struct dect_cluster_handle *clh = ch->clh;
 	struct dect_mbc_id id;
-	enum dect_tbc_state state = 0;
+	u8 event;
 
-	if (!dect_ccp_parse_mbc_msg(&id, skb))
+	if (!dect_ccp_parse_mbc_msg(&id, &event, skb))
 		return;
-	clh->ops->mbc_conn_notify(clh, &id, state);
+	clh->ops->mbc_conn_notify(clh, &id, event);
 }
 
 static void dect_ccp_send_mbc_data_indicate(const struct dect_cluster_handle *clh,
@@ -370,7 +390,7 @@ static void dect_ccp_send_mbc_data_indicate(const struct dect_cluster_handle *cl
 					    enum dect_data_channels chan,
 					    struct sk_buff *skb)
 {
-	dect_ccp_build_mbc_msg(skb, id);
+	dect_ccp_build_mbc_msg(skb, id, chan);
 	dect_ccp_send_to_cluster(clh, skb, DECT_CCP_MBC_DATA_INDICATE);
 }
 
@@ -379,10 +399,63 @@ static void dect_ccp_parse_mbc_data_indicate(const struct dect_cell_handle *ch,
 {
 	const struct dect_cluster_handle *clh = ch->clh;
 	struct dect_mbc_id id;
+	u8 chan;
 
-	if (!dect_ccp_parse_mbc_msg(&id, skb))
+	if (!dect_ccp_parse_mbc_msg(&id, &chan, skb))
 		return;
-	clh->ops->mbc_data_indicate(clh, &id, 0, skb); // FIXME
+	clh->ops->mbc_data_indicate(clh, &id, chan, skb);
+}
+
+static void dect_ccp_send_mbc_dtr_indicate(const struct dect_cluster_handle *clh,
+					   const struct dect_mbc_id *id,
+					   enum dect_data_channels chan)
+{
+	struct sk_buff *skb;
+
+	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
+	if (skb == NULL)
+		return;
+	dect_ccp_build_mbc_msg(skb, id, chan);
+
+	dect_ccp_send_to_cluster(clh, skb, DECT_CCP_MBC_DTR_INDICATE);
+}
+
+static void dect_ccp_parse_mbc_dtr_indicate(const struct dect_cell_handle *ch,
+					    struct sk_buff *skb)
+{
+	const struct dect_cluster_handle *clh = ch->clh;
+	struct dect_mbc_id id;
+	u8 chan;
+
+	if (!dect_ccp_parse_mbc_msg(&id, &chan, skb))
+		return;
+	clh->ops->mbc_dtr_indicate(clh, &id, chan);
+}
+
+static void dect_ccp_send_mbc_dis_indicate(const struct dect_cluster_handle *clh,
+					   const struct dect_mbc_id *id,
+					   enum dect_release_reasons reason)
+{
+	struct sk_buff *skb;
+
+	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
+	if (skb == NULL)
+		return;// -ENOMEM;
+	dect_ccp_build_mbc_msg(skb, id, reason);
+
+	dect_ccp_send_to_cluster(clh, skb, DECT_CCP_MBC_DIS_INDICATE);
+}
+
+static void dect_ccp_parse_mbc_dis_indicate(const struct dect_cell_handle *ch,
+					    struct sk_buff *skb)
+{
+	const struct dect_cluster_handle *clh = ch->clh;
+	struct dect_mbc_id id;
+	u8 reason;
+
+	if (!dect_ccp_parse_mbc_msg(&id, &reason, skb))
+		return;
+	clh->ops->mbc_dis_indicate(clh, &id, reason);
 }
 
 static void dect_ccp_rcv_cell_msg(void *handle, u32 portref,
@@ -405,6 +478,10 @@ static void dect_ccp_rcv_cell_msg(void *handle, u32 portref,
 		return dect_ccp_parse_mbc_conn_notify(ch, skb);
 	case DECT_CCP_MBC_DATA_INDICATE:
 		return dect_ccp_parse_mbc_data_indicate(ch, skb);
+	case DECT_CCP_MBC_DTR_INDICATE:
+		return dect_ccp_parse_mbc_dtr_indicate(ch, skb);
+	case DECT_CCP_MBC_DIS_INDICATE:
+		return dect_ccp_parse_mbc_dis_indicate(ch, skb);
 	}
 }
 
@@ -421,13 +498,14 @@ static void dect_ccp_cl_disconnect(void *handle, u32 portref,
 }
 
 static const struct dect_csf_ops dect_ccp_csf_ops = {
-	.set_mode	= dect_ccp_send_set_mode,
-	.scan		= dect_ccp_send_scan,
-	.preload	= dect_ccp_send_preload,
-	.enable		= dect_ccp_send_enable,
-	.tbc_initiate	= dect_ccp_send_tbc_initiate,
-	.tbc_confirm	= dect_ccp_send_tbc_confirm,
-	.tbc_release	= dect_ccp_send_tbc_release,
+	.set_mode		= dect_ccp_send_set_mode,
+	.scan			= dect_ccp_send_scan,
+	.enable			= dect_ccp_send_enable,
+	.preload		= dect_ccp_send_preload,
+	.tbc_initiate		= dect_ccp_send_tbc_initiate,
+	.tbc_confirm		= dect_ccp_send_tbc_confirm,
+	.tbc_release		= dect_ccp_send_tbc_release,
+	.tbc_data_request	= dect_ccp_send_tbc_data_request,
 };
 
 static void dect_ccp_cl_named_msg(void *handle, u32 portref,
@@ -664,9 +742,12 @@ static void dect_ccp_send_bmc_page_indicate(const struct dect_cluster_handle *cl
 static const struct dect_ccf_ops dect_ccp_ccf_ops = {
 	.bind			= dect_ccp_bind_cell,
 	.unbind			= dect_ccp_unbind_cell,
+	.scan_report		= dect_ccp_send_scan_report,
 	.mbc_conn_indicate	= dect_ccp_send_mbc_conn_indicate,
 	.mbc_conn_notify	= dect_ccp_send_mbc_conn_notify,
+	.mbc_dis_indicate	= dect_ccp_send_mbc_dis_indicate,
 	.mbc_data_indicate	= dect_ccp_send_mbc_data_indicate,
+	.mbc_dtr_indicate	= dect_ccp_send_mbc_dtr_indicate,
 	.bmc_page_indicate	= dect_ccp_send_bmc_page_indicate,
 };
 

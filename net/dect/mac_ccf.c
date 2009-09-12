@@ -505,9 +505,16 @@ void dect_cluster_init(struct dect_cluster *cl)
 
 void dect_cluster_shutdown(struct dect_cluster *cl)
 {
-	struct dect_cell_handle *ch, *next;
+	struct dect_cell_handle *ch, *ch_next;
+	struct dect_mbc *mbc, *mbc_next;
 
-	list_for_each_entry_safe(ch, next, &cl->cells, list)
+	list_for_each_entry_safe(mbc, mbc_next, &cl->mbcs, list) {
+		dect_dlc_mac_dis_indicate(cl, mbc->id.mcei, DECT_REASON_UNKNOWN);
+		dect_mbc_release(mbc);
+	}
+
+	list_for_each_entry_safe(ch, ch_next, &cl->cells, list)
 		dect_cluster_unbind_cell(&cl->handle, ch);
+
 	dect_ccp_cluster_shutdown(cl);
 }

@@ -403,7 +403,10 @@ static int dect_ssap_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 	if (new_mc)
 		err = dect_dlc_mac_conn_establish(mc);
 	else
-		dect_lapc_establish(lapc);
+		err = dect_lapc_establish(lapc);
+
+	if (err < 0)
+		goto err3;
 
 	sk->sk_state = DECT_SK_ESTABLISH_PENDING;
 	return 0;

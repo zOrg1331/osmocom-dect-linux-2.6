@@ -365,7 +365,7 @@ static inline struct nlmsghdr *nlmsg_next(struct nlmsghdr *nlh, int *remaining)
  *
  * See nla_parse()
  */
-static inline int nlmsg_parse(struct nlmsghdr *nlh, int hdrlen,
+static inline int nlmsg_parse(const struct nlmsghdr *nlh, int hdrlen,
 			      struct nlattr *tb[], int maxtype,
 			      const struct nla_policy *policy)
 {

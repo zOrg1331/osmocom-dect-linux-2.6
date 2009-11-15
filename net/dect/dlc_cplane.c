@@ -911,6 +911,11 @@ void dect_cplane_mac_dis_indicate(const struct dect_mac_conn *mc,
 	if (lc == NULL)
 		return;
 
+	/* When no lapcs are bound, destroy immediately since destruction won't
+	 * be triggered by unbinding */
+	if (lc->use == 0)
+		return dect_lc_destroy(lc);
+
 	switch (reason) {
 	case DECT_REASON_BEARER_RELEASE:
 		err = 0;

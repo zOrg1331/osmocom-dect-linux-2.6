@@ -1671,6 +1671,14 @@ S:	Maintained
 F:	Documentation/networking/decnet.txt
 F:	net/decnet/
 
+DECT NETWORK PROTOCOL
+M:	Patrick McHardy <kaber@trash.net>
+S:	Maintained
+F:	net/dect
+F:	drivers/dect
+F:	include/net/dect
+F:	include/linux/dect*.h
+
 DEFXX FDDI NETWORK DRIVER
 M:	"Maciej W. Rozycki" <macro@linux-mips.org>
 S:	Maintained

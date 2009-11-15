@@ -374,8 +374,10 @@ static int dect_ssap_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 			goto err1;
 		new_mc = true;
 		lc = NULL;
-	} else
+	} else {
+		WARN_ON(mc->state == DECT_MAC_CONN_CLOSED);
 		lc = mc->lc;
+	}
 
 	/* Get Lc entity and verify LLN is available */
 	if (lc == NULL) {

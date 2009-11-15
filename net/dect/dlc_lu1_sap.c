@@ -138,6 +138,7 @@ static int dect_lu1_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 	mc = dect_mac_conn_get_by_mci(cl, &ulei.mci);
 	if (mc == NULL)
 		goto err1;
+	WARN_ON(mc->state == DECT_MAC_CONN_CLOSED);
 
 	err = -EBUSY;
 	if (mc->fbx != NULL)

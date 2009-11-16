@@ -927,7 +927,7 @@ void dect_cplane_mac_dis_indicate(const struct dect_mac_conn *mc,
 		err = ETIMEDOUT;
 		break;
 	default:
-		err = -EIO;
+		err = EIO;
 		break;
 	}
 

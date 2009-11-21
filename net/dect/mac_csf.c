@@ -2476,7 +2476,7 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	if (DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_A_CRC_OK)
 		tbc->txb->q = DECT_HDR_Q2_FLAG;
 	else
-		goto err;
+		goto rcv_b_field;
 
 	tbc->rxb->q = skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG;
 
@@ -2503,6 +2503,7 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 			dect_tbc_queue_cs_data(cell, tbc, skb, tm);
 	}
 
+rcv_b_field:
 	skb_pull(skb, DECT_A_FIELD_SIZE);
 	skb_trim(skb, DECT_B_FIELD_SIZE);
 	tbc->b_rx_skb = skb;

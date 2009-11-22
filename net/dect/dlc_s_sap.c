@@ -458,18 +458,17 @@ static int dect_ssap_recvmsg(struct kiocb *iocb, struct sock *sk,
 	if (flags & MSG_OOB)
 		return -EOPNOTSUPP;
 
-	if (sk->sk_type == SOCK_SEQPACKET) {
-		lock_sock(sk);
-		if (sk->sk_state != DECT_SK_ESTABLISHED) {
-			release_sock(sk);
-			return -ENOTCONN;
-		}
-		release_sock(sk);
-	}
-
 	skb = skb_recv_datagram(sk, flags, noblock, &err);
-	if (skb == NULL)
+	if (skb == NULL) {
+		if (sk->sk_type == SOCK_SEQPACKET) {
+			lock_sock(sk);
+			if (sk->sk_state != DECT_SK_ESTABLISHED &&
+			    err == -EAGAIN)
+				err = -ENOTCONN;
+			release_sock(sk);
+		}
 		goto out;
+	}
 
 	copied = skb->len;
 	if (len < copied) {

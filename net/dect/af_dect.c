@@ -278,6 +278,46 @@ static int dect_sendmsg(struct kiocb *iocb, struct socket *sock,
 	return sk->sk_prot->sendmsg(iocb, sk, msg, size);
 }
 
+static int dect_setsockopt(struct socket *sock, int level, int optname,
+			   char __user *optval, unsigned int optlen)
+{
+	struct sock *sk = sock->sk;
+	int err;
+
+	if (level != SOL_DECT)
+		return -ENOPROTOOPT;
+
+	switch (optname) {
+	default:
+		if (sk->sk_prot->setsockopt)
+			err = sk->sk_prot->setsockopt(sk, level, optname,
+						      optval, optlen);
+		else
+			err = -ENOPROTOOPT;
+	}
+	return err;
+}
+
+static int dect_getsockopt(struct socket *sock, int level, int optname,
+			   char __user *optval, int __user *optlen)
+{
+	struct sock *sk = sock->sk;
+	int err;
+
+	if (level != SOL_DECT)
+		return -ENOPROTOOPT;
+
+	switch (optname) {
+	default:
+		if (sk->sk_prot->getsockopt)
+			err = sk->sk_prot->getsockopt(sk, level, optname,
+						      optval, optlen);
+		else
+			err = -ENOPROTOOPT;
+	}
+	return err;
+}
+
 static int dect_create(struct net *net, struct socket *sock, int protocol)
 {
 	struct dect_proto *p;
@@ -350,8 +390,8 @@ const struct proto_ops dect_stream_ops = {
 	.listen		= dect_listen,
 	.accept		= dect_accept,
 	.shutdown	= dect_shutdown,
-	.setsockopt	= sock_no_setsockopt,
-	.getsockopt	= sock_no_getsockopt,
+	.setsockopt	= dect_setsockopt,
+	.getsockopt	= dect_getsockopt,
 	.sendmsg	= dect_sendmsg,
 	.recvmsg	= sock_common_recvmsg,
 	.mmap		= sock_no_mmap,

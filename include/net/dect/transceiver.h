@@ -518,9 +518,9 @@ static inline void dect_transceiver_tx(struct dect_transceiver *trx,
 {
 	u8 slot = DECT_TRX_CB(skb)->slot;
 
-	trx->ops->tx(trx, skb);
 	trx->slots[slot].tx_bytes += skb->len;
 	trx->slots[slot].tx_packets++;
+	trx->ops->tx(trx, skb);
 }
 
 extern struct sk_buff *dect_transceiver_alloc_skb(struct dect_transceiver *trx, u8 slot);

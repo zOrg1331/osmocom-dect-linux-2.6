@@ -418,25 +418,25 @@ static inline void sc1442x_dwritew(const struct coa_device *dev,
 }
 
 static void sc1442x_to_dmem(const struct coa_device *dev, u16 offset,
-			    const u8 *src, u16 length)
+			    const void *src, u16 length)
 {
 	u16 i = 0;
 
 	for (; length >= 2; length -= 2, i += 2)
-		sc1442x_dwritew(dev, offset + i, *(u16 *)&src[i]);
+		sc1442x_dwritew(dev, offset + i, *(u16 *)(src + i));
 	for (; length >= 1; length -= 1, i += 1)
-		sc1442x_dwriteb(dev, offset + i, src[i]);
+		sc1442x_dwriteb(dev, offset + i, *(u8 *)(src + i));
 }
 
-static void sc1442x_from_dmem(const struct coa_device *dev, u8 *dst,
+static void sc1442x_from_dmem(const struct coa_device *dev, void *dst,
 			      u16 offset, u16 length)
 {
 	u16 i = 0;
 
 	for (; length >= 2; length -= 2, i += 2)
-		*(u16 *)&dst[i] = sc1442x_dreadw(dev, offset + i);
+		*(u16 *)(dst +  i) = sc1442x_dreadw(dev, offset + i);
 	for (; length >= 1; length -= 1, i += 1)
-		dst[i] = sc1442x_dreadb(dev, offset + i);
+		*(u8 *)(dst + i) = sc1442x_dreadb(dev, offset + i);
 }
 
 static u16 sc1442x_slot_offset(u8 slot)

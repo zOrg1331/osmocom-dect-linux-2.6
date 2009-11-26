@@ -538,30 +538,20 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 {
 	struct coa_device *dev = dect_transceiver_priv(trx);
 	u8 slot = chd->slot;
-	u16 off;
 
 	sc1442x_lock_mem(dev);
+	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
+
 	switch (mode) {
 	case DECT_SLOT_IDLE:
-		sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 		sc1442x_write_cmd(dev, patchtable[slot], WNT, 2);
 		break;
 	case DECT_SLOT_SCANNING:
 	case DECT_SLOT_RX:
-		sc1442x_switch_to_bank(dev, banktable[slot]);
-		off = sc1442x_slot_offset(slot);
-		dev->radio_ops->rx_init(dev, off);
-
-		sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 		sc1442x_write_cmd(dev, patchtable[slot], JMP,
 				  sc1442x_rx_funcs[chd->pkt][chd->b_fmt]);
 		break;
 	case DECT_SLOT_TX:
-		sc1442x_switch_to_bank(dev, banktable[slot]);
-		off = sc1442x_slot_offset(slot);
-		dev->radio_ops->tx_init(dev, off);
-
-		sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 		sc1442x_write_cmd(dev, patchtable[slot], JMP,
 				  sc1442x_tx_funcs[chd->pkt][chd->b_fmt]);
 		break;
@@ -841,6 +831,7 @@ static void sc1442x_init_slot(const struct coa_device *dev, u8 slot)
 	sc1442x_write_bmc_config(dev, off + TX_DESC, slot < 12, true);
 	sc1442x_write_bmc_config(dev, off + RX_DESC, slot < 12, false);
 	dev->radio_ops->rx_init(dev, off);
+	dev->radio_ops->tx_init(dev, off);
 }
 
 static int sc1442x_check_dram(const struct coa_device *dev)

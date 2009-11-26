@@ -97,46 +97,54 @@ PP22:		WNT	2
 		BR	SlotTable
 
 ;-------------------------------------------------------------------------------
+; Receive a P00 packet
+;
+RX_P00:		JMP	RFInit		; Init radio
+		JMP	Receive		; Receive S- and beginning of A-field		|
+		JMP	ReceiveEnd	; End reception					| p: 94		A: 62
+		BR	label_51	;
+
 ; Receive a P32 packet using the the unprotected full slot B-field format in
 ; the D32-field
 ;
-RecvP32U:	JMP	RFInit
+RX_P32U:	JMP	RFInit
 		JMP	Receive
 		WT	1		;						| p: 94		A: 62
 		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
-		JMP	RecvP32U_BZ	; Receive B-field				| p: 96		B:  0
+		JMP	RX_P32U_BZ	; Receive B-field				| p: 96		B:  0
 		BR	label_51
 
 ; Receive a P32 packet using the protected full slot B-field format in the
 ; D32-field
-RecvP32P:	JMP	RFInit
+;
+RX_P32P:	JMP	RFInit
 		JMP	Receive
-		BR	RecvP32P_B	; Receive B-Subfields				| p: 94		A: 62
+		BR	RX_P32P_B	; Receive B-Subfields				| p: 94		A: 62
 
 ;-------------------------------------------------------------------------------
 ; Transmit a P00 packet
 ;
-TransmitP00:	JMP	RFInit		; Init radio
+TX_P00:		JMP	RFInit		; Init radio
 		JMP	Transmit	; Transmit S- and beginning of A-field		|
-		;WT	1		; Transmit one bit of A-field data		| p: 94		A: 62
-		;B_BT	SD_B_FIELD_OFF	; Transmit B-Field data (latency must be > 2!)	| p: 95		A: 63
-		JMP	TransmitEnd	; End transmission				| p: 96		B: 0
+		JMP	TransmitEnd	; End transmission				| p: 94		A: 62
 		BR	label_53	;
 
 ; Transmit a P32 packet using the unprotected full slot B-field format in the
 ; D32-field
-TransmitP32U:	JMP	RFInit		; Init radio
+;
+TX_P32U:	JMP	RFInit		; Init radio
 		JMP	Transmit	; Transmit S- and beginning of A-field		|
 		WT	1		; Transmit one bit of A-field data		| p: 94		A: 62
 		B_BTFU	SD_B_FIELD_OFF	; Transmit unprotected full-slot B-field data	| p: 95		A: 63
-		JMP	TransmitP32U_BZ	; Transmit the B- and Z-fields			| p: 96		B: 0
+		JMP	TX_P32U_BZ	; Transmit the B- and Z-fields			| p: 96		B: 0
 		BR	label_54	;
 
 ; Transmit a P32 packet using the protected full slot B-field format in the
 ; D32-field
-TransmitP32P:	JMP	RFInit		; Enable radio
+;
+TX_P32P:	JMP	RFInit		; Enable radio
 		JMP	Transmit	; Transmit S- and beginning of A-field		|
-		BR	TransmitP32P_B	; Transmit B-Subfields				| p: 94		A: 62
+		BR	TX_P32P_B	; Transmit B-Subfields				| p: 94		A: 62
 
 ;-------------------------------------------------------------------------------
 label_51:	B_WRS	SD_BASE_OFF	; write status
@@ -159,7 +167,7 @@ label_58:	B_RST
 Receive:	P_LDH	PB_RX_ON
 		P_LDL	PB_RSSI		; enable RSSI measurement
 		WT	25
-		WNT	1		; wait until beginning of slot			|
+		WNT	1		; Wait until beginning of slot			|
 		WT	8		;						| p: -33--26
 		B_XON			;						| p: -25
 ClockSyncOn:	P_SC	0x20		;						| p: -24
@@ -171,13 +179,13 @@ ClockAdjust:	EN_SL_ADJ		;						| p: -16	S: 0
 		P_LDL	PB_DCTHRESHOLD	;						| p:  -3	S: 13
 		WT	32		;						| p:  -2-29	S: 14-45
 ClockSyncOff:	P_SC	0x00		;						| p:  30	S: 46
-		B_AR2	SD_A_FIELD_OFF	;						| p:  31	S: 47
-		WT	61		;						| p:  32-92	A:  0-60
-		RTN			;						| p:  93	A: 61
+		B_AR2	SD_A_FIELD_OFF	; Start reception of A-field/A-field CRC	| p:  31	S: 47
+		WT	61		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
+		RTN			; Return					| p:  93	A: 61
 
 ; Receive the B- and Z-fields of a P32 packet using the protected full slot
 ; B-field format in the D32-field
-RecvP32U_BZ:	WT	249		;						| p:  97-345	B:   1-249
+RX_P32U_BZ:	WT	249		;						| p:  97-345	B:   1-249
 		WT	79		;						| p: 346-415	B: 250-319
 					;						| p: 416-419	B: 320-323	X: 0-3
 					;						| p: 420-423	Z:   0-  3
@@ -198,15 +206,14 @@ Transmit:	P_LDH	0x00		;
 		WT	1		; Wait one bit					| p: -8		S:  0
 		P_LDH	PB_TX_ON	; Enable transmitter				| p: -7		S:  1
 		WT	37		; Transmit 29 bits S-field			| p: -6-30	S:  2-38
-		B_AT2	SD_A_FIELD_OFF	; Start transission of A-field data		| p: 31		S: 39
+		B_AT2	SD_A_FIELD_OFF	; Start transission of A-field data/A-field CRC	| p: 31		S: 39
  		WT	61		; Transmit first 61 bits of A-field		| p: 32-92	A:  0-60
 		RTN			; Return					| p: 93		A: 61
 
 ;-------------------------------------------------------------------------------
 ;
 ;
-TransmitP32U_BZ:
-		WT	249		; 						| p:  97-345	B:   1-249
+TX_P32U_BZ:	WT	249		; 						| p:  97-345	B:   1-249
              	WT	84		; Last bits of B-field data			| p: 346-415	B: 250-319
 					; X-field					| p: 416-419	B: 320-323	X: 0-3
 					; Z-field (?)					| p: 420-424	Z:   0-  3
@@ -244,7 +251,7 @@ TransferP32P_B:	WT	61		; Transfer 61 bits of B-field			| p:  97-157	B:   1- 61	 
 ;-------------------------------------------------------------------------------
 ; Receive the B-subfields in protected format
 ;
-RecvP32P_B: 	B_BRFP	SD_B_FIELD_OFF	; Receive protected full slot B-field data	| p:  95	A:  63
+RX_P32P_B: 	B_BRFP	SD_B_FIELD_OFF	; Receive protected full slot B-field data	| p:  95	A:  63
              	JMP	TransferP32P_B	; Receive the B-subfields			| p:  96-411	B:   0-315
              	WT	3		;	 					| p: 412-414	B: 316-318
              	B_XR			; Receive X-CRC					| p: 415	B: 319
@@ -258,7 +265,7 @@ RecvP32P_B: 	B_BRFP	SD_B_FIELD_OFF	; Receive protected full slot B-field data	| 
 ;-------------------------------------------------------------------------------
 ; Transmit the B-subfields in protected format
 ;
-TransmitP32P_B: B_BTFP	SD_B_FIELD_OFF	; Transmit protect fulls-slot B-field data	| p:  95	A:  63
+TX_P32P_B:	B_BTFP	SD_B_FIELD_OFF	; Transmit protect fulls-slot B-field data	| p:  95	A:  63
              	JMP	TransferP32P_B	; Transmit the B-subfields			| p:  96-411	B:   0-315
              	WT	3		; 						| p: 412-414	B: 316-318
              	B_XT			; Transmit X-CRC				| p: 415	B: 319
@@ -268,18 +275,19 @@ TransmitP32P_B: B_BTFP	SD_B_FIELD_OFF	; Transmit protect fulls-slot B-field data
              	B_RST			;						| p: 429
              	JMP	TransmitEnd	; End transmission				| p: 430
              	BR	label_58	;
+
 ;-------------------------------------------------------------------------------
 
-RFInit:		RFEN
+RFInit:		RFEN			; Enable RF-clock
 		WT	2
 
-		MEN1N
+		MEN1N			; Transfer first radio configuration word
 		M_WR	RF_DESC
 		WT	U2785_CFG1_LEN + 1
 		M_RST
 		MEN1
 
-		MEN1N
+		MEN1N			; Transfer second radio configuration word
 		M_WR	RF_DESC + U2785_CFG1_LEN / 8
 		WT	U2785_CFG2_LEN + 1
 		M_RST
@@ -340,7 +348,7 @@ Sync:		JMP	RFInit
 
 SFieldFound:	WNT	23
 		P_SC	0x00
-SyncLock:	JMP	RecvP32U
+SyncLock:	JMP	RX_P32U
 		U_INT0
 		WNT	22
 SyncLoop:	BR	Sync
@@ -372,8 +380,5 @@ RFStart:	BR	SyncInit
 		SHARED	RFStart,SlotTable
 		SHARED	SyncInit,Sync,SyncLock,SyncLoop
 		SHARED	ClockSyncOn,ClockSyncOff,ClockAdjust
-		SHARED	RecvP32U
-		SHARED	RecvP32P
-		SHARED	TransmitP00
-		SHARED	TransmitP32U
-		SHARED	TransmitP32P
+		SHARED	RX_P00,RX_P32U,RX_P32P
+		SHARED	TX_P00,TX_P32U,TX_P32P

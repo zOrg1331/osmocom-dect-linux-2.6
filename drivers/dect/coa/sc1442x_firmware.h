@@ -37,19 +37,20 @@ extern const unsigned char sc1442x_firmware[509];
 #define JP18 0x18
 #define JP20 0x1A
 #define JP22 0x1C
-#define RFStart 0xD1
+#define RFStart 0xD5
 #define SlotTable 0x2
-#define SyncInit 0xB0
-#define Sync 0xB1
-#define SyncLock 0xC1
-#define SyncLoop 0xC4
-#define ClockSyncOn 0x46
-#define ClockSyncOff 0x4E
-#define ClockAdjust 0x4A
-#define RecvP32U 0x20
-#define RecvP32P 0x26
-#define TransmitP00 0x29
-#define TransmitP32U 0x2D
-#define TransmitP32P 0x33
+#define SyncInit 0xB4
+#define Sync 0xB5
+#define SyncLock 0xC5
+#define SyncLoop 0xC8
+#define ClockSyncOn 0x4A
+#define ClockSyncOff 0x52
+#define ClockAdjust 0x4E
+#define RX_P00 0x20
+#define RX_P32U 0x24
+#define RX_P32P 0x2A
+#define TX_P00 0x2D
+#define TX_P32U 0x31
+#define TX_P32P 0x37
 
 #endif /* SC1442X_FIRMWARE */

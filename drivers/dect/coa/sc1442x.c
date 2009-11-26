@@ -733,6 +733,13 @@ static void sc1442x_process_slot(struct coa_device *dev,
 	} else
 		csum = DECT_CHECKSUM_A_CRC_OK;
 
+	if (ts->chd.pkt != DECT_PACKET_P00) {
+		if (!(status & SC1442X_ST1_X_CRC))
+			ts->rx_x_crc_errors++;
+		else
+			csum |= DECT_CHECKSUM_X_CRC_OK;
+	}
+
 	/* calculate phase offset */
 	sc1442x_update_phase_offset(dev, ts, framenum);
 

@@ -188,12 +188,12 @@ enum dect_packet_sizes {
 /**
  * enum dect_checksum - DECT hardware checksum results
  *
- * @DECT_CHECKSUM_A_CRC_OK:	A-field CRC OK
- * @DECT_CHECKSUM_B_CRC_OK:	Unprotected B-field CRC OK
+ * @DECT_CHECKSUM_A_CRC_OK:	A-field R-CRC OK
+ * @DECT_CHECKSUM_X_CRC_OK:	Unprotected B-field X-CRC OK
  */
 enum dect_checksum {
 	DECT_CHECKSUM_A_CRC_OK	= 0x1,
-	DECT_CHECKSUM_B_CRC_OK	= 0x2,
+	DECT_CHECKSUM_X_CRC_OK	= 0x2,
 };
 
 /**
@@ -253,6 +253,7 @@ struct dect_transceiver_slot {
 	u32				rx_bytes;
 	u32				rx_packets;
 	u32				rx_a_crc_errors;
+	u32				rx_x_crc_errors;
 	u32				tx_bytes;
 	u32				tx_packets;
 };

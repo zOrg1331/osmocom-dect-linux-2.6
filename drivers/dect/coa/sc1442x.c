@@ -50,7 +50,22 @@
  * Memory of the PCMCIA device is addressed in 16 bit little endian quantities.
  *
  * The first bank of the data memory contains DIP specific control data,
- * the remaining banks are used to store packet and slot configuration data.
+ * the remaining banks are used to store packet and slot configuration data,
+ * with each slot having one half memory bank assigned.
+ *
+ * The per slot data of 128 bytes is layed out as follows:
+ *
+ * Offset		RX		TX
+ *
+ * 0x00 - 0x05:		Status		Preamble
+ * 0x06 - 0x0d:		A-Field		A-Field
+ * 0x0e - 0x35:		B-Field		B-Field
+ *
+ * 0x3a - 0x3e:		Radio Cfg	Radio Cfg
+ * 0x40 - 0x47:				BMC TX Cfg
+ * 0x48 - 0x4f:		BMC RX Cfg
+ * 0x50 - 0x5f:		DCS IV/Key	DCS IV/Key
+ * 0x70 - 0x7b:		DCS state	DCS state
  */
 
 #define SC1442X_DIPSTOPPED		0x80
@@ -252,16 +267,18 @@ static const u8 patchtable[] = {
 	PP22, 0
 };
 
-static const u8 sc1442x_rx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1] = {
-	[DECT_PACKET_P00][DECT_B_NONE]		= RX_P00,
-	[DECT_PACKET_P32][DECT_B_UNPROTECTED]	= RX_P32U,
-	[DECT_PACKET_P32][DECT_B_PROTECTED]	= RX_P32P,
+static const u8 sc1442x_rx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1][2] = {
+	[DECT_PACKET_P00][DECT_B_NONE][0]		= RX_P00,
+	[DECT_PACKET_P32][DECT_B_UNPROTECTED][0]	= RX_P32U,
+	[DECT_PACKET_P32][DECT_B_UNPROTECTED][1]	= RX_P32U_Enc,
+	[DECT_PACKET_P32][DECT_B_PROTECTED][0]		= RX_P32P,
 };
 
-static const u8 sc1442x_tx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1] = {
-	[DECT_PACKET_P00][DECT_B_NONE]		= TX_P00,
-	[DECT_PACKET_P32][DECT_B_UNPROTECTED]	= TX_P32U,
-	[DECT_PACKET_P32][DECT_B_PROTECTED]	= TX_P32P,
+static const u8 sc1442x_tx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1][2] = {
+	[DECT_PACKET_P00][DECT_B_NONE][0]		= TX_P00,
+	[DECT_PACKET_P32][DECT_B_UNPROTECTED][0]	= TX_P32U,
+	[DECT_PACKET_P32][DECT_B_UNPROTECTED][1]	= TX_P32U_Enc,
+	[DECT_PACKET_P32][DECT_B_PROTECTED][0]		= TX_P32P,
 };
 
 /*
@@ -456,6 +473,47 @@ void sc1442x_rfdesc_write(const struct coa_device *dev, u16 offset,
 }
 
 /*
+ * Ciphering
+ */
+
+static void sc1442x_dcs_init(const struct coa_device *dev,
+			     const struct dect_transceiver *trx,
+			     u8 slot, u32 mfn, u8 framenum)
+{
+	const struct dect_transceiver_slot *ts = &trx->slots[slot];
+	u16 off = sc1442x_slot_offset(slot);
+	__le64 iv;
+
+	iv = cpu_to_le64((mfn << 4) + framenum);
+	sc1442x_to_dmem(dev, off + DCS_IV, &iv, 8);
+	sc1442x_to_dmem(dev, off + DCS_CK, &ts->ck, 8);
+}
+
+/* Transfer DCS cipher state between two TDD slots of a MAC connection */
+static void sc1442x_transfer_dcs_state(struct coa_device *dev,
+				       struct dect_transceiver *trx,
+				       u8 slot)
+{
+	u8 slot2 = slot + DECT_HALF_FRAME_SIZE;
+	struct dect_transceiver_slot *ts1 = &trx->slots[slot];
+	struct dect_transceiver_slot *ts2 = &trx->slots[slot2];
+	u8 dcs_state[DCS_STATE_SIZE];
+	u16 off;
+
+	if (!(ts1->flags & DECT_SLOT_CIPHER) ||
+	    !(ts2->flags & DECT_SLOT_CIPHER))
+		return;
+
+	sc1442x_switch_to_bank(dev, banktable[slot]);
+	off = sc1442x_slot_offset(slot);
+	sc1442x_from_dmem(dev, dcs_state, off + DCS_STATE, DCS_STATE_SIZE);
+
+	sc1442x_switch_to_bank(dev, banktable[slot2]);
+	off = sc1442x_slot_offset(slot2);
+	sc1442x_to_dmem(dev, off + DCS_STATE, dcs_state, DCS_STATE_SIZE);
+}
+
+/*
  * Transceiver operations
  */
 
@@ -479,12 +537,18 @@ static void sc1442x_enable(const struct dect_transceiver *trx)
 		sc1442x_write_cmd(dev, ClockSyncOn, WT, 1);
 		sc1442x_write_cmd(dev, ClockAdjust, WT, 1);
 		sc1442x_write_cmd(dev, ClockSyncOff, WT, 1);
+
+		sc1442x_write_cmd(dev, TX_P32U_Enc, JMP, LoadEncKey);
+		sc1442x_write_cmd(dev, RX_P32U_Enc, JMP, LoadEncState);
 	} else {
 		sc1442x_write_cmd(dev, RFStart, BR, SyncInit);
 		sc1442x_write_cmd(dev, SyncLoop, BR, Sync);
 		sc1442x_write_cmd(dev, ClockSyncOn, P_SC, 0x20);
 		sc1442x_write_cmd(dev, ClockAdjust, EN_SL_ADJ, 1);
 		sc1442x_write_cmd(dev, ClockSyncOff, P_SC, 0x00);
+
+		sc1442x_write_cmd(dev, RX_P32U_Enc, JMP, LoadEncKey);
+		sc1442x_write_cmd(dev, TX_P32U_Enc, JMP, LoadEncState);
 	}
 
 	sc1442x_start_dip(dect_transceiver_priv(trx));
@@ -537,6 +601,7 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 			     enum dect_slot_states mode)
 {
 	struct coa_device *dev = dect_transceiver_priv(trx);
+	bool cipher = trx->slots[chd->slot].flags & DECT_SLOT_CIPHER;
 	u8 slot = chd->slot;
 
 	sc1442x_lock_mem(dev);
@@ -549,11 +614,11 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 	case DECT_SLOT_SCANNING:
 	case DECT_SLOT_RX:
 		sc1442x_write_cmd(dev, patchtable[slot], JMP,
-				  sc1442x_rx_funcs[chd->pkt][chd->b_fmt]);
+				  sc1442x_rx_funcs[chd->pkt][chd->b_fmt][cipher]);
 		break;
 	case DECT_SLOT_TX:
 		sc1442x_write_cmd(dev, patchtable[slot], JMP,
-				  sc1442x_tx_funcs[chd->pkt][chd->b_fmt]);
+				  sc1442x_tx_funcs[chd->pkt][chd->b_fmt][cipher]);
 		break;
 	}
 	sc1442x_unlock_mem(dev);
@@ -586,7 +651,9 @@ static u64 sc1442x_set_band(const struct dect_transceiver *trx,
 static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 {
 	struct coa_device *dev = dect_transceiver_priv(trx);
-	u8 slot = DECT_TRX_CB(skb)->slot;
+	const struct dect_skb_trx_cb *cb = DECT_TRX_CB(skb);
+	const struct dect_transceiver_slot *ts = &trx->slots[cb->slot];
+	u8 slot = cb->slot;
 	u16 off;
 
 	sc1442x_lock_mem(dev);
@@ -598,10 +665,13 @@ static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 	sc1442x_to_dmem(dev, off + SD_PREAMBLE_OFF,
 			skb_mac_header(skb), skb->mac_len);
 	sc1442x_to_dmem(dev, off + SD_DATA_OFF, skb->data, skb->len);
-	sc1442x_dwriteb(dev, off + TX_DESC + TRX_DESC_FN,
-		       DECT_TRX_CB(skb)->frame);
-	sc1442x_unlock_mem(dev);
+	sc1442x_dwriteb(dev, off + TX_DESC + TRX_DESC_FN, cb->frame);
 
+	/* Init DCS for slots in the first half frame */
+	if (ts->flags & DECT_SLOT_CIPHER && slot < DECT_HALF_FRAME_SIZE)
+		sc1442x_dcs_init(dev, trx, slot, cb->mfn, cb->frame);
+
+	sc1442x_unlock_mem(dev);
 	kfree_skb(skb);
 }
 
@@ -692,11 +762,13 @@ static void sc1442x_process_slot(struct coa_device *dev,
 	struct dect_transceiver_slot *ts = &trx->slots[slot];
 	struct sk_buff *skb;
 	u8 status, framenum, csum, rssi;
+	u32 mfn;
 	u16 off;
 
 	if (ts->state == DECT_SLOT_IDLE || ts->state == DECT_SLOT_TX)
 		return;
 
+	mfn = trx->cell->timer_base[DECT_TIMER_RX].mfn;
 	framenum = trx->cell->timer_base[DECT_TIMER_RX].framenum;
 
 	sc1442x_switch_to_bank(dev, banktable[slot]);
@@ -748,8 +820,11 @@ out:
 	dect_transceiver_record_rssi(event, slot, rssi);
 
 	/* Update frame number for next reception */
-	sc1442x_dwriteb(dev, off + RX_DESC + TRX_DESC_FN,
-		       dect_next_framenum(framenum));
+	sc1442x_dwriteb(dev, off + RX_DESC + TRX_DESC_FN, framenum + 1);
+
+	/* Init DCS for slots in the first half frame */
+	if (ts->flags & DECT_SLOT_CIPHER && slot < DECT_HALF_FRAME_SIZE)
+		sc1442x_dcs_init(dev, trx, slot, mfn, framenum + 1);
 }
 
 irqreturn_t sc1442x_interrupt(int irq, void *dev_id)
@@ -778,8 +853,11 @@ irqreturn_t sc1442x_interrupt(int irq, void *dev_id)
 			goto out;
 
 		spin_lock(&dev->lock);
-		for (slot = 6 * i; slot < 6 * (i + 1); slot += 2)
+		for (slot = 6 * i; slot < 6 * (i + 1); slot += 2) {
 			sc1442x_process_slot(dev, trx, event, slot);
+			if (slot < DECT_HALF_FRAME_SIZE)
+				sc1442x_transfer_dcs_state(dev, trx, slot);
+		}
 		spin_unlock(&dev->lock);
 
 		dect_transceiver_queue_event(trx, event);

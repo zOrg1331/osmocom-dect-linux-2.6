@@ -933,6 +933,7 @@ static int dect_fill_slot(struct sk_buff *skb,
 
 	NLA_PUT_U8(skb, DECTA_SLOT_NUM, slot);
 	NLA_PUT_U8(skb, DECTA_SLOT_STATE, ts->state);
+	NLA_PUT_U32(skb, DECTA_SLOT_FLAGS, ts->flags);
 	NLA_PUT_U8(skb, DECTA_SLOT_CARRIER, ts->chd.carrier);
 	NLA_PUT_U32(skb, DECTA_SLOT_FREQUENCY, trx->band->frequency[ts->chd.carrier]);
 	if (ts->state == DECT_SLOT_RX) {

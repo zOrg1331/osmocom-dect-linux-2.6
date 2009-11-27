@@ -33,10 +33,18 @@ DIP_RF_INIT	EQU	0x00
 ; Codec Control
 DIP_CC_INIT	EQU	0x10
 
-RF_DESC		EQU	0x4A
-TX_DESC		EQU	0x50
-RX_DESC		EQU	0x58
-KEY_DESC	EQU	0x58
+RF_DESC		EQU	0x3a
+TX_DESC		EQU	0x40
+RX_DESC		EQU	0x48
+
+; Cipher IV/Key
+DCS_DESC	EQU	0x50
+DCS_IV		EQU	DCS_DESC
+DCS_CK		EQU	DCS_DESC + 0x8
+
+; Cipher state
+DCS_STATE	EQU	0x70
+DCS_STATE_SIZE	EQU	11
 
 ; scrambler frame number offset to {RX,TX}_DESC
 TRX_DESC_FN	EQU	0x06
@@ -102,7 +110,7 @@ PP22:		WNT	2
 RX_P00:		JMP	RFInit		; Init radio
 		JMP	Receive		; Receive S- and beginning of A-field		|
 		JMP	ReceiveEnd	; End reception					| p: 94		A: 62
-		BR	label_51	;
+		BR	WriteBMC1	;
 
 ; Receive a P32 packet using the the unprotected full slot B-field format in
 ; the D32-field
@@ -112,7 +120,10 @@ RX_P32U:	JMP	RFInit
 		WT	1		;						| p: 94		A: 62
 		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
 		JMP	RX_P32U_BZ	; Receive B-field				| p: 96		B:  0
-		BR	label_51
+		BR	WriteBMC2
+
+RX_P32U_Enc:	JMP	LoadEncKey
+		BR	RX_P32U
 
 ; Receive a P32 packet using the protected full slot B-field format in the
 ; D32-field
@@ -139,6 +150,9 @@ TX_P32U:	JMP	RFInit		; Init radio
 		JMP	TX_P32U_BZ	; Transmit the B- and Z-fields			| p: 96		B: 0
 		BR	label_54	;
 
+TX_P32U_Enc:	JMP	LoadEncKey
+		BR	TX_P32U
+
 ; Transmit a P32 packet using the protected full slot B-field format in the
 ; D32-field
 ;
@@ -147,7 +161,7 @@ TX_P32P:	JMP	RFInit		; Enable radio
 		BR	TX_P32P_B	; Transmit B-Subfields				| p: 94		A: 62
 
 ;-------------------------------------------------------------------------------
-label_51:	B_WRS	SD_BASE_OFF	; write status
+WriteBMC1:	B_WRS	SD_BASE_OFF	; write status
 		WT	6
 
 label_53:	B_RST
@@ -157,6 +171,8 @@ label_54:	P_LDL	PB_RX_ON | PB_TX_ON
 		RTN
 
 ;-------------------------------------------------------------------------------
+WriteBMC2:	B_WRS	SD_BASE_OFF	; write status
+		WT	6
 label_58:	B_RST
 		P_LDL	PB_RX_ON | PB_TX_ON
 		RTN
@@ -192,7 +208,7 @@ RX_P32U_BZ:	WT	249		;						| p:  97-345	B:   1-249
 					;						| p: 424	??
 ReceiveEnd:	P_LDH	PB_RSSI		;						|
 		P_LDL	PB_RX_ON
-		RTN
+		BR	SaveEncState
 ;-------------------------------------------------------------------------------
 ; Enable transmitter, transmit the S-field and the first 61 bits of the D-field
 ; (93 bits total)
@@ -223,7 +239,7 @@ TX_P32U_BZ:	WT	249		; 						| p:  97-345	B:   1-249
 TransmitEnd:	P_LDL	PB_TX_ON	; Disable transmitter				|
 		WT	8		; Wait until transmitter is disabled		|
 		P_LDL	0x00		;
-		RTN			; Return
+		BR	SaveEncState
 
 ;-------------------------------------------------------------------------------
 ; Transfer a protected B-field subfield
@@ -307,7 +323,8 @@ RFInit3:	B_RST
 		RTN
 ;--------------------------------------------------------------
 ;
-LoadKey:	D_LDK	KEY_DESC	; load cipher key (64 bits)
+LoadEncKey:	D_RST
+		D_LDK	DCS_DESC	; load IV (64 bits) and cipher key (64 bits)
 		WT	16
 		D_LDK	0
 		D_PREP	0
@@ -315,18 +332,17 @@ LoadKey:	D_LDK	KEY_DESC	; load cipher key (64 bits)
 		D_PREP	0
 		RTN
 
-SaveEncState:	D_WRS   0	;pointer
-		WT	10
+SaveEncState:	D_WRS   DCS_STATE
+		WT	DCS_STATE_SIZE	; actually should be -1, but does not work
 		D_WRS	0
 		D_RST
 		RTN
 
-LoadEncState:	D_LDS	0	;pointer
-		WT	10
+LoadEncState:	D_RST
+		D_LDS	DCS_STATE
+		WT	DCS_STATE_SIZE	; actually should be -1, but does not work
 		D_LDS	0
 		RTN
-
-		D_RST
 ;-------------------------------------------------------------
 
 SyncInit:	BK_C	BANK1_LOW
@@ -380,5 +396,9 @@ RFStart:	BR	SyncInit
 		SHARED	RFStart,SlotTable
 		SHARED	SyncInit,Sync,SyncLock,SyncLoop
 		SHARED	ClockSyncOn,ClockSyncOff,ClockAdjust
-		SHARED	RX_P00,RX_P32U,RX_P32P
-		SHARED	TX_P00,TX_P32U,TX_P32P
+
+		SHARED	RX_P00,RX_P32U,RX_P32P,RX_P32U_Enc
+		SHARED	TX_P00,TX_P32U,TX_P32P,TX_P32U_Enc
+
+		SHARED	DCS_IV,DCS_CK,DCS_STATE,DCS_STATE_SIZE
+		SHARED	LoadEncKey,LoadEncState

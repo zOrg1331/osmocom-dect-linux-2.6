@@ -232,9 +232,11 @@ struct dect_channel_desc {
 /**
  * struct dect_transceiver_slot - Transceiver TDMA slot
  *
+ * @flags:		slot flags
  * @state:		current state
  * @desc:		channel description
  * @bearer:		associated bearer
+ * @ck:			cipher key
  * @phaseoff:		measured phase offset
  * @rssi:		averaged RSSI
  * @rx_bytes:		RX byte count
@@ -244,9 +246,11 @@ struct dect_channel_desc {
  * @tx_packets:		TX packet count
  */
 struct dect_transceiver_slot {
-	enum dect_slot_states		state;
+	u16				flags;
+	enum dect_slot_states		state:16;
 	struct dect_channel_desc	chd;
 	struct dect_bearer		*bearer;
+	u64				ck;
 
 	s32				phaseoff;
 	u16				rssi;
@@ -290,11 +294,23 @@ struct dect_transceiver_event {
 	u8			slotpos;
 };
 
+/**
+ * struct dect_skb_trx_cb - DECT Transceiver skb control block
+ *
+ * @trx:		transceiver
+ * @mfn:		multiframe number
+ * @frame:		frame number
+ * @slot:		slot number
+ * @lbn:		logical bearer number
+ * @csum:		checksum results
+ * @rssi:		RSSI measurement
+ */
 struct dect_skb_trx_cb {
 	struct dect_transceiver	*trx;
 	u32			mfn;
 	u8			frame;
 	u8			slot;
+	u8			lbn;
 	u8			csum;
 	u8			rssi;
 };
@@ -512,6 +528,21 @@ static inline void dect_set_carrier(struct dect_transceiver *trx,
 	trx->slots[slot].rssi	  = 0;
 	trx->slots[slot].phaseoff = 0;
 	trx->ops->set_carrier(trx, slot, carrier);
+}
+
+static inline void dect_enable_cipher(struct dect_transceiver *trx,
+				      u8 slot, u64 ck)
+{
+	trx->slots[slot].ck = ck;
+	trx->slots[slot].flags |= DECT_SLOT_CIPHER;
+	trx->ops->set_mode(trx, &trx->slots[slot].chd, trx->slots[slot].state);
+}
+
+static inline void dect_disable_cipher(struct dect_transceiver *trx, u8 slot)
+{
+	trx->slots[slot].ck = 0;
+	trx->slots[slot].flags &= ~DECT_SLOT_CIPHER;
+	trx->ops->set_mode(trx, &trx->slots[slot].chd, trx->slots[slot].state);
 }
 
 static inline void dect_transceiver_tx(struct dect_transceiver *trx,

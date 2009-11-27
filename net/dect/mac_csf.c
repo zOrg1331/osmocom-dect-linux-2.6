@@ -1032,6 +1032,29 @@ static int dect_parse_advanced_cctrl(struct dect_tail_msg *tm, u64 t)
 	}
 }
 
+static int dect_parse_encryption_ctrl(struct dect_tail_msg *tm, u64 t)
+{
+	struct dect_encctrl *ectl = &tm->encctl;
+
+	ectl->cmd  = (t & DECT_ENCCTRL_CMD_MASK) >> DECT_ENCCTRL_CMD_SHIFT;
+	ectl->fmid = (t & DECT_ENCCTRL_FMID_MASK) >> DECT_ENCCTRL_FMID_SHIFT;
+	ectl->pmid = (t & DECT_ENCCTRL_PMID_MASK) >> DECT_ENCCTRL_PMID_SHIFT;
+	pr_debug("encctrl: cmd: %x fmid: %.4x pmid: %.5x\n",
+		 ectl->cmd, ectl->fmid, ectl->pmid);
+	return 0;
+}
+
+static u64 dect_build_encryption_ctrl(const struct dect_encctrl *ectl)
+{
+	u64 t = 0;
+
+	t |= (u64)DECT_ENCCTRL_FILL_MASK;
+	t |= (u64)ectl->cmd << DECT_ENCCTRL_CMD_SHIFT;
+	t |= (u64)ectl->fmid << DECT_ENCCTRL_FMID_SHIFT;
+	t |= (u64)ectl->pmid << DECT_ENCCTRL_PMID_SHIFT;
+	return t;
+}
+
 static int dect_parse_mac_ctrl(struct dect_tail_msg *tm, u64 t)
 {
 	switch (t & DECT_MT_HDR_MASK) {
@@ -1044,6 +1067,11 @@ static int dect_parse_mac_ctrl(struct dect_tail_msg *tm, u64 t)
 		if (dect_parse_advanced_cctrl(tm, t) < 0)
 			return -1;
 		tm->type = DECT_TM_TYPE_ACCTRL;
+		return 0;
+	case DECT_MT_ENC_CTRL:
+		if (dect_parse_encryption_ctrl(tm, t) < 0)
+			return -1;
+		tm->type = DECT_TM_TYPE_ENCCTRL;
 		return 0;
 	default:
 		return -1;
@@ -1164,6 +1192,10 @@ static struct sk_buff *dect_build_tail_msg(struct sk_buff *skb,
 		break;
 	case DECT_TM_TYPE_ACCTRL:
 		t = dect_build_cctrl(data) | DECT_MT_ADV_CCTRL;
+		ti = DECT_TI_MT;
+		break;
+	case DECT_TM_TYPE_ENCCTRL:
+		t = dect_build_encryption_ctrl(data);
 		ti = DECT_TI_MT;
 		break;
 	default:

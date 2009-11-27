@@ -634,6 +634,34 @@ struct dect_cctrl {
 	};
 };
 
+/* Encryption Control */
+
+#define DECT_ENCCTRL_FILL_MASK			0x5000000000000000ULL
+
+#define DECT_ENCCTRL_CMD_MASK			0x0f00000000000000ULL
+#define DECT_ENCCTRL_CMD_SHIFT			56
+
+enum dect_encctrl_cmds {
+	DECT_ENCCTRL_START_REQUEST		= 0x0,
+	DECT_ENCCTRL_START_CONFIRM		= 0x1,
+	DECT_ENCCTRL_START_GRANT		= 0x2,
+	DECT_ENCCTRL_STOP_REQUEST		= 0x8,
+	DECT_ENCCTRL_STOP_CONFIRM		= 0x9,
+	DECT_ENCCTRL_STOP_GRANT			= 0xa,
+};
+
+#define DECT_ENCCTRL_FMID_MASK			0x00fff00000000000ULL
+#define DECT_ENCCTRL_FMID_SHIFT			44
+
+#define DECT_ENCCTRL_PMID_MASK			0x00000fffff000000ULL
+#define DECT_ENCCTRL_PMID_SHIFT			24
+
+struct dect_encctrl {
+	enum dect_encctrl_cmds	cmd;
+	u32			pmid;
+	u16			fmid;
+};
+
 /* marker for T-MUX exceptions */
 #define DECT_MT_HIGH_PRIORITY		0x1
 
@@ -667,6 +695,7 @@ enum dect_tail_msg_types {
 	DECT_TM_TYPE_ACTIVE_CARRIERS,
 	DECT_TM_TYPE_BCCTRL,
 	DECT_TM_TYPE_ACCTRL,
+	DECT_TM_TYPE_ENCCTRL,
 	DECT_TM_TYPE_CT,
 };
 
@@ -688,6 +717,7 @@ struct dect_tail_msg {
 		struct dect_rfp_status		rfp_status;
 		struct dect_active_carriers	active_carriers;
 		struct dect_cctrl		cctl;
+		struct dect_encctrl		encctl;
 		struct dect_ct_data		ctd;
 	};
 };

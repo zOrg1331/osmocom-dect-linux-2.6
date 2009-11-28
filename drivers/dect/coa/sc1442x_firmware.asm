@@ -109,7 +109,9 @@ PP22:		WNT	2
 ;
 RX_P00:		JMP	RFInit		; Init radio
 		JMP	Receive		; Receive S- and beginning of A-field		|
-		JMP	ReceiveEnd	; End reception					| p: 94		A: 62
+		WT	1		; 						| p: 94		A: 62
+		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
+		JMP	ReceiveEnd	; End reception					| p: 96		B:  0
 		BR	WriteBMC1	;
 
 ; Receive a P32 packet using the the unprotected full slot B-field format in
@@ -364,7 +366,7 @@ Sync:		JMP	RFInit
 
 SFieldFound:	WNT	23
 		P_SC	0x00
-SyncLock:	JMP	RX_P32U
+SyncLock:	JMP	RX_P00
 		U_INT0
 		WNT	22
 SyncLoop:	BR	Sync

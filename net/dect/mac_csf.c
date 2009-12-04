@@ -3105,10 +3105,7 @@ void dect_mac_irc_rcv(struct dect_transceiver *trx, struct sk_buff *skb)
 		break;
 	case DECT_TRANSCEIVER_LOCK_PENDING:
 		irc->rssi = dect_average_rssi(irc->rssi, DECT_TRX_CB(skb)->rssi);
-
-		if (cell->mode == DECT_MODE_FP)
-			irc->notify(cell, trx, DECT_SCAN_COMPLETE);
-		else if (dect_parse_tail(skb) == DECT_TI_QT) {
+		if (dect_parse_tail(skb) == DECT_TI_QT) {
 			dect_bc_update_si(&irc->si, &tm);
 			if (dect_bc_si_cycle_complete(&irc->idi, &irc->si))
 				irc->notify(cell, trx, DECT_SCAN_COMPLETE);
@@ -3760,32 +3757,27 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 		break;
 	}
 
+	chd.slot    = si->ssi.sn + (si->ssi.nr ? DECT_HALF_FRAME_SIZE : 0);
+	chd.carrier = si->ssi.cn;
+	chd.pkt     = DECT_PACKET_P00;
+	chd.b_fmt   = DECT_B_NONE;
+
 	if (cell->mode != DECT_MODE_FP) {
 		memcpy(&cell->idi, &irc->idi, sizeof(cell->idi));
 		cell->fmid = dect_build_fmid(&cell->idi);
 		memcpy(&cell->si.ssi, &si->ssi, sizeof(cell->si.ssi));
 
-		chd.slot    = si->ssi.sn + (si->ssi.nr ? DECT_HALF_FRAME_SIZE : 0);
-		chd.carrier = si->ssi.cn;
-		chd.pkt     = DECT_PACKET_P00;
-		chd.b_fmt   = DECT_B_NONE;
-
 		/* Lock framing based on slot position and create DBC */
 		dect_transceiver_lock(trx, chd.slot);
 		dect_dbc_init(cell, &chd);
 	} else {
-		struct dect_dbc *dbc;
-
-		if (list_empty(&cell->dbcs))
-			return;
-		dbc = list_first_entry(&cell->dbcs, struct dect_dbc, list);
-		dect_transceiver_lock(trx, dbc->bearer->chd.slot);
+		dect_transceiver_lock(trx, chd.slot);
 
 		/* Lock to the primary dummy bearer to keep the radio synchronized */
 		/* FIXME: do this cleanly */
-		dect_set_channel_mode(trx, &dbc->bearer->chd, DECT_SLOT_RX);
-		dect_set_flags(trx, dbc->bearer->chd.slot, DECT_SLOT_SYNC);
-		dect_set_carrier(trx, dbc->bearer->chd.slot, dbc->bearer->chd.carrier);
+		dect_set_channel_mode(trx, &chd, DECT_SLOT_RX);
+		dect_set_flags(trx, chd.slot, DECT_SLOT_SYNC);
+		dect_set_carrier(trx, chd.slot, chd.carrier);
 	}
 
 	/* Enable IRC */
@@ -3811,7 +3803,8 @@ static void dect_cell_enable_transceiver(struct dect_cell *cell,
 	/* The primary transceiver of a FP is a timing master. All other
 	 * transceivers need to synchronize.
 	 */
-	if (trx->index == 0 && cell->mode == DECT_MODE_FP) {
+	if (trx->index == 0 && cell->mode == DECT_MODE_FP &&
+	    !(cell->flags & DECT_CELL_SLAVE)) {
 		trx->mode = DECT_TRANSCEIVER_MASTER;
 		dect_fp_init_primary(cell, trx);
 	} else {

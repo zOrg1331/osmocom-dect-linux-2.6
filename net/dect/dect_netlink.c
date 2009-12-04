@@ -819,7 +819,7 @@ static int dect_new_cell(const struct sk_buff *skb,
 
 	if (tb[DECTA_CELL_FLAGS] != NULL) {
 		flags = nla_get_u32(tb[DECTA_CELL_FLAGS]);
-		if (flags & ~(DECT_CELL_CCP))
+		if (flags & ~(DECT_CELL_CCP | DECT_CELL_SLAVE))
 			return -EINVAL;
 	}
 

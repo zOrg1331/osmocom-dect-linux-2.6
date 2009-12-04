@@ -95,6 +95,7 @@ enum dect_transceiver_attrs {
 
 enum dect_cell_flags {
 	DECT_CELL_CCP		= (1 << 0),
+	DECT_CELL_SLAVE		= (1 << 1),
 };
 
 enum dect_cell_attrs {

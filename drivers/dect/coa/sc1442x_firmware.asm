@@ -114,6 +114,13 @@ RX_P00:		JMP	RFInit		; Init radio
 		JMP	ReceiveEnd	; End reception					| p: 96		B:  0
 		BR	WriteBMC1	;
 
+RX_P00_Sync:	JMP	RFInit		; Init radio
+		JMP	ReceiveSync	; Receive S- and beginning of A-field		|
+		WT	1		; 						| p: 94		A: 62
+		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
+		JMP	ReceiveEnd	; End reception					| p: 96		B:  0
+		BR	WriteBMC1	;
+
 ; Receive a P32 packet using the the unprotected full slot B-field format in
 ; the D32-field
 ;
@@ -197,6 +204,25 @@ ClockAdjust:	EN_SL_ADJ		;						| p: -16	S: 0
 		P_LDL	PB_DCTHRESHOLD	;						| p:  -3	S: 13
 		WT	32		;						| p:  -2-29	S: 14-45
 ClockSyncOff:	P_SC	0x00		;						| p:  30	S: 46
+		B_AR2	SD_A_FIELD_OFF	; Start reception of A-field/A-field CRC	| p:  31	S: 47
+		WT	61		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
+		RTN			; Return					| p:  93	A: 61
+
+ReceiveSync:	P_LDH	PB_RX_ON
+		P_LDL	PB_RSSI		; enable RSSI measurement
+		WT	25
+		WNT	1		; Wait until beginning of slot			|
+		WT	8		;						| p: -33--26
+		B_XON			;						| p: -25
+		P_SC	0x20		;						| p: -24
+		P_LDH	PB_DCTHRESHOLD	;						| p: -23
+		WT	5		;						| p: -22--16
+		B_SR			; Receive S-field				| p: -17
+		EN_SL_ADJ		;						| p: -16	S: 0
+		WT	12		;						| p: -15--4	S: 1-12
+		P_LDL	PB_DCTHRESHOLD	;						| p:  -3	S: 13
+		WT	32		;						| p:  -2-29	S: 14-45
+		P_SC	0x00		;						| p:  30	S: 46
 		B_AR2	SD_A_FIELD_OFF	; Start reception of A-field/A-field CRC	| p:  31	S: 47
 		WT	61		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
 		RTN			; Return					| p:  93	A: 61
@@ -399,7 +425,7 @@ RFStart:	BR	SyncInit
 		SHARED	SyncInit,Sync,SyncLock,SyncLoop
 		SHARED	ClockSyncOn,ClockSyncOff,ClockAdjust
 
-		SHARED	RX_P00,RX_P32U,RX_P32P,RX_P32U_Enc
+		SHARED	RX_P00,RX_P00_Sync,RX_P32U,RX_P32P,RX_P32U_Enc
 		SHARED	TX_P00,TX_P32U,TX_P32P,TX_P32U_Enc
 
 		SHARED	DCS_IV,DCS_CK,DCS_STATE,DCS_STATE_SIZE

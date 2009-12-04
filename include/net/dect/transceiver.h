@@ -530,19 +530,29 @@ static inline void dect_set_carrier(struct dect_transceiver *trx,
 	trx->ops->set_carrier(trx, slot, carrier);
 }
 
+static inline void dect_set_flags(struct dect_transceiver *trx, u8 slot, u32 flags)
+{
+	trx->slots[slot].flags |= flags;
+	trx->ops->set_mode(trx, &trx->slots[slot].chd, trx->slots[slot].state);
+}
+
+static inline void dect_clear_flags(struct dect_transceiver *trx, u8 slot, u32 flags)
+{
+	trx->slots[slot].flags &= ~flags;
+	trx->ops->set_mode(trx, &trx->slots[slot].chd, trx->slots[slot].state);
+}
+
 static inline void dect_enable_cipher(struct dect_transceiver *trx,
 				      u8 slot, u64 ck)
 {
 	trx->slots[slot].ck = ck;
-	trx->slots[slot].flags |= DECT_SLOT_CIPHER;
-	trx->ops->set_mode(trx, &trx->slots[slot].chd, trx->slots[slot].state);
+	dect_set_flags(trx, slot, DECT_SLOT_CIPHER);
 }
 
 static inline void dect_disable_cipher(struct dect_transceiver *trx, u8 slot)
 {
+	dect_clear_flags(trx, slot, DECT_SLOT_CIPHER);
 	trx->slots[slot].ck = 0;
-	trx->slots[slot].flags &= ~DECT_SLOT_CIPHER;
-	trx->ops->set_mode(trx, &trx->slots[slot].chd, trx->slots[slot].state);
 }
 
 static inline void dect_transceiver_tx(struct dect_transceiver *trx,

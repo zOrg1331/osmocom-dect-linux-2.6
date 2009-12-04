@@ -48,7 +48,8 @@ enum dect_slot_states {
 };
 
 enum dect_slot_flags {
-	DECT_SLOT_CIPHER		= 0x1,
+	DECT_SLOT_SYNC			= 0x1,
+	DECT_SLOT_CIPHER		= 0x2,
 };
 
 #define DECT_PHASE_OFFSET_SCALE		1024

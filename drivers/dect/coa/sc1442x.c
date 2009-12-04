@@ -267,11 +267,12 @@ static const u8 patchtable[] = {
 	PP22, 0
 };
 
-static const u8 sc1442x_rx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1][2] = {
-	[DECT_PACKET_P00][DECT_B_NONE][0]		= RX_P00,
-	[DECT_PACKET_P32][DECT_B_UNPROTECTED][0]	= RX_P32U,
-	[DECT_PACKET_P32][DECT_B_UNPROTECTED][1]	= RX_P32U_Enc,
-	[DECT_PACKET_P32][DECT_B_PROTECTED][0]		= RX_P32P,
+static const u8 sc1442x_rx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1][2][2] = {
+	[DECT_PACKET_P00][DECT_B_NONE][0][0]		= RX_P00,
+	[DECT_PACKET_P00][DECT_B_NONE][0][1]		= RX_P00_Sync,
+	[DECT_PACKET_P32][DECT_B_UNPROTECTED][0][0]	= RX_P32U,
+	[DECT_PACKET_P32][DECT_B_UNPROTECTED][1][0]	= RX_P32U_Enc,
+	[DECT_PACKET_P32][DECT_B_PROTECTED][0][0]	= RX_P32P,
 };
 
 static const u8 sc1442x_tx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1][2] = {
@@ -602,6 +603,7 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 {
 	struct coa_device *dev = dect_transceiver_priv(trx);
 	bool cipher = trx->slots[chd->slot].flags & DECT_SLOT_CIPHER;
+	bool sync = trx->slots[chd->slot].flags & DECT_SLOT_SYNC;
 	u8 slot = chd->slot;
 
 	sc1442x_lock_mem(dev);
@@ -614,7 +616,7 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 	case DECT_SLOT_SCANNING:
 	case DECT_SLOT_RX:
 		sc1442x_write_cmd(dev, patchtable[slot], JMP,
-				  sc1442x_rx_funcs[chd->pkt][chd->b_fmt][cipher]);
+				  sc1442x_rx_funcs[chd->pkt][chd->b_fmt][cipher][sync]);
 		break;
 	case DECT_SLOT_TX:
 		sc1442x_write_cmd(dev, patchtable[slot], JMP,

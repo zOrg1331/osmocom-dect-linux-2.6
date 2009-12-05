@@ -223,8 +223,8 @@ enum dect_b_formats {
  * @carrier:	RF-carrier number
  */
 struct dect_channel_desc {
-	enum dect_packet_types		pkt;
-	enum dect_b_formats		b_fmt;
+	enum dect_packet_types		pkt:8;
+	enum dect_b_formats		b_fmt:8;
 	u8				slot;
 	u8				carrier;
 };

@@ -40,6 +40,8 @@ static void __dect_raw_rcv(struct sk_buff *skb)
 		if (sk->sk_bound_dev_if &&
 		    sk->sk_bound_dev_if != cell->index)
 			continue;
+		if (skb->sk == sk)
+			continue;
 
 		skb2 = skb_clone(skb, GFP_ATOMIC);
 		if (skb2 == NULL) {

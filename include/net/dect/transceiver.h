@@ -229,10 +229,15 @@ struct dect_channel_desc {
 	u8				carrier;
 };
 
+enum dect_channel_priv_flags {
+	DECT_SLOT_RAW_TX		= 0x1,
+};
+
 /**
  * struct dect_transceiver_slot - Transceiver TDMA slot
  *
  * @flags:		slot flags
+ * @priv_flags:		internally used flags
  * @state:		current state
  * @desc:		channel description
  * @bearer:		associated bearer
@@ -246,7 +251,8 @@ struct dect_channel_desc {
  * @tx_packets:		TX packet count
  */
 struct dect_transceiver_slot {
-	u16				flags;
+	u8				flags;
+	u8				priv_flags;
 	enum dect_slot_states		state:16;
 	struct dect_channel_desc	chd;
 	struct dect_bearer		*bearer;

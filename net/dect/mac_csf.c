@@ -3550,17 +3550,50 @@ static struct sk_buff *dect_a_map(struct dect_cell *cell,
 	return skb;
 }
 
-static struct sk_buff *dect_raw_tx(struct dect_cell *cell)
+static struct sk_buff *dect_raw_tx_peek(struct dect_cell *cell)
 {
+	struct dect_timer_base *base = &cell->timer_base[DECT_TIMER_TX];
+	struct dect_skb_trx_cb *cb;
 	struct sk_buff *skb;
 
 	skb = skb_peek(&cell->raw_tx_queue);
 	if (skb == NULL)
 		return NULL;
+	cb = DECT_TRX_CB(skb);
 
-	if (DECT_TRX_CB(skb)->mfn > dect_mfn(cell, DECT_TIMER_TX) ||
-	    DECT_TRX_CB(skb)->frame > dect_framenum(cell, DECT_TIMER_TX) ||
-	    DECT_TRX_CB(skb)->slot > dect_slotnum(cell, DECT_TIMER_TX))
+	if ((!cb->mfn || cb->mfn == base->mfn) &&
+	    (!cb->frame || cb->frame == base->framenum) &&
+	    cb->slot == base->slot)
+		return skb;
+
+	return NULL;
+}
+
+static void dect_raw_tx_configure(struct dect_cell *cell,
+				  struct dect_transceiver *trx,
+				  struct dect_transceiver_slot *ts)
+{
+	if (dect_raw_tx_peek(cell)) {
+		if (ts->state == DECT_SLOT_RX) {
+			tx_debug(cell, "enable raw TX\n");
+			dect_set_channel_mode(trx, &ts->chd, DECT_SLOT_TX);
+			dect_set_carrier(trx, ts->chd.slot, ts->chd.carrier);
+			ts->priv_flags |= DECT_SLOT_RAW_TX;
+		}
+	} else if (ts->priv_flags & DECT_SLOT_RAW_TX) {
+		tx_debug(cell, "disable raw TX\n");
+		dect_set_channel_mode(trx, &ts->chd, DECT_SLOT_RX);
+		dect_set_carrier(trx, ts->chd.slot, ts->chd.carrier);
+		ts->priv_flags &= ~DECT_SLOT_RAW_TX;
+	}
+}
+
+static struct sk_buff *dect_raw_tx(struct dect_cell *cell)
+{
+	struct sk_buff *skb;
+
+	skb = dect_raw_tx_peek(cell);
+	if (skb == NULL)
 		return NULL;
 
 	tx_debug(cell, "raw transmit\n");
@@ -3703,6 +3736,7 @@ void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 	struct dect_cell *cell = container_of(grp, struct dect_cell, trg);
 	struct dect_channel_desc chd;
 	struct dect_transceiver *trx;
+	struct dect_transceiver_slot *ts;
 
 	/* TX timers run at the beginning of a slot, update the time first */
 	dect_timer_base_update(cell, DECT_TIMER_TX, slot);
@@ -3727,19 +3761,23 @@ void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 	dect_foreach_transceiver(trx, grp) {
 		if (trx->state != DECT_TRANSCEIVER_LOCKED)
 			continue;
+		ts = &trx->slots[slot];
 
-		switch ((int)trx->slots[slot].state) {
+		dect_raw_tx_configure(cell, trx, ts);
+
+		switch (ts->state) {
 		case DECT_SLOT_SCANNING:
 			dect_set_carrier(trx, slot, trx->irc->tx_scn);
 			break;
 		case DECT_SLOT_TX:
-			dect_mac_xmit_frame(trx, &trx->slots[slot]);
+			dect_mac_xmit_frame(trx, ts);
 			break;
 		}
 	}
 
 	if (slot == DECT_FRAME_SIZE - 1)
-		cell->si.ssi.pscn = dect_next_carrier(cell->si.ssi.rfcars, cell->si.ssi.pscn);
+		cell->si.ssi.pscn = dect_next_carrier(cell->si.ssi.rfcars,
+						      cell->si.ssi.pscn);
 }
 
 static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,

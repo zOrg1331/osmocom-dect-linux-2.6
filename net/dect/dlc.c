@@ -151,6 +151,42 @@ int dect_dlc_mac_conn_indicate(struct dect_cluster *cl,
 	return 0;
 }
 
+int dect_dlc_mac_conn_enc_key_request(struct dect_mac_conn *mc, u64 ck)
+{
+	mc->ck = ck;
+	return dect_mbc_enc_key_request(mc->cl, mc->mcei, ck);
+}
+
+int dect_dlc_mac_conn_enc_eks_request(struct dect_mac_conn *mc,
+				      enum dect_cipher_states status)
+{
+	return dect_mbc_enc_eks_request(mc->cl, mc->mcei, status);
+}
+
+void dect_dlc_mac_enc_eks_confirm(struct dect_cluster *cl, u32 mcei,
+				  enum dect_cipher_states status)
+
+{
+	struct dect_mac_conn *mc;
+
+	mc = dect_mac_conn_get_by_mcei(cl, mcei);
+	if (WARN_ON(mc == NULL))
+		return;
+	//dect_cplane_mac_enc_eks_indicate(mc, status);
+}
+
+void dect_dlc_mac_enc_eks_indicate(struct dect_cluster *cl, u32 mcei,
+				   enum dect_cipher_states status)
+
+{
+	struct dect_mac_conn *mc;
+
+	mc = dect_mac_conn_get_by_mcei(cl, mcei);
+	if (WARN_ON(mc == NULL))
+		return;
+	dect_cplane_mac_enc_eks_indicate(mc, status);
+}
+
 int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
 			      enum dect_release_reasons reason)
 {

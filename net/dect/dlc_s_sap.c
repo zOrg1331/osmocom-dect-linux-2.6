@@ -15,6 +15,7 @@
 #include <linux/socket.h>
 #include <linux/net.h>
 #include <linux/dect.h>
+#include <asm/uaccess.h>
 #include <net/sock.h>
 #include <net/dect/dect.h>
 
@@ -446,6 +447,43 @@ static void dect_ssap_shutdown(struct sock *sk, int how)
 		dect_lapc_release(ssap->lapc, true);
 }
 
+static int dect_ssap_setsockopt(struct sock *sk, int level, int optname,
+				char __user *optval, unsigned int optlen)
+{
+	struct dect_ssap *ssap = dect_ssap(sk);
+	struct dect_dl_encrypt *dle;
+	int err;
+	u64 ck;
+
+	switch (optname) {
+	case DECT_DL_ENC_KEY:
+		if (optlen != sizeof(ck))
+			return -EINVAL;
+		if (sk->sk_state != DECT_SK_ESTABLISH_PENDING &&
+		    sk->sk_state != DECT_SK_ESTABLISHED)
+			return -ENOTCONN;
+		if (copy_from_user(&ck, optval, sizeof(ck)))
+			return -EFAULT;
+		err = dect_dlc_mac_conn_enc_key_request(ssap->lapc->lc->mc, ck);
+		break;
+	case DECT_DL_ENCRYPT:
+		if (optlen != sizeof(dle))
+			return -EINVAL;
+		if (sk->sk_state != DECT_SK_ESTABLISHED)
+			return -ENOTCONN;
+		if (ssap->lapc->lc->mc->cl->mode != DECT_MODE_PP)
+			return -EOPNOTSUPP;
+		if (copy_from_user(&dle, optval, sizeof(dle)))
+			return -EFAULT;
+		err = dect_dlc_mac_conn_enc_eks_request(ssap->lapc->lc->mc,
+						        dle->status);
+		break;
+	default:
+		err = -ENOPROTOOPT;
+	}
+	return err;
+}
+
 static int dect_ssap_recvmsg(struct kiocb *iocb, struct sock *sk,
 			     struct msghdr *msg, size_t len,
 			     int noblock, int flags, int *addr_len)
@@ -559,24 +597,25 @@ err1:
 }
 
 static struct dect_proto dect_ssap_proto __read_mostly = {
-	.type		= SOCK_SEQPACKET,
-	.protocol	= DECT_S_SAP,
-	.capability	= CAP_NET_RAW,
-	.ops		= &dect_stream_ops,
-	.proto.name	= "DECT_S_SAP",
-	.proto.owner	= THIS_MODULE,
-	.proto.obj_size	= sizeof(struct dect_ssap),
-	.proto.init	= dect_ssap_init,
-	.proto.close	= dect_ssap_close,
-	.proto.bind	= dect_ssap_bind,
-	.proto.hash	= dect_ssap_hash,
-	.proto.unhash	= dect_ssap_unhash,
-	.proto.accept	= dect_ssap_accept,
-	.proto.connect	= dect_ssap_connect,
-	.proto.shutdown	= dect_ssap_shutdown,
-	.proto.recvmsg	= dect_ssap_recvmsg,
-	.proto.sendmsg	= dect_ssap_sendmsg,
-	.getname	= dect_ssap_getname,
+	.type			= SOCK_SEQPACKET,
+	.protocol		= DECT_S_SAP,
+	.capability		= CAP_NET_RAW,
+	.ops			= &dect_stream_ops,
+	.proto.name		= "DECT_S_SAP",
+	.proto.owner		= THIS_MODULE,
+	.proto.obj_size		= sizeof(struct dect_ssap),
+	.proto.init		= dect_ssap_init,
+	.proto.close		= dect_ssap_close,
+	.proto.bind		= dect_ssap_bind,
+	.proto.hash		= dect_ssap_hash,
+	.proto.unhash		= dect_ssap_unhash,
+	.proto.accept		= dect_ssap_accept,
+	.proto.connect		= dect_ssap_connect,
+	.proto.shutdown		= dect_ssap_shutdown,
+	.proto.setsockopt	= dect_ssap_setsockopt,
+	.proto.recvmsg		= dect_ssap_recvmsg,
+	.proto.sendmsg		= dect_ssap_sendmsg,
+	.getname		= dect_ssap_getname,
 };
 
 int __init dect_ssap_module_init(void)

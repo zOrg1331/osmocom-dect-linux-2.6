@@ -284,16 +284,39 @@ enum dect_tbc_state {
 };
 
 /**
+ * enum dect_tbc_enc_state - DECT Traffic Bearer encryption state
+ *
+ * @DECT_TBC_ENC_DISABLED:	Encryption is disabled
+ * @DECT_TBC_ENC_START_REQ_RCVD: Start request received (FP)
+ * @DECT_TBC_ENC_START_REQ_SENT: Start request sent (PP)
+ * @DECT_TBC_ENC_START_CFM_RCVD: Start confirm received (PP)
+ * @DECT_TBC_ENC_START_CFM_SENT: Start confirm sent (FP)
+ * @DECT_TBC_ENC_ENABLED:	Encryption is enabled
+ */
+enum dect_tbc_enc_state {
+	DECT_TBC_ENC_DISABLED,
+	DECT_TBC_ENC_START_REQ_RCVD,
+	DECT_TBC_ENC_START_REQ_SENT,
+	DECT_TBC_ENC_START_CFM_RCVD,
+	DECT_TBC_ENC_START_CFM_SENT,
+	DECT_TBC_ENC_ENABLED,
+};
+
+/**
  * enum dect_tbc_event - DECT Traffic Bearer events
  *
  * @DECT_TBC_SETUP_FAILED:	Bearer setup failed
  * @DECT_TBC_SETUP_COMPLETE:	Bearer setup complete
  * @DECT_TBC_ACK_RECEIVED:	Acknowledgement for C_S data received
+ * @DECT_TBC_CIPHER_ENABLED:	Ciphering enabled
+ * @DECT_TBC_CIPHER_DISABLED:	Ciphering disabled
  */
 enum dect_tbc_event {
 	DECT_TBC_SETUP_FAILED,
 	DECT_TBC_SETUP_COMPLETE,
 	DECT_TBC_ACK_RECEIVED,
+	DECT_TBC_CIPHER_ENABLED,
+	DECT_TBC_CIPHER_DISABLED,
 };
 
 /**
@@ -313,6 +336,10 @@ enum dect_tbc_event {
  * @normal_rx_timer:	Normal receive timer for C-channel/I_N normal delay delivery
  * @rx_timer:		Mimimum delay receive timer
  * @tx_timer:		Minimum delay transmit timer
+ * @ck:			Cipher key
+ * @enc_timer:		Encryption TX timer
+ * @enc_state:		Encryption state
+ * @enc_msg_cnt:	Encryption message retransmit counter
  * @c_rx_skb:		C_S segment for delivery to DLC
  * @c_tx_skb:		C_S segment for transmission in next TDMA frame
  * @c_tx_ok:		C_S segment was successfully transmitted
@@ -340,6 +367,12 @@ struct dect_tbc {
 	struct dect_timer		normal_tx_timer;
 	struct dect_timer		rx_timer;
 	struct dect_timer		tx_timer;
+
+	/* Encryption */
+	u64				ck;
+	struct dect_timer		enc_timer;
+	enum dect_tbc_enc_state		enc_state:8;
+	u8				enc_msg_cnt;
 
 	/* C_S channel */
 	struct sk_buff			*c_rx_skb;
@@ -412,14 +445,16 @@ struct dect_scan_result {
 /**
  * struct dect_csf_ops - Cell Site Function ops
  *
- * @set_mode:		set cell to PP/FP mode
- * @scan:		initiate scan for pari/pari_mask
- * @preload:		preload system information
- * @enable:		enable cell
- * @page_request:	deliver paging message
- * @tbc_initiate:	initiate a new connection
- * @tbc_confirm:	confirm an incoming connection
- * @tbc_release:	release a TBC
+ * @set_mode:			set cell to PP/FP mode
+ * @scan:			initiate scan for pari/pari_mask
+ * @preload:			preload system information
+ * @enable:			enable cell
+ * @page_request:		deliver paging message
+ * @tbc_initiate:		initiate a new connection
+ * @tbc_confirm:		confirm an incoming connection
+ * @tbc_release:		release a TBC
+ * @tbc_enc_key_request:	set encryption key
+ * @tbc_enc_eks_request:	enable/disable encryption
  *
  * The CSF ops define the interface in the direction CCF -> CSF.
  */
@@ -446,6 +481,11 @@ struct dect_csf_ops {
 	void	(*tbc_release)(const struct dect_cell_handle *,
 			       const struct dect_mbc_id *,
 			       enum dect_release_reasons);
+	int	(*tbc_enc_key_request)(const struct dect_cell_handle *,
+				       const struct dect_mbc_id *, u64 ck);
+	int	(*tbc_enc_eks_request)(const struct dect_cell_handle *,
+				       const struct dect_mbc_id *,
+				       enum dect_cipher_states status);
 	void	(*tbc_data_request)(const struct dect_cell_handle *,
 				    const struct dect_mbc_id *,
 				    enum dect_data_channels chan,

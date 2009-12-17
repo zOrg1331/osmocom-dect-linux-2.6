@@ -60,6 +60,24 @@ struct sockaddr_dect_ssap {
 	__u8		dect_class;
 };
 
+/* S-SAP primitives */
+#define DECT_DL_ENC_KEY	1
+#define DECT_DL_ENCRYPT	2
+
+enum dect_cipher_states {
+	DECT_CIPHER_DISABLED,
+	DECT_CIPHER_ENABLED,
+};
+
+/**
+ * struct dect_dl_encrypt - DL_ENCRYPT primitive arguments
+ *
+ * @status:		desired/achieved encryption status
+ */
+struct dect_dl_encrypt {
+	enum dect_cipher_states	status;
+};
+
 /**
  * struct sockaddr_dect_lu - DLC U-plane LUx service instance address
  *

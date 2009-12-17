@@ -381,6 +381,7 @@ enum dect_mac_conn_states {
  * @mci:	MAC Connection Identifier (BMCI or AMCI)
  * @state:	Connection state
  * @service:	Service offered by the connection
+ * @ck:		cipher key
  */
 struct dect_mac_conn {
 	struct list_head		list;
@@ -390,6 +391,7 @@ struct dect_mac_conn {
 	struct dect_mci			mci;
 	enum dect_mac_conn_states	state;
 	enum dect_mac_service_types	service;
+	u64				ck;
 
 	u8				use;
 	struct dect_lc			*lc;
@@ -412,6 +414,14 @@ extern int dect_dlc_mac_conn_confirm(struct dect_cluster *cl, u32 mcei,
 extern int dect_dlc_mac_conn_indicate(struct dect_cluster *cl,
 				      const struct dect_mbc_id *id);
 
+extern int dect_dlc_mac_conn_enc_key_request(struct dect_mac_conn *mc, u64 key);
+extern int dect_dlc_mac_conn_enc_eks_request(struct dect_mac_conn *mc,
+					     enum dect_cipher_states status);
+extern void dect_dlc_mac_enc_eks_confirm(struct dect_cluster *cl, u32 mcei,
+					 enum dect_cipher_states status);
+extern void dect_dlc_mac_enc_eks_indicate(struct dect_cluster *cl, u32 mcei,
+					  enum dect_cipher_states status);
+
 extern void dect_dlc_mac_dis_request(struct dect_mac_conn *mc);
 extern int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
 				     enum dect_release_reasons reason);
@@ -419,6 +429,8 @@ extern int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
 extern void dect_cplane_notify_state_change(struct dect_mac_conn *mc);
 extern void dect_cplane_mac_dis_indicate(const struct dect_mac_conn *mc,
 					 enum dect_release_reasons reason);
+extern void dect_cplane_mac_enc_eks_indicate(const struct dect_mac_conn *mc,
+					     enum dect_cipher_states status);
 
 extern void dect_cplane_rcv(struct dect_mac_conn *mc,
 			    enum dect_data_channels chan,

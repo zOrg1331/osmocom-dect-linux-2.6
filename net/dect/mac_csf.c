@@ -1288,6 +1288,7 @@ static void dect_bearer_release(struct dect_cell *cell,
 	struct dect_transceiver *trx = bearer->trx;
 
 	dect_bearer_disable(bearer);
+	dect_disable_cipher(trx, bearer->chd.slot);
 	dect_scan_bearer_enable(trx, &bearer->chd);
 
 	kfree(bearer);
@@ -1988,6 +1989,23 @@ static struct sk_buff *dect_tbc_build_bcctrl(const struct dect_tbc *tbc,
 		return dect_build_tail_msg(skb, DECT_TM_TYPE_ACCTRL, &cctl);
 }
 
+static struct sk_buff *dect_tbc_build_encctrl(const struct dect_tbc *tbc,
+					      enum dect_encctrl_cmds cmd)
+{
+	struct dect_encctrl ectl;
+	struct sk_buff *skb;
+
+	skb = dect_t_skb_alloc();
+	if (skb == NULL)
+		return NULL;
+
+	ectl.fmid = tbc->cell->fmid;
+	ectl.pmid = dect_build_pmid(&tbc->id.pmid);
+	ectl.cmd = cmd;
+
+	return dect_build_tail_msg(skb, DECT_TM_TYPE_ENCCTRL, &ectl);
+}
+
 static int dect_tbc_send_confirm(const struct dect_tbc *tbc)
 {
 	struct sk_buff *skb;
@@ -2084,6 +2102,7 @@ static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 	dect_timer_del(&tbc->normal_tx_timer);
 	dect_timer_del(&tbc->rx_timer);
 	dect_timer_del(&tbc->tx_timer);
+	dect_timer_del(&tbc->enc_timer);
 	dect_bc_release(&tbc->bc);
 
 	dect_transceiver_release(&cell->trg, tbc->txb->trx, &tbc->txb->chd);
@@ -2482,6 +2501,92 @@ release:
 	return 0;
 }
 
+static void dect_tbc_enc_timer(struct dect_cell *cell, void *data)
+{
+	struct dect_tbc *tbc = data;
+	enum dect_encctrl_cmds cmd;
+	struct sk_buff *skb;
+
+	tbc_debug(tbc, "encryption timer: state: %u cnt: %u\n",
+		  tbc->enc_state, tbc->enc_msg_cnt);
+
+	if (++tbc->enc_msg_cnt > 5) {
+		dect_tbc_release_notify(tbc, DECT_REASON_BEARER_RELEASE);
+		return dect_tbc_release_timer(cell, tbc);
+	}
+
+	dect_bearer_timer_add(cell, tbc->txb, &tbc->enc_timer, 2);
+
+	switch (tbc->enc_state) {
+	case DECT_TBC_ENC_START_REQ_RCVD:
+		tbc_debug(tbc, "TX encryption enabled\n");
+		dect_enable_cipher(tbc->txb->trx, tbc->txb->chd.slot, tbc->ck);
+		/* fall through */
+	case DECT_TBC_ENC_START_CFM_SENT:
+		tbc->enc_state = DECT_TBC_ENC_START_CFM_SENT;
+		cmd = DECT_ENCCTRL_START_CONFIRM;
+		break;
+	case DECT_TBC_ENC_START_REQ_SENT:
+		cmd = DECT_ENCCTRL_START_REQUEST;
+		break;
+	default:
+		return;
+	}
+
+	skb = dect_tbc_build_encctrl(tbc, cmd);
+	if (skb == NULL)
+		return;
+	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+}
+
+static int dect_tbc_enc_state_process(struct dect_cell *cell,
+				      struct dect_tbc *tbc,
+				      const struct dect_tail_msg *tm)
+{
+	const struct dect_encctrl *ectl = &tm->encctl;
+
+	if (ectl->fmid != cell->fmid ||
+	    ectl->pmid != dect_build_pmid(&tbc->id.pmid))
+		return 0;
+
+	switch (ectl->cmd) {
+	case DECT_ENCCTRL_START_REQUEST:
+		if (tbc->enc_state != DECT_TBC_ENC_DISABLED ||
+		    cell->mode != DECT_MODE_FP)
+			break;
+		tbc->enc_state = DECT_TBC_ENC_START_REQ_RCVD;
+		tbc->enc_msg_cnt = 0;
+
+		dect_bearer_timer_add(cell, tbc->txb, &tbc->enc_timer, 0);
+		break;
+	case DECT_ENCCTRL_START_CONFIRM:
+		if (tbc->enc_state != DECT_TBC_ENC_START_REQ_SENT)
+			break;
+		tbc->enc_state = DECT_TBC_ENC_START_CFM_RCVD;
+		tbc->enc_msg_cnt = 0;
+		break;
+	case DECT_ENCCTRL_START_GRANT:
+		if (tbc->enc_state != DECT_TBC_ENC_START_CFM_SENT)
+			break;
+		tbc->enc_state = DECT_TBC_ENC_ENABLED;
+
+		dect_timer_del(&tbc->enc_timer);
+		dect_enable_cipher(tbc->rxb->trx, tbc->rxb->chd.slot, tbc->ck);
+		tbc_debug(tbc, "RX encryption enabled\n");
+		dect_tbc_event(tbc, DECT_TBC_CIPHER_ENABLED);
+		break;
+	case DECT_ENCCTRL_STOP_REQUEST:
+		break;
+	case DECT_ENCCTRL_STOP_CONFIRM:
+		break;
+	case DECT_ENCCTRL_STOP_GRANT:
+		break;
+	default:
+		return 0;
+	}
+	return 1;
+}
+
 static void dect_tbc_queue_cs_data(struct dect_cell *cell, struct dect_tbc *tbc,
 				   struct sk_buff *skb,
 				   const struct dect_tail_msg *tm)
@@ -2528,7 +2633,21 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	if (tm->type == DECT_TM_TYPE_ID && !dect_rfpi_cmp(&tm->idi, &cell->idi))
 		dect_tbc_watchdog_reschedule(cell, tbc);
 
+	if (tm->type == DECT_TM_TYPE_ENCCTRL) {
+		if (!dect_tbc_enc_state_process(cell, tbc, tm))
+			goto err;
+	}
+
 	dect_bc_rcv(cell, &tbc->bc, skb, tm);
+
+	switch (tbc->enc_state) {
+	case DECT_TBC_ENC_START_REQ_SENT:
+	case DECT_TBC_ENC_START_CFM_SENT:
+		goto err;
+	default:
+		break;
+	}
+
 	if (tbc->state != DECT_TBC_REQ_RCVD &&
 	    tbc->state != DECT_TBC_RESPONSE_SENT) {
 		if (tm->type == DECT_TM_TYPE_CT)
@@ -2576,6 +2695,43 @@ static void dect_tbc_data_request(const struct dect_cell_handle *ch,
 
 err:
 	kfree_skb(skb);
+}
+
+static int dect_tbc_enc_eks_request(const struct dect_cell_handle *ch,
+				    const struct dect_mbc_id *id,
+				    enum dect_cipher_states status)
+{
+	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_tbc *tbc;
+	struct sk_buff *skb;
+
+	tbc = dect_tbc_lookup(cell, id);
+	if (tbc == NULL)
+		return -ENOENT;
+
+	skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_START_REQUEST);
+	if (skb != NULL)
+		skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+
+	tbc->enc_state = DECT_TBC_ENC_START_REQ_SENT;
+	tbc->enc_msg_cnt = 0;
+	dect_bearer_timer_add(cell, tbc->txb, &tbc->enc_timer, 0);
+	return 0;
+}
+
+static int dect_tbc_enc_key_request(const struct dect_cell_handle *ch,
+				    const struct dect_mbc_id *id, u64 ck)
+{
+	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_tbc *tbc;
+
+	tbc = dect_tbc_lookup(cell, id);
+	if (tbc == NULL)
+		return -ENOENT;
+
+	tbc_debug(tbc, "enc key request: %.16llx\n", (unsigned long long)ck);
+	tbc->ck = ck;
+	return 0;
 }
 
 static void dect_tbc_enable(struct dect_cell *cell, struct dect_tbc *tbc)
@@ -2653,6 +2809,8 @@ static struct dect_tbc *dect_tbc_init(struct dect_cell *cell,
 	dect_timer_setup(&tbc->normal_tx_timer, dect_tbc_normal_tx_timer, tbc);
 	dect_timer_setup(&tbc->rx_timer, dect_tbc_rx_timer, tbc);
 	dect_timer_setup(&tbc->tx_timer, dect_tbc_tx_timer, tbc);
+
+	dect_timer_setup(&tbc->enc_timer, dect_tbc_enc_timer, tbc);
 
 	tbc->rxb = dect_bearer_init(cell, &dect_tbc_ops, DECT_DUPLEX_BEARER,
 				    rtrx, rchd, DECT_BEARER_RX, tbc);
@@ -3956,6 +4114,8 @@ static const struct dect_csf_ops dect_csf_ops = {
 	.tbc_initiate		= dect_tbc_initiate,
 	.tbc_confirm		= dect_tbc_confirm,
 	.tbc_release		= dect_tbc_release,
+	.tbc_enc_key_request	= dect_tbc_enc_key_request,
+	.tbc_enc_eks_request	= dect_tbc_enc_eks_request,
 	.tbc_data_request	= dect_tbc_data_request,
 };
 

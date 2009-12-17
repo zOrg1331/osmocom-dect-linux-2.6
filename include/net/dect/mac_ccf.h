@@ -92,6 +92,11 @@ extern int dect_mbc_con_request(struct dect_cluster *cl,
 				const struct dect_mbc_id *id);
 extern void dect_mbc_dis_request(struct dect_cluster *cl, u32 mcei);
 
+extern int dect_mbc_enc_key_request(const struct dect_cluster *cl, u32 mcei,
+				    u64 ck);
+extern int dect_mbc_enc_eks_request(const struct dect_cluster *cl, u32 mcei,
+				    enum dect_cipher_states status);
+
 extern void dect_bmc_mac_page_request(struct dect_cluster *cl,
 				      struct sk_buff *skb, bool expedited);
 

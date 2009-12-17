@@ -939,3 +939,31 @@ void dect_cplane_mac_dis_indicate(const struct dect_mac_conn *mc,
 		dect_lapc_destroy(lc->lapcs[i]);
 	}
 }
+
+void dect_cplane_mac_enc_eks_indicate(const struct dect_mac_conn *mc,
+				      enum dect_cipher_states status)
+{
+	struct dect_lc *lc = mc->lc;
+	struct dect_dl_encrypt enc;
+	struct sk_buff *skb, *nskb;
+	unsigned int i;
+
+	if (lc == NULL || lc->use == 0)
+		return;
+
+	enc.status = status;
+	skb = dect_alloc_notification(DECT_DL_ENCRYPT, &enc, sizeof(enc));
+
+	for (i = 0; i < ARRAY_SIZE(lc->lapcs); i++) {
+		if (lc->lapcs[i] == NULL)
+			continue;
+
+		nskb = skb ? skb_clone(skb, GFP_ATOMIC) : NULL;
+		if (nskb != NULL)
+			sock_queue_err_skb(lc->lapcs[i]->sk, nskb);
+		else
+			dect_lapc_error_report(lc->lapcs[i], ENOMEM);
+	}
+
+	kfree_skb(skb);
+}

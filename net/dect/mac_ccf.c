@@ -97,7 +97,7 @@ static void dect_bmc_page_indicate(const struct dect_cluster_handle *clh,
 #define mbc_debug(mbc, fmt, args...) \
 	pr_debug("MBC (MCEI %u): " fmt, (mbc)->id.mcei, ## args);
 
-static struct dect_mbc *dect_mbc_get_by_mcei(struct dect_cluster *cl, u32 mcei)
+static struct dect_mbc *dect_mbc_get_by_mcei(const struct dect_cluster *cl, u32 mcei)
 {
 	struct dect_mbc *mbc;
 
@@ -294,6 +294,12 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 			mbc->cs_tx_skb = NULL;
 		}
 		return 0;
+	case DECT_TBC_CIPHER_ENABLED:
+		dect_dlc_mac_enc_eks_indicate(cl, id->mcei, DECT_CIPHER_ENABLED);
+		return 0;
+	case DECT_TBC_CIPHER_DISABLED:
+		dect_dlc_mac_enc_eks_indicate(cl, id->mcei, DECT_CIPHER_DISABLED);
+		return 0;
 	default:
 		return WARN_ON(-1);
 	}
@@ -312,6 +318,29 @@ static void dect_mbc_dis_indicate(const struct dect_cluster_handle *clh,
 	mbc_debug(mbc, "disconnect reason: %u\n", reason);
 	dect_dlc_mac_dis_indicate(cl, id->mcei, reason);
 	dect_mbc_release(mbc);
+}
+
+int dect_mbc_enc_key_request(const struct dect_cluster *cl, u32 mcei, u64 ck)
+{
+	struct dect_mbc *mbc;
+
+	mbc = dect_mbc_get_by_mcei(cl, mcei);
+	if (mbc == NULL)
+		return -ENOENT;
+	mbc_debug(mbc, "enc key request: %.16llx\n", (unsigned long long)ck);
+	return mbc->ch->ops->tbc_enc_key_request(mbc->ch, &mbc->id, ck);
+}
+
+int dect_mbc_enc_eks_request(const struct dect_cluster *cl, u32 mcei,
+			     enum dect_cipher_states status)
+{
+	struct dect_mbc *mbc;
+
+	mbc = dect_mbc_get_by_mcei(cl, mcei);
+	if (mbc == NULL)
+		return -ENOENT;
+	mbc_debug(mbc, "enc eks request: %d\n", status);
+	return mbc->ch->ops->tbc_enc_eks_request(mbc->ch, &mbc->id, status);
 }
 
 static void dect_mbc_data_indicate(const struct dect_cluster_handle *clh,

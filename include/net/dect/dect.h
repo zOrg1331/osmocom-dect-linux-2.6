@@ -167,6 +167,15 @@ static inline int dect_sock_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
 	return sock_queue_rcv_skb(sk, skb);
 }
 
+struct dect_notification {
+	u32		type;
+};
+
+#define DECT_NOTIFY_CB(skb)	((struct dect_notification *)(skb)->cb)
+
+extern struct sk_buff *dect_alloc_notification(u32 type, const void *data,
+					       unsigned int size);
+
 extern void (*dect_raw_rcv_hook)(struct sk_buff *skb);
 static inline void dect_raw_rcv(struct sk_buff *skb)
 {

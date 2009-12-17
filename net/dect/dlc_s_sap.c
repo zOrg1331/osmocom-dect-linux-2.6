@@ -451,15 +451,20 @@ static int dect_ssap_recvmsg(struct kiocb *iocb, struct sock *sk,
 			     int noblock, int flags, int *addr_len)
 {
 	struct sockaddr_dect *addr;
-	struct sk_buff *skb;
+	struct sk_buff *skb, *eskb;
 	size_t copied = 0;
 	int err;
 
 	if (flags & MSG_OOB)
 		return -EOPNOTSUPP;
 
+	eskb = skb_dequeue(&sk->sk_error_queue);
 	skb = skb_recv_datagram(sk, flags, noblock, &err);
 	if (skb == NULL) {
+		if (eskb != NULL && err == -EAGAIN) {
+			err = 0;
+			goto out;
+		}
 		if (sk->sk_type == SOCK_SEQPACKET) {
 			lock_sock(sk);
 			if (sk->sk_state != DECT_SK_ESTABLISHED &&
@@ -494,6 +499,11 @@ static int dect_ssap_recvmsg(struct kiocb *iocb, struct sock *sk,
 out_free:
 	skb_free_datagram(sk, skb);
 out:
+	if (eskb != NULL)
+		put_cmsg(msg, SOL_DECT, DECT_NOTIFY_CB(eskb)->type,
+			 eskb->len, eskb->data);
+	kfree_skb(eskb);
+
 	return err ? : copied;
 }
 

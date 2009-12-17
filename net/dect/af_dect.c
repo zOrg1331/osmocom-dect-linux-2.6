@@ -49,9 +49,23 @@ void dect_proto_unregister(struct dect_proto *proto)
 }
 EXPORT_SYMBOL_GPL(dect_proto_unregister);
 
+struct sk_buff *dect_alloc_notification(u32 type, const void *data,
+					unsigned int size)
+{
+	struct sk_buff *skb;
+
+	skb = alloc_skb(size, GFP_ATOMIC);
+	if (skb == NULL)
+		return NULL;
+	DECT_NOTIFY_CB(skb)->type = type;
+	memcpy(skb_put(skb, size), data, size);
+	return skb;
+}
+
 static void dect_destruct(struct sock *sk)
 {
 	__skb_queue_purge(&sk->sk_receive_queue);
+	__skb_queue_purge(&sk->sk_error_queue);
 	__skb_queue_purge(&sk->sk_write_queue);
 }
 

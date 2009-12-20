@@ -573,7 +573,7 @@ static int dect_ssap_sendmsg(struct kiocb *kiocb, struct sock *sk,
 	if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
 		goto err1;
 
-	skb = sock_alloc_send_skb(sk, len + 16, msg->msg_flags & MSG_DONTWAIT, &err);
+	skb = sock_alloc_send_skb(sk, len + 32, msg->msg_flags & MSG_DONTWAIT, &err);
 	if (skb == NULL)
 		goto err1;
 	skb_reset_mac_header(skb);

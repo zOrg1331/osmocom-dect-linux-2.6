@@ -109,6 +109,8 @@ struct dect_channel_list {
 #define DECT_CHANNEL_LIST_MAX_DBM	-50	/* dBm */
 #define DECT_CHANNEL_LIST_LOW_WATERMARK	20	/* channels */
 
+#define DECT_CHANNEL_MIN_DELAY		2	/* frames */
+
 /**
  * enum dect_bearer_types
  *

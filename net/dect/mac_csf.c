@@ -375,8 +375,8 @@ static u8 dect_channel_delay(const struct dect_cell *cell,
 		if (dect_slotnum(cell, DECT_TIMER_TX) >= chd->slot)
 			d--;
 #endif
-		/* More than one frame in the future? */
-		if (d <= 1)
+		/* More than two frames in the future? */
+		if (d <= DECT_CHANNEL_MIN_DELAY)
 			d += hweight64(rfcars);
 
 		frames = min_t(u8, frames, d);
@@ -1360,7 +1360,7 @@ static void dect_tx_bearer_enable_timer(struct dect_cell *cell, void *data)
 		tx_debug(cell, "confirm RSSI carrier %u\n", bearer->chd.carrier);
 		dect_set_channel_mode(bearer->trx, &bearer->chd, DECT_SLOT_RX);
 		dect_set_carrier(bearer->trx, bearer->chd.slot, bearer->chd.carrier);
-		dect_bearer_timer_add(cell, bearer, &bearer->tx_timer, 1);
+		dect_bearer_timer_add(cell, bearer, &bearer->tx_timer, 2);
 		bearer->state = DECT_BEARER_RSSI_CONFIRM;
 		break;
 	case DECT_BEARER_RSSI_CONFIRMED:
@@ -1380,7 +1380,7 @@ static void dect_tx_bearer_schedule(struct dect_cell *cell,
 
 	dect_timer_setup(&bearer->tx_timer, dect_tx_bearer_enable_timer, bearer);
 	if (bearer->ops->state != DECT_DUMMY_BEARER)
-		delay = dect_channel_delay(cell, &bearer->chd) - 1;
+		delay = dect_channel_delay(cell, &bearer->chd) - 2;
 
 	bearer->state = DECT_BEARER_SCHEDULED;
 	bearer->rssi  = rssi;

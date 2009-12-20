@@ -1345,7 +1345,7 @@ static void dect_tx_bearer_report_rssi(struct dect_cell *cell,
 				       struct dect_bearer *bearer,
 				       u8 rssi)
 {
-	pr_debug("RSSI confirm: last: %u new: %u\n", bearer->rssi, rssi);
+	rx_debug(cell, "RSSI confirm: last: %u new: %u\n", bearer->rssi, rssi);
 	if (rssi > bearer->rssi + dect_dbm_to_rssi_rel(12))
 		pr_debug("RSSI: too much noise\n");
 	bearer->state = DECT_BEARER_RSSI_CONFIRMED;

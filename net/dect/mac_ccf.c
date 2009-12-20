@@ -269,7 +269,7 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 		case DECT_MBC_NONE:
 			return 0;
 		case DECT_MBC_INITIATED:
-			if (++mbc->setup_cnt > DECT_MBC_SETUP_MAX_ATTEMPTS ||
+			if (mbc->setup_cnt > DECT_MBC_SETUP_MAX_ATTEMPTS ||
 			    dect_mbc_setup_tbc(mbc) < 0) {
 				dect_dlc_mac_dis_indicate(cl, id->mcei,
 					       DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED);

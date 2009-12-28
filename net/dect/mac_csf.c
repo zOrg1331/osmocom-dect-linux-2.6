@@ -3963,6 +3963,8 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 		cell->fmid = dect_build_fmid(&cell->idi);
 		memcpy(&cell->si.ssi, &si->ssi, sizeof(cell->si.ssi));
 
+		dect_timer_synchronize_mfn(cell, si->mfn.num);
+
 		/* Lock framing based on slot position and create DBC */
 		dect_transceiver_lock(trx, chd.slot);
 		dect_dbc_init(cell, &chd);

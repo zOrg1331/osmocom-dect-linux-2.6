@@ -3958,6 +3958,9 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 	chd.pkt     = DECT_PACKET_P00;
 	chd.b_fmt   = DECT_B_NONE;
 
+	if (!dect_transceiver_channel_available(trx, &chd))
+		return dect_restart_scan(cell, trx);
+
 	if (cell->mode != DECT_MODE_FP) {
 		memcpy(&cell->idi, &irc->idi, sizeof(cell->idi));
 		cell->fmid = dect_build_fmid(&cell->idi);

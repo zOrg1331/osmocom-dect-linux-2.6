@@ -8,7 +8,7 @@
  * Copyright (c) 2009 Patrick McHardy <kaber@trash.net>
  */
 
-#define DEBUG
+//#define DEBUG
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/dect.h>

@@ -769,7 +769,7 @@ static int dect_parse_bearer_description(struct dect_tail_msg *tm, u64 t)
 	bd->sn = (t & DECT_PT_BEARER_SN_MASK) >> DECT_PT_BEARER_SN_SHIFT;
 	bd->sp = (t & DECT_PT_BEARER_SP_MASK) >> DECT_PT_BEARER_SP_SHIFT;
 	bd->cn = (t & DECT_PT_BEARER_CN_MASK) >> DECT_PT_BEARER_CN_SHIFT;
-	if (bd->sn > DECT_FRAME_SIZE)
+	if (bd->sn >= DECT_HALF_FRAME_SIZE)
 		return -1;
 	tm->type = DECT_TM_TYPE_BD;
 

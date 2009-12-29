@@ -3235,6 +3235,7 @@ static void dect_restart_scan(struct dect_cell *cell,
 
 	memset(&irc->si, 0, sizeof(irc->si));
 	dect_transceiver_unlock(trx);
+	dect_set_channel_mode(trx, &trx->slots[DECT_SCAN_SLOT].chd, DECT_SLOT_SCANNING);
 }
 
 /* This function controls the transceiver while scanning. It collects the
@@ -3265,7 +3266,8 @@ void dect_mac_irc_rcv(struct dect_transceiver *trx, struct sk_buff *skb)
 		irc->rssi = dect_average_rssi(irc->rssi, DECT_TRX_CB(skb)->rssi);
 		if (dect_parse_tail(skb) == DECT_TI_QT) {
 			dect_bc_update_si(&irc->si, &tm);
-			if (dect_bc_si_cycle_complete(&irc->idi, &irc->si))
+			if (dect_bc_si_cycle_complete(&irc->idi, &irc->si) &&
+			    irc->si.mask & (1 << DECT_TM_TYPE_MFN))
 				irc->notify(cell, trx, DECT_SCAN_COMPLETE);
 		}
 		break;
@@ -3952,6 +3954,8 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 	case DECT_SCAN_COMPLETE:
 		break;
 	}
+
+	dect_set_channel_mode(trx, &trx->slots[DECT_SCAN_SLOT].chd, DECT_SLOT_IDLE);
 
 	chd.slot    = si->ssi.sn + (si->ssi.nr ? DECT_HALF_FRAME_SIZE : 0);
 	chd.carrier = si->ssi.cn;

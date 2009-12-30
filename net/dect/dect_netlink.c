@@ -369,7 +369,7 @@ static struct sk_buff *dect_llme_fill(const struct dect_cluster *cl,
 	if (skb == NULL)
 		goto err1;
 
-	nlh = nlmsg_put(skb, 0, seq, DECT_LLME_MSG, sizeof(*dm), 0);
+	nlh = nlmsg_put(skb, 0, seq, DECT_LLME_MSG, sizeof(*dm), NLMSG_DONE);
 	if (nlh == NULL) {
 		err = -EMSGSIZE;
 		goto err2;
@@ -558,7 +558,7 @@ static void dect_notify_cluster(u16 event, const struct dect_cluster *cl,
 	if (skb == NULL)
 		goto err;
 
-	err = dect_fill_cluster(skb, cl, event, pid, seq, 0);
+	err = dect_fill_cluster(skb, cl, event, pid, seq, NLMSG_DONE);
 	if (err < 0) {
 		WARN_ON(err == -EMSGSIZE);
 		kfree_skb(skb);
@@ -684,7 +684,7 @@ static int dect_get_cluster(const struct sk_buff *in_skb,
 	if (skb == NULL)
 		return -ENOMEM;
 	err = dect_fill_cluster(skb, cl, DECT_NEW_CLUSTER, pid,
-			        nlh->nlmsg_seq, 0);
+			        nlh->nlmsg_seq, NLMSG_DONE);
 	if (err < 0)
 		goto err1;
 	return nlmsg_unicast(nlsk, skb, pid);
@@ -781,7 +781,7 @@ static void dect_notify_cell(u16 event, const struct dect_cell *cell,
 	if (skb == NULL)
 		goto err;
 
-	err = dect_fill_cell(skb, cell, event, pid, seq, 0);
+	err = dect_fill_cell(skb, cell, event, pid, seq, NLMSG_DONE);
 	if (err < 0) {
 		WARN_ON(err == -EMSGSIZE);
 		kfree_skb(skb);
@@ -912,7 +912,8 @@ static int dect_get_cell(const struct sk_buff *in_skb,
 	skb = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
 	if (skb == NULL)
 		return -ENOMEM;
-	err = dect_fill_cell(skb, cell, DECT_NEW_CELL, pid, nlh->nlmsg_seq, 0);
+	err = dect_fill_cell(skb, cell, DECT_NEW_CELL, pid, nlh->nlmsg_seq,
+			     NLMSG_DONE);
 	if (err < 0)
 		goto err1;
 	return nlmsg_unicast(nlsk, skb, pid);
@@ -1068,7 +1069,7 @@ static int dect_get_transceiver(const struct sk_buff *in_skb,
 	if (skb == NULL)
 		return -ENOMEM;
 	err = dect_fill_transceiver(skb, trx, DECT_NEW_TRANSCEIVER, pid,
-				    nlh->nlmsg_seq, 0);
+				    nlh->nlmsg_seq, NLMSG_DONE);
 	if (err < 0)
 		goto err1;
 	return nlmsg_unicast(nlsk, skb, pid);
@@ -1113,7 +1114,7 @@ static void dect_notify_transceiver(u16 event, const struct dect_transceiver *tr
 	if (skb == NULL)
 		goto err;
 
-	err = dect_fill_transceiver(skb, trx, event, pid, seq, 0);
+	err = dect_fill_transceiver(skb, trx, event, pid, seq, NLMSG_DONE);
 	if (err < 0) {
 		WARN_ON(err == -EMSGSIZE);
 		kfree_skb(skb);

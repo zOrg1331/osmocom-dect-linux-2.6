@@ -533,8 +533,7 @@ static void sc1442x_enable(const struct dect_transceiver *trx)
 	for (slot = 0; slot < DECT_FRAME_SIZE; slot += 2)
 		sc1442x_write_cmd(dev, patchtable[slot], WNT, 2);
 
-	if (trx->mode == DECT_TRANSCEIVER_MASTER) {
-		sc1442x_write_cmd(dev, RFStart, BR, SlotTable);
+	if (trx->cell->mode == DECT_MODE_FP) {
 		sc1442x_write_cmd(dev, ClockSyncOn, WT, 1);
 		sc1442x_write_cmd(dev, ClockAdjust, WT, 1);
 		sc1442x_write_cmd(dev, ClockSyncOff, WT, 1);
@@ -542,14 +541,19 @@ static void sc1442x_enable(const struct dect_transceiver *trx)
 		sc1442x_write_cmd(dev, TX_P32U_Enc, JMP, LoadEncKey);
 		sc1442x_write_cmd(dev, RX_P32U_Enc, JMP, LoadEncState);
 	} else {
-		sc1442x_write_cmd(dev, RFStart, BR, SyncInit);
-		sc1442x_write_cmd(dev, SyncLoop, BR, Sync);
 		sc1442x_write_cmd(dev, ClockSyncOn, P_SC, 0x20);
 		sc1442x_write_cmd(dev, ClockAdjust, EN_SL_ADJ, 1);
 		sc1442x_write_cmd(dev, ClockSyncOff, P_SC, 0x00);
 
 		sc1442x_write_cmd(dev, RX_P32U_Enc, JMP, LoadEncKey);
 		sc1442x_write_cmd(dev, TX_P32U_Enc, JMP, LoadEncState);
+	}
+
+	if (trx->mode == DECT_TRANSCEIVER_MASTER)
+		sc1442x_write_cmd(dev, RFStart, BR, SlotTable);
+	else {
+		sc1442x_write_cmd(dev, RFStart, BR, SyncInit);
+		sc1442x_write_cmd(dev, SyncLoop, BR, Sync);
 	}
 
 	sc1442x_start_dip(dect_transceiver_priv(trx));

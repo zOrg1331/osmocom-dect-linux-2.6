@@ -646,18 +646,12 @@ static int dect_parse_extended_fixed_part_capabilities(struct dect_tail_msg *tm,
 {
 	struct dect_efpc *efpc = &tm->efpc;
 
-	efpc->crfp     = (t & DECT_QT_EFPC_CRFP_HOPS_MASK) >>
-			 DECT_QT_EFPC_CRFP_HOPS_SHIFT;
-	efpc->crfp_enc = (t & DECT_QT_EFPC_CRFP_ENC_FLAG);
-	efpc->rep      = (t & DECT_QT_EFPC_REP_HOPS_MASK) >>
-			 DECT_QT_EFPC_REP_HOPS_SHIFT;
-	efpc->rep_il   = (t & DECT_QT_EFPC_REP_INTERLACE_FLAG);
-	efpc->ehlc     = (t & DECT_QT_EFPC_EHLC_MASK) >>
-			 DECT_QT_EFPC_EHLC_SHIFT;
-	tm->type = DECT_TM_TYPE_EFPC;
+	efpc->fpc = (t & DECT_QT_EFPC_EFPC_MASK) >> DECT_QT_EFPC_EFPC_SHIFT;
+	efpc->hlc = (t & DECT_QT_EFPC_EHLC_MASK) >> DECT_QT_EFPC_EHLC_SHIFT;
+	tm->type  = DECT_TM_TYPE_EFPC;
 
-	pr_debug("extended fixed part capabilities: crfp: %x rep: %x ehlc: %.3x\n",
-		 efpc->crfp, efpc->rep, efpc->ehlc);
+	pr_debug("extended fixed part capabilities: fpc: %.5x hlc: %.6x\n",
+		 efpc->fpc, efpc->hlc);
 	return 0;
 }
 
@@ -665,12 +659,32 @@ static u64 dect_build_extended_fixed_part_capabilities(const struct dect_efpc *e
 {
 	u64 t = 0;
 
-	t |= (u64)efpc->crfp << DECT_QT_EFPC_CRFP_HOPS_SHIFT;
-	t |= efpc->crfp_enc ? DECT_QT_EFPC_CRFP_ENC_FLAG : 0;
-	t |= (u64)efpc->rep << DECT_QT_EFPC_REP_HOPS_SHIFT;
-	t |= efpc->rep_il ? DECT_QT_EFPC_REP_INTERLACE_FLAG : 0;
-	t |= (u64)efpc->ehlc << DECT_QT_EFPC_EHLC_SHIFT;
+	t |= (u64)efpc->fpc << DECT_QT_EFPC_EFPC_SHIFT;
+	t |= (u64)efpc->hlc << DECT_QT_EFPC_EHLC_SHIFT;
 	t |= DECT_QT_SI_EFPC;
+	return t;
+}
+
+static int dect_parse_extended_fixed_part_capabilities2(struct dect_tail_msg *tm, u64 t)
+{
+	struct dect_efpc2 *efpc2 = &tm->efpc2;
+
+	efpc2->fpc = (t & DECT_QT_EFPC2_FPC_MASK) >> DECT_QT_EFPC2_FPC_SHIFT;
+	efpc2->hlc = (t & DECT_QT_EFPC2_HLC_MASK) >> DECT_QT_EFPC2_HLC_SHIFT;
+	tm->type   = DECT_TM_TYPE_EFPC2;
+
+	pr_debug("extended fixed part capabilities2: fpc: %x hlc: %x\n",
+		 efpc2->fpc, efpc2->hlc);
+	return 0;
+}
+
+static u64 dect_build_extended_fixed_part_capabilities2(const struct dect_efpc2 *efpc2)
+{
+	u64 t = 0;
+
+	t |= (u64)efpc2->fpc << DECT_QT_EFPC2_FPC_SHIFT;
+	t |= (u64)efpc2->hlc << DECT_QT_EFPC2_HLC_SHIFT;
+	t |= DECT_QT_SI_EFPC2;
 	return t;
 }
 
@@ -735,11 +749,15 @@ static int dect_parse_system_information(struct dect_tail_msg *tm, u64 t)
 		return dect_parse_fixed_part_capabilities(tm, t);
 	case DECT_QT_SI_EFPC:
 		return dect_parse_extended_fixed_part_capabilities(tm, t);
+	case DECT_QT_SI_EFPC2:
+		return dect_parse_extended_fixed_part_capabilities2(tm, t);
 	case DECT_QT_SI_SARI:
 		return dect_parse_sari(tm, t);
 	case DECT_QT_SI_MFN:
 		return dect_parse_multiframe_number(tm, t);
 	default:
+		pr_debug("unknown system information type %llx\n",
+			 (unsigned long long)t & DECT_QT_H_MASK);
 		return -1;
 	}
 }
@@ -1177,6 +1195,10 @@ static struct sk_buff *dect_build_tail_msg(struct sk_buff *skb,
 		break;
 	case DECT_TM_TYPE_EFPC:
 		t = dect_build_extended_fixed_part_capabilities(data);
+		ti = DECT_TI_QT;
+		break;
+	case DECT_TM_TYPE_EFPC2:
+		t = dect_build_extended_fixed_part_capabilities2(data);
 		ti = DECT_TI_QT;
 		break;
 	case DECT_TM_TYPE_SARI:
@@ -1623,6 +1645,7 @@ static const enum dect_mac_system_information_types dect_bc_q_cycle[] = {
 	DECT_QT_SI_SARI,
 	DECT_QT_SI_FPC,
 	DECT_QT_SI_EFPC,
+	DECT_QT_SI_EFPC2,
 	DECT_QT_SI_MFN,
 };
 
@@ -1668,6 +1691,11 @@ static struct sk_buff *dect_bc_q_dequeue(struct dect_cell *cell,
 				break;
 			return dect_build_tail_msg(skb, DECT_TM_TYPE_EFPC,
 						   &si->efpc);
+		case DECT_QT_SI_EFPC2:
+			if (!(si->efpc.fpc & DECT_EFPC_EXTENDED_FP_INFO2))
+				break;
+			return dect_build_tail_msg(skb, DECT_TM_TYPE_EFPC2,
+						   &si->efpc2);
 		case DECT_QT_SI_MFN:
 			mfn.num = dect_mfn(cell, DECT_TIMER_TX);
 			return dect_build_tail_msg(skb, DECT_TM_TYPE_MFN, &mfn);
@@ -1835,16 +1863,12 @@ static bool dect_bc_update_si(struct dect_si *si,
 
 	switch (tm->type) {
 	case DECT_TM_TYPE_SSI:
-		if (memcmp(&si->ssi, &tm->ssi, sizeof(si->ssi))) {
+		if (memcmp(&si->ssi, &tm->ssi, sizeof(si->ssi)))
 			memcpy(&si->ssi, &tm->ssi, sizeof(si->ssi));
-			notify = true;
-		}
 		break;
 	case DECT_TM_TYPE_ERFC:
-		if (memcmp(&si->erfc, &tm->erfc, sizeof(si->erfc))) {
+		if (memcmp(&si->erfc, &tm->erfc, sizeof(si->erfc)))
 			memcpy(&si->erfc, &tm->erfc, sizeof(si->erfc));
-			notify = true;
-		}
 		break;
 	case DECT_TM_TYPE_FPC:
 		if (memcmp(&si->fpc, &tm->fpc, sizeof(si->fpc))) {
@@ -1855,6 +1879,12 @@ static bool dect_bc_update_si(struct dect_si *si,
 	case DECT_TM_TYPE_EFPC:
 		if (memcmp(&si->efpc, &tm->efpc, sizeof(si->efpc))) {
 			memcpy(&si->efpc, &tm->efpc, sizeof(si->efpc));
+			notify = true;
+		}
+		break;
+	case DECT_TM_TYPE_EFPC2:
+		if (memcmp(&si->efpc2, &tm->efpc2, sizeof(si->efpc2))) {
+			memcpy(&si->efpc2, &tm->efpc2, sizeof(si->efpc2));
 			notify = true;
 		}
 		break;
@@ -1904,6 +1934,13 @@ static bool dect_bc_si_cycle_complete(struct dect_idi *idi,
 	if (si->fpc.fpc & DECT_FPC_EXTENDED_FP_INFO &&
 	    !(si->mask & (1 << DECT_TM_TYPE_EFPC))) {
 		pr_debug("incomplete: EFPC\n");
+		return false;
+	}
+
+	if (si->mask & (1 << DECT_TM_TYPE_EFPC) &&
+	    si->efpc.fpc & DECT_EFPC_EXTENDED_FP_INFO2 &&
+	    !(si->mask & (1 << DECT_TM_TYPE_EFPC2))) {
+		pr_debug("incomplete: EFPC2\n");
 		return false;
 	}
 
@@ -3953,6 +3990,7 @@ void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 			 enum dect_scan_status status)
 {
+	const struct dect_cluster_handle *clh = cell->handle.clh;
 	struct dect_irc *irc = trx->irc;
 	struct dect_si *si = &irc->si;
 	struct dect_channel_desc chd;
@@ -3978,13 +4016,15 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 	if (cell->mode != DECT_MODE_FP) {
 		memcpy(&cell->idi, &irc->idi, sizeof(cell->idi));
 		cell->fmid = dect_build_fmid(&cell->idi);
-		memcpy(&cell->si.ssi, &si->ssi, sizeof(cell->si.ssi));
+		memcpy(&cell->si, si, sizeof(cell->si));
 
 		dect_timer_synchronize_mfn(cell, si->mfn.num);
 
 		/* Lock framing based on slot position and create DBC */
 		dect_transceiver_lock(trx, chd.slot);
 		dect_dbc_init(cell, &chd);
+
+		clh->ops->mac_info_indicate(clh, &cell->idi, &cell->si);
 	} else {
 		dect_transceiver_lock(trx, chd.slot);
 
@@ -4045,6 +4085,7 @@ static int dect_cell_preload(const struct dect_cell_handle *ch,
 	memcpy(&cell->si.erfc, &si->erfc, sizeof(cell->si.erfc));
 	memcpy(&cell->si.fpc, &si->fpc, sizeof(cell->si.fpc));
 	memcpy(&cell->si.efpc, &si->efpc, sizeof(cell->si.efpc));
+	memcpy(&cell->si.efpc2, &si->efpc2, sizeof(cell->si.efpc2));
 	memcpy(cell->si.sari, si->sari, sizeof(cell->si.sari));
 	cell->si.num_saris = si->num_saris;
 	spin_unlock_bh(&cell->lock);

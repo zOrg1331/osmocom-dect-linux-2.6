@@ -257,17 +257,9 @@ nla_put_failure:
 static int dect_llme_fill_mac_info(const struct dect_cluster *cl,
 				   struct sk_buff *skb, const void *data)
 {
-	const struct dect_scan_result *res = data;
-	const struct dect_idi *idi = &res->idi;
-	const struct dect_si *si = &res->si;
+	const struct dect_si *si = data;
 	struct nlattr *nla;
 	unsigned int i;
-
-	NLA_PUT_U8(skb, DECTA_MAC_INFO_RSSI, res->rssi >> DECT_RSSI_AVG_SCALE);
-
-	if (dect_fill_ari(skb, &idi->pari, DECTA_MAC_INFO_PARI) < 0)
-		goto nla_put_failure;
-	NLA_PUT_U8(skb, DECTA_MAC_INFO_RPN, idi->rpn);
 
 	if (si->mask & (1 << DECT_TM_TYPE_SARI) && si->num_saris > 0) {
 		nla = nla_nest_start(skb, DECTA_MAC_INFO_SARI_LIST);
@@ -283,19 +275,39 @@ static int dect_llme_fill_mac_info(const struct dect_cluster *cl,
 
 	if (si->mask & (1 << DECT_TM_TYPE_FPC)) {
 		NLA_PUT_U32(skb, DECTA_MAC_INFO_FPC, si->fpc.fpc);
-		NLA_PUT_U32(skb, DECTA_MAC_INFO_HLC, si->fpc.hlc);
+		NLA_PUT_U16(skb, DECTA_MAC_INFO_HLC, si->fpc.hlc);
 	}
 
 	if (si->mask & (1 << DECT_TM_TYPE_EFPC)) {
-		nla = nla_nest_start(skb, DECTA_MAC_INFO_EFPC);
-		if (nla == NULL)
-			goto nla_put_failure;
-		NLA_PUT_U8(skb, DECTA_EFPC_CRFP_HOPS, si->efpc.crfp);
-		NLA_PUT_U8(skb, DECTA_EFPC_REP_HOPS, si->efpc.rep);
-		NLA_PUT_U16(skb, DECTA_EFPC_EHLC, si->efpc.ehlc);
-		nla_nest_end(skb, nla);
+		NLA_PUT_U16(skb, DECTA_MAC_INFO_EFPC, si->efpc.fpc);
+		NLA_PUT_U32(skb, DECTA_MAC_INFO_EHLC, si->efpc.hlc);
 	}
 
+	if (si->mask & (1 << DECT_TM_TYPE_EFPC2)) {
+		NLA_PUT_U16(skb, DECTA_MAC_INFO_EFPC2, si->efpc2.fpc);
+		NLA_PUT_U32(skb, DECTA_MAC_INFO_EHLC2, si->efpc2.hlc);
+	}
+
+	return 0;
+
+nla_put_failure:
+	return -EMSGSIZE;
+}
+
+static int dect_llme_fill_scan_result(const struct dect_cluster *cl,
+				      struct sk_buff *skb, const void *data)
+{
+	const struct dect_scan_result *res = data;
+	const struct dect_idi *idi = &res->idi;
+	const struct dect_si *si = &res->si;
+
+	NLA_PUT_U8(skb, DECTA_MAC_INFO_RSSI, res->rssi >> DECT_RSSI_AVG_SCALE);
+
+	if (dect_fill_ari(skb, &idi->pari, DECTA_MAC_INFO_PARI) < 0)
+		goto nla_put_failure;
+	NLA_PUT_U8(skb, DECTA_MAC_INFO_RPN, idi->rpn);
+
+	dect_llme_fill_mac_info(cl, skb, si);
 	return 0;
 
 nla_put_failure:
@@ -307,11 +319,11 @@ void dect_llme_scan_result_notify(const struct dect_cluster *cl,
 {
 	struct sk_buff *skb;
 	u32 pid = res->lreq.nlpid;
-	int err = -ENOBUFS;
+	int err = 0;
 
 	skb = dect_llme_fill(cl, &res->lreq,
 			     DECT_LLME_INDICATE, DECT_LLME_MAC_INFO,
-			     dect_llme_fill_mac_info, res);
+			     dect_llme_fill_scan_result, res);
 	if (IS_ERR(skb)) {
 		err = PTR_ERR(skb);
 		goto err;
@@ -322,13 +334,54 @@ err:
 		netlink_set_err(nlsk, pid, DECTNLGRP_LLME, err);
 }
 
+void dect_llme_mac_info_ind(const struct dect_cluster *cl,
+			    const struct dect_si *si)
+{
+	struct sk_buff *skb;
+	int err = 0;
+
+	skb = dect_llme_fill(cl, NULL,
+			     DECT_LLME_INDICATE, DECT_LLME_MAC_INFO,
+			     dect_llme_fill_mac_info, si);
+	if (IS_ERR(skb)) {
+		err = PTR_ERR(skb);
+		goto err;
+	}
+	nlmsg_notify(nlsk, skb, 0, DECTNLGRP_LLME, 0, GFP_ATOMIC);
+err:
+	if (err < 0)
+		netlink_set_err(nlsk, 0, DECTNLGRP_LLME, err);
+}
+
+static int dect_llme_mac_info_req(struct dect_cluster *cl,
+				  const struct sk_buff *skb_in,
+				  const struct nlmsghdr *nlh,
+				  const struct nlattr *tb[DECTA_MAC_INFO_MAX + 1])
+{
+	struct dect_llme_req lreq;
+	struct sk_buff *skb;
+
+	dect_llme_req_init(&lreq, nlh, skb_in);
+	skb = dect_llme_fill(cl, &lreq,
+			     DECT_LLME_INDICATE, DECT_LLME_MAC_INFO,
+			     dect_llme_fill_mac_info, &cl->si);
+	if (IS_ERR(skb))
+		return PTR_ERR(skb);
+
+	return nlmsg_unicast(nlsk, skb, lreq.nlpid);
+}
+
 static const struct nla_policy dect_llme_mac_info_policy[DECTA_MAC_INFO_MAX + 1] =  {
 	[DECTA_MAC_INFO_PARI]		= { .type = NLA_NESTED },
 	[DECTA_MAC_INFO_RPN]		= { .type = NLA_U8 },
 	[DECTA_MAC_INFO_RSSI]		= { .type = NLA_U8 },
 	[DECTA_MAC_INFO_SARI_LIST]	= { .type = NLA_NESTED },
 	[DECTA_MAC_INFO_FPC]		= { .type = NLA_U32 },
-	[DECTA_MAC_INFO_EFPC]		= { .type = NLA_NESTED },
+	[DECTA_MAC_INFO_HLC]		= { .type = NLA_U16 },
+	[DECTA_MAC_INFO_EFPC]		= { .type = NLA_U16 },
+	[DECTA_MAC_INFO_EHLC]		= { .type = NLA_U32 },
+	[DECTA_MAC_INFO_EFPC2]		= { .type = NLA_U16 },
+	[DECTA_MAC_INFO_EHLC2]		= { .type = NLA_U32 },
 };
 
 static int dect_llme_scan_request(struct dect_cluster *cl,
@@ -350,6 +403,32 @@ static int dect_llme_scan_request(struct dect_cluster *cl,
 
 	dect_llme_req_init(&lreq, nlh, skb);
 	return dect_cluster_scan(cl, &lreq, &pari, &pari_mask);
+}
+
+static int dect_llme_mac_rfp_preload(struct dect_cluster *cl,
+				     const struct sk_buff *skb,
+				     const struct nlmsghdr *nlh,
+				     const struct nlattr *tb[DECTA_MAC_INFO_MAX + 1])
+{
+	struct dect_ari pari;
+	struct dect_si si;
+	int err = 0;
+
+	if (tb[DECTA_MAC_INFO_PARI] != NULL) {
+		err = dect_nla_parse_ari(&pari, tb[DECTA_MAC_INFO_PARI]);
+		if (err < 0)
+			return err;
+	} else
+		pari = cl->pari;
+
+	if (tb[DECTA_MAC_INFO_HLC])
+		si.fpc.hlc = nla_get_u16(tb[DECTA_MAC_INFO_HLC]);
+	if (tb[DECTA_MAC_INFO_EHLC])
+		si.efpc.hlc = nla_get_u32(tb[DECTA_MAC_INFO_EHLC]);
+	if (tb[DECTA_MAC_INFO_EHLC2])
+		si.efpc2.hlc = nla_get_u32(tb[DECTA_MAC_INFO_EHLC2]);
+
+	return err;
 }
 
 static struct sk_buff *dect_llme_fill(const struct dect_cluster *cl,
@@ -411,6 +490,20 @@ static const struct dect_llme_link {
 		.maxtype	= DECTA_MAC_INFO_MAX,
 		.ops		= {
 			[DECT_LLME_REQUEST].doit = dect_llme_scan_request,
+		},
+	},
+	[DECT_LLME_MAC_INFO] = {
+		.policy		= dect_llme_mac_info_policy,
+		.maxtype	= DECTA_MAC_INFO_MAX,
+		.ops		= {
+			[DECT_LLME_REQUEST].doit = dect_llme_mac_info_req,
+		},
+	},
+	[DECT_LLME_MAC_RFP_PRELOAD] = {
+		.policy		= dect_llme_mac_info_policy,
+		.maxtype	= DECTA_MAC_INFO_MAX,
+		.ops		= {
+			[DECT_LLME_REQUEST].doit = dect_llme_mac_rfp_preload,
 		},
 	},
 };

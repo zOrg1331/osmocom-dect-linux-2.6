@@ -229,25 +229,26 @@ struct dect_fpc {
  * Extended Fixed Part capabilities
  */
 
-#define DECT_QT_EFPC_CRFP_HOPS_MASK	0x0c00000000000000ULL
-#define DECT_QT_EFPC_CRFP_HOPS_SHIFT	58
+#define DECT_QT_EFPC_EFPC_MASK		0x0fff800000000000ULL
+#define DECT_QT_EFPC_EFPC_SHIFT		47
 
-#define DECT_QT_EFPC_CRFP_ENC_FLAG	0x0200000000000000ULL
-
-#define DECT_QT_EFPC_REP_HOPS_MASK	0x0180000000000000ULL
-#define DECT_QT_EFPC_REP_HOPS_SHIFT	55
-
-#define DECT_QT_EFPC_REP_INTERLACE_FLAG	0x0040000000000000ULL
-
-#define DECT_QT_EFPC_EHLC_MASK		0x000000017f000000ULL
+#define DECT_QT_EFPC_EHLC_MASK		0x00007fffff000000ULL
 #define DECT_QT_EFPC_EHLC_SHIFT		24
 
 struct dect_efpc {
-	u8	crfp;
-	bool	crfp_enc;
-	u8	rep;
-	bool	rep_il;
-	u16	ehlc;
+	u16	fpc;
+	u32	hlc;
+};
+
+#define DECT_QT_EFPC2_FPC_MASK		0x0fff000000000000ULL
+#define DECT_QT_EFPC2_FPC_SHIFT		48
+
+#define DECT_QT_EFPC2_HLC_MASK		0x0000ffffff000000ULL
+#define DECT_QT_EFPC2_HLC_SHIFT		24
+
+struct dect_efpc2 {
+	u16	fpc;
+	u32	hlc;
 };
 
 /*
@@ -690,6 +691,7 @@ enum dect_tail_msg_types {
 	DECT_TM_TYPE_ERFC,
 	DECT_TM_TYPE_FPC,
 	DECT_TM_TYPE_EFPC,
+	DECT_TM_TYPE_EFPC2,
 	DECT_TM_TYPE_SARI,
 	DECT_TM_TYPE_MFN,
 	DECT_TM_TYPE_PAGE,
@@ -713,6 +715,7 @@ struct dect_tail_msg {
 		struct dect_erfc		erfc;
 		struct dect_fpc			fpc;
 		struct dect_efpc		efpc;
+		struct dect_efpc2		efpc2;
 		struct dect_sari		sari;
 		struct dect_mfn			mfn;
 		struct dect_page		page;
@@ -733,6 +736,7 @@ struct dect_si {
 	struct dect_erfc		erfc;
 	struct dect_fpc			fpc;
 	struct dect_efpc		efpc;
+	struct dect_efpc2		efpc2;
 	struct dect_sari		sari[DECT_SARI_CYCLE_MAX];
 	struct dect_mfn			mfn;
 	u8				num_saris;

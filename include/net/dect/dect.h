@@ -109,6 +109,8 @@ struct dect_llme_req {
 struct dect_scan_result;
 extern void dect_llme_scan_result_notify(const struct dect_cluster *cl,
 					 const struct dect_scan_result *res);
+extern void dect_llme_mac_info_ind(const struct dect_cluster *cl,
+				   const struct dect_si *si);
 
 #include <net/sock.h>
 

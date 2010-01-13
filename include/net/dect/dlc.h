@@ -264,10 +264,12 @@ struct dect_lapc {
 extern struct dect_lapc *dect_lapc_init(struct sock *sk, const struct dect_dli *dli,
 					enum dect_sapis sapi, struct dect_lc *lc,
 					gfp_t gfp);
-extern void dect_lapc_release(struct dect_lapc *lapc, bool normal);
+extern void dect_lapc_destroy(struct dect_lapc *lapc);
 
-extern int dect_lapc_transmit(struct dect_lapc *lapc);
 extern int dect_lapc_establish(struct dect_lapc *lapc);
+extern void dect_lapc_release(struct dect_lapc *lapc, bool normal);
+extern int dect_lapc_transmit(struct dect_lapc *lapc);
+
 extern struct dect_lapc *dect_ssap_rcv_request(struct dect_lc *lc,
 					       const struct dect_dli *dli,
 					       enum dect_sapis sapi);
@@ -308,7 +310,10 @@ struct dect_lc {
 #define DECT_LC_LSIG_MASK	0xffff
 
 extern struct dect_lc *dect_lc_init(struct dect_mac_conn *mc, gfp_t gfp);
+extern void dect_lc_destroy(struct dect_lc *lc);
+
 extern void dect_lc_bind(struct dect_lc *lc, struct dect_lapc *lapc);
+extern void dect_lc_unbind(struct dect_lc *lc, struct dect_lapc *lapc);
 
 /**
  * struct dect_lb - DECT Lb entity (C-plane broadcast service)

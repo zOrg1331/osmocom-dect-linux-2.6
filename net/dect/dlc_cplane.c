@@ -36,8 +36,6 @@ static void dect_fa_parse_len(struct dect_fa_len *len, const struct sk_buff *skb
  * LAPC entity
  */
 
-static void dect_lc_unbind(struct dect_lc *lc, struct dect_lapc *lapc);
-
 #define lapc_debug(lapc, fmt, args...) \
 	pr_debug("LAPC (MCEI: %u LLN: %u): " fmt, \
 		 (lapc)->lc->mc->mcei, (lapc)->dli.lln, ## args)
@@ -124,7 +122,7 @@ static bool dect_lapc_done(const struct dect_lapc *lapc)
 	       skb_queue_empty(&lapc->retransmit_queue);
 }
 
-static void dect_lapc_destroy(struct dect_lapc *lapc)
+void dect_lapc_destroy(struct dect_lapc *lapc)
 {
 	lapc_debug(lapc, "destroy\n");
 
@@ -602,7 +600,7 @@ void dect_lc_destroy(struct dect_lc *lc)
 	kfree(lc);
 }
 
-static void dect_lc_unbind(struct dect_lc *lc, struct dect_lapc *lapc)
+void dect_lc_unbind(struct dect_lc *lc, struct dect_lapc *lapc)
 {
 	lc_debug(lc, "unbind LLN: %u use: %u\n", lapc->dli.lln, lc->use);
 	if (WARN_ON(lc->lapcs[lapc->dli.lln] == NULL))

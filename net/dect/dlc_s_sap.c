@@ -108,7 +108,11 @@ static void dect_ssap_close(struct sock *sk, long timeout)
 	struct dect_ssap *ssap = dect_ssap(sk);
 	struct sock *req;
 
-	printk("close sock %p\n", sk);
+	printk("close sock %p refcnt %u rmem %u wmem %u\n",
+		sk, atomic_read(&sk->sk_refcnt),
+		atomic_read(&sk->sk_rmem_alloc),
+		atomic_read(&sk->sk_wmem_alloc));
+
 	spin_lock_bh(&dect_ssap_lock);
 	dect_ssap_unlink(sk);
 	spin_unlock_bh(&dect_ssap_lock);
@@ -409,11 +413,19 @@ static int dect_ssap_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 		err = dect_lapc_establish(lapc);
 
 	if (err < 0)
-		goto err3;
+		goto err4;
 
 	sk->sk_state = DECT_SK_ESTABLISH_PENDING;
 	return 0;
+
+err4:
+	dect_lapc_destroy(lapc);
+	/* Both will be release by dect_lapc_destroy() */
+	new_lc = false;
+	new_mc = false;
 err3:
+	if (new_lc)
+		dect_lc_destroy(lc);
 err2:
 	if (new_mc)
 		dect_dlc_mac_conn_destroy(mc);

@@ -65,10 +65,8 @@ static int com_on_air_probe(struct pcmcia_device *link)
 	link->io.NumPorts1	= 16;
 	link->io.Attributes2	= 0;
 
-	link->irq.Attributes	= IRQ_TYPE_DYNAMIC_SHARING | IRQ_HANDLE_PRESENT;
-	link->irq.IRQInfo1	= IRQ_LEVEL_ID;
+	link->irq.Attributes	= IRQ_TYPE_DYNAMIC_SHARING;
 	link->irq.Handler	= sc1442x_interrupt;
-	link->irq.Instance	= trx;
 
 	link->conf.Attributes	= CONF_ENABLE_IRQ;
 	link->conf.IntType	= INT_MEMORY_AND_IO;
@@ -81,7 +79,7 @@ static int com_on_air_probe(struct pcmcia_device *link)
 	req.Size		= 0x1000;
 	req.AccessSpeed		= 500;
 
-	err = pcmcia_request_window(&link, &req, &link->win);
+	err = pcmcia_request_window(link, &req, &link->win);
 	if (err < 0) {
 		dev_err(dev->dev, "failed to obtain PCMCIA window\n");
 		goto err2;
@@ -169,7 +167,7 @@ err5:
 err4:
 	iounmap(dev->sc1442x_base);
 err3:
-	pcmcia_release_window(link->win);
+	pcmcia_release_window(link, link->win);
 err2:
 	dect_transceiver_free(trx);
 err1:
@@ -184,7 +182,7 @@ static void com_on_air_remove(struct pcmcia_device *link)
 	sc1442x_shutdown_device(dev);
 	pcmcia_disable_device(link);
 	iounmap(dev->sc1442x_base);
-	pcmcia_release_window(link->win);
+	pcmcia_release_window(link, link->win);
 	dect_unregister_transceiver(trx);
 }
 

@@ -332,7 +332,8 @@ static int dect_getsockopt(struct socket *sock, int level, int optname,
 	return err;
 }
 
-static int dect_create(struct net *net, struct socket *sock, int protocol)
+static int dect_create(struct net *net, struct socket *sock, int protocol,
+		       int kern)
 {
 	struct dect_proto *p;
 	struct sock *sk;

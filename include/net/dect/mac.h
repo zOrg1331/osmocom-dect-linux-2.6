@@ -348,10 +348,10 @@ enum dect_page_lengths {
 	DECT_PT_LONG_PAGE_ALL		= 0x7ULL << DECT_PT_HDR_LENGTH_SHIFT,
 };
 
-/* zero and short page B_S channel data */
-#define DECT_PT_SZP_BS_DATA_MASK	0x0fffff0000000000ULL
-#define DECT_PT_SZP_BS_DATA_SHIFT	40
-#define DECT_PT_SZP_BS_DATA_SIZE	3
+/* short page B_S channel data */
+#define DECT_PT_SP_BS_DATA_MASK		0x0fffff0000000000ULL
+#define DECT_PT_SP_BS_DATA_SHIFT	40
+#define DECT_PT_SP_BS_DATA_SIZE		3
 
 /* long and full page B_S channel data */
 #define DECT_PT_LFP_BS_DATA_MASK	0x0fffffffff000000ULL

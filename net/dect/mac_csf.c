@@ -1489,7 +1489,7 @@ static void dect_queue_page_segments(struct sk_buff_head *list,
 	/* Short and full pages have the extend bit set in order to reduce
 	 * the delay for new pages arriving while a page is already active.
 	 */
-	if (skb->len == DECT_PT_SZP_BS_DATA_SIZE)
+	if (skb->len == DECT_PT_SP_BS_DATA_SIZE)
 		t = DECT_PT_SHORT_PAGE | DECT_PT_HDR_EXTEND_FLAG;
 	else if (skb_queue_empty(list))
 		t = DECT_PT_FULL_PAGE | DECT_PT_HDR_EXTEND_FLAG;
@@ -1718,7 +1718,7 @@ static struct sk_buff *dect_bc_p_dequeue(struct dect_cell *cell,
 	/* The frame needs headroom for the preamble and hdr-field. Short and
 	 * zero pages need additional tailroom for the MAC Layer Information. */
 	headroom = DECT_PREAMBLE_SIZE + DECT_HDR_FIELD_SIZE;
-	if (skb->len == DECT_PT_SZP_BS_DATA_SIZE)
+	if (skb->len == DECT_PT_SP_BS_DATA_SIZE)
 		tailroom = DECT_PT_INFO_TYPE_SIZE;
 
 	skb = skb_copy_expand(skb, headroom, tailroom, GFP_ATOMIC);
@@ -1781,7 +1781,7 @@ static void dect_bc_queue_bs_data(struct dect_cell *cell, struct dect_bc *bc,
 	head = bc->p_rx_skb;
 	switch (page->length) {
 	case DECT_PT_SHORT_PAGE:
-		skb_trim(skb, DECT_PT_SZP_BS_DATA_SIZE);
+		skb_trim(skb, DECT_PT_SP_BS_DATA_SIZE);
 		break;
 	case DECT_PT_FULL_PAGE:
 	case DECT_PT_LONG_PAGE_ALL:

@@ -748,7 +748,8 @@ static int dect_parse_blind_full_slots(struct dect_tail_msg *tm, u64 t)
 	bfs->mask = (t & DECT_PT_BFS_MASK) >> DECT_PT_BFS_SHIFT;
 	tm->type = DECT_TM_TYPE_BFS;
 
-	pr_debug("blind full slots: %.3x\n", bfs->mask);
+	pr_debug("page: RFPI: %.3x blind full slots: %.3x\n",
+		 tm->page.rfpi, bfs->mask);
 	return 0;
 }
 
@@ -773,8 +774,8 @@ static int dect_parse_bearer_description(struct dect_tail_msg *tm, u64 t)
 		return -1;
 	tm->type = DECT_TM_TYPE_BD;
 
-	pr_debug("bearer description: sn: %u sp: %u cn: %u\n",
-		 bd->sn, bd->sp, bd->cn);
+	pr_debug("page: RFPI: %.3x bearer description: bt: %llx sn: %u sp: %u cn: %u\n",
+		 tm->page.rfpi, bd->bt, bd->sn, bd->sp, bd->cn);
 	return 0;
 }
 
@@ -796,7 +797,8 @@ static int dect_parse_rfp_identity(struct dect_tail_msg *tm, u64 t)
 	id->id = (t & DECT_PT_RFP_ID_MASK) >> DECT_PT_RFP_ID_SHIFT;
 	tm->type = DECT_TM_TYPE_RFP_ID;
 
-	pr_debug("RFP identity: %.3x\n", id->id);
+	pr_debug("page: RFPI: %.3x RFP identity: %.3x\n",
+		 tm->page.rfpi, id->id);
 	return 0;
 }
 
@@ -817,8 +819,8 @@ static int dect_parse_rfp_status(struct dect_tail_msg *tm, u64 t)
 	st->sys_busy = t & DECT_PT_RFPS_SYS_BUSY_FLAG;
 	tm->type = DECT_TM_TYPE_RFP_STATUS;
 
-	pr_debug("RFP status: rfp_busy: %d sys_busy: %d\n",
-		 st->rfp_busy, st->sys_busy);
+	pr_debug("page: RFPI: %.3x RFP status: rfp_busy: %d sys_busy: %d\n",
+		 tm->page.rfpi, st->rfp_busy, st->sys_busy);
 	return 0;
 }
 
@@ -840,7 +842,8 @@ static int dect_parse_active_carriers(struct dect_tail_msg *tm, u64 t)
 		     DECT_PT_ACTIVE_CARRIERS_SHIFT;
 	tm->type = DECT_TM_TYPE_ACTIVE_CARRIERS;
 
-	pr_debug("active carriers: %.3x\n", ac->active);
+	pr_debug("page: RFPI: %.3x active carriers: %.3x\n",
+		 tm->page.rfpi, ac->active);
 	return 0;
 }
 
@@ -859,19 +862,10 @@ static int dect_parse_paging_info(struct dect_tail_msg *tm, u64 t)
 	case DECT_PT_IT_BLIND_FULL_SLOT:
 		return dect_parse_blind_full_slots(tm, t);
 	case DECT_PT_IT_OTHER_BEARER:
-		pr_debug("other bearer ");
-		return dect_parse_bearer_description(tm, t);
 	case DECT_PT_IT_RECOMMENDED_OTHER_BEARER:
-		pr_debug("recomended other bearer ");
-		return dect_parse_bearer_description(tm, t);
 	case DECT_PT_IT_GOOD_RFP_BEARER:
-		pr_debug("good bearer ");
-		return dect_parse_bearer_description(tm, t);
 	case DECT_PT_IT_DUMMY_OR_CL_BEARER_POSITION:
-		pr_debug("dummy or cl bearer ");
-		return dect_parse_bearer_description(tm, t);
 	case DECT_PT_IT_CL_BEARER_POSITION:
-		pr_debug("cl ");
 		return dect_parse_bearer_description(tm, t);
 	case DECT_PT_IT_RFP_IDENTITY:
 		return dect_parse_rfp_identity(tm, t);
@@ -894,8 +888,12 @@ static int dect_parse_paging_msg(struct dect_tail_msg *tm, u64 t)
 
 	switch (tm->page.length) {
 	case DECT_PT_ZERO_PAGE:
+		tm->page.rfpi = (t & DECT_PT_ZP_RFPI_MASK) >>
+				DECT_PT_ZP_RFPI_SHIFT;
+
 		return dect_parse_paging_info(tm, t);
 	case DECT_PT_SHORT_PAGE:
+		tm->page.rfpi = 0;
 		return dect_parse_paging_info(tm, t);
 	case DECT_PT_FULL_PAGE:
 	case DECT_PT_LONG_PAGE:
@@ -1596,6 +1594,11 @@ static void dect_cell_bmc_disable(struct dect_cell *cell)
  * Broadcast Control
  */
 
+static u32 dect_build_page_rfpi(const struct dect_cell *cell)
+{
+	return (dect_build_rfpi(&cell->idi) >> 24) & ((1 << 20) - 1);
+}
+
 static void dect_bc_release(struct dect_bc *bc)
 {
 	kfree_skb(bc->p_rx_skb);
@@ -1914,12 +1917,14 @@ static void dect_bc_rcv(struct dect_cell *cell, struct dect_bc *bc,
 			struct sk_buff *skb, const struct dect_tail_msg *tm)
 {
 	const struct dect_cluster_handle *clh = cell->handle.clh;
+	enum dect_tail_identifications ti;
 	bool notify;
 
 	if (cell->mode != DECT_MODE_PP)
 		return;
 
-	if (dect_parse_tail(skb) == DECT_TI_QT) {
+	ti = dect_parse_tail(skb);
+	if (ti == DECT_TI_QT) {
 		/* Q-channel information is broadcast in frame 8 */
 		dect_timer_synchronize_framenum(cell, DECT_Q_CHANNEL_FRAME);
 		if (tm->type == DECT_TM_TYPE_MFN)
@@ -1928,21 +1933,14 @@ static void dect_bc_rcv(struct dect_cell *cell, struct dect_bc *bc,
 		notify = dect_bc_update_si(&cell->si, tm);
 		if (dect_bc_si_cycle_complete(&cell->idi, &cell->si) && notify)
 			clh->ops->mac_info_indicate(clh, &cell->idi, &cell->si);
+	} else if (ti == DECT_TI_PT) {
+		if (tm->page.length == DECT_PT_ZERO_PAGE &&
+		    tm->page.rfpi != dect_build_page_rfpi(cell))
+			printk("RFPI mismatch %.3x %.3x\n",
+				tm->page.rfpi, dect_build_page_rfpi(cell));
 	}
 
 	switch (tm->type) {
-#if 0
-	case DECT_TM_TYPE_BD:
-		slot2 = tm->bd.sn;
-		if (trx->slots[slot2].state != DECT_SLOT_RX || 1) {
-			pr_debug("activate slot %u carrier %u\n", slot2, tm->bd.cn);
-			dect_set_channel_mode(trx, slot2, DECT_SLOT_RX);
-			dect_set_carrier(trx, slot2, tm.bd.cn);
-		} else
-			pr_debug("slot %u already active on carrier %u\n",
-				slot2, trx->slots[slot2].carrier);
-		break;
-#endif
 	case DECT_TM_TYPE_BFS:
 		cell->blind_full_slots = tm->bfs.mask;
 	case DECT_TM_TYPE_BD:

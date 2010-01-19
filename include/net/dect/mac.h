@@ -348,6 +348,10 @@ enum dect_page_lengths {
 	DECT_PT_LONG_PAGE_ALL		= 0x7ULL << DECT_PT_HDR_LENGTH_SHIFT,
 };
 
+/* zero length pages */
+#define DECT_PT_ZP_RFPI_MASK		0x0fffff0000000000ULL
+#define DECT_PT_ZP_RFPI_SHIFT		40
+
 /* short page B_S channel data */
 #define DECT_PT_SP_BS_DATA_MASK		0x0fffff0000000000ULL
 #define DECT_PT_SP_BS_DATA_SHIFT	40
@@ -361,6 +365,7 @@ enum dect_page_lengths {
 struct dect_page {
 	bool			extend;
 	enum dect_page_lengths	length;
+	u32			rfpi;
 };
 
 /* MAC layer information */

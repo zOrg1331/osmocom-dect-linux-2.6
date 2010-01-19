@@ -1200,7 +1200,7 @@ static struct sk_buff *dect_build_tail_msg(struct sk_buff *skb,
 		BUG();
 	}
 
-	skb_push(skb, DECT_T_FIELD_SIZE);
+	skb_put(skb, DECT_T_FIELD_SIZE);
 	for (i = 0; i < DECT_T_FIELD_SIZE; i++)
 		skb->data[i] = t >> ((sizeof(t) - i - 1) * BITS_PER_BYTE);
 
@@ -1226,8 +1226,8 @@ static struct sk_buff *dect_t_skb_alloc(void)
 
 	skb_reset_network_header(skb);
 
-	/* Reserve space for T-Field */
-	skb_reserve(skb, DECT_T_FIELD_OFF + DECT_T_FIELD_SIZE);
+	/* Reserve space for Header Field */
+	skb_reserve(skb, DECT_HDR_FIELD_SIZE);
 	return skb;
 }
 

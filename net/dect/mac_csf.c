@@ -775,7 +775,7 @@ static int dect_parse_bearer_description(struct dect_tail_msg *tm, u64 t)
 	tm->type = DECT_TM_TYPE_BD;
 
 	pr_debug("page: RFPI: %.3x bearer description: bt: %llx sn: %u sp: %u cn: %u\n",
-		 tm->page.rfpi, bd->bt, bd->sn, bd->sp, bd->cn);
+		 tm->page.rfpi, (unsigned long long)bd->bt, bd->sn, bd->sp, bd->cn);
 	return 0;
 }
 

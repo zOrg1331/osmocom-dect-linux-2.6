@@ -125,20 +125,25 @@ u32 dect_mbc_alloc_mcei(struct dect_cluster *cl)
 	}
 }
 
-static void dect_mbc_timeout(unsigned long data)
-{
-	struct dect_mbc *mbc = (struct dect_mbc *)data;
-
-	mbc_debug(mbc, "timeout");
-}
-
 static void dect_mbc_release(struct dect_mbc *mbc)
 {
 	mbc_debug(mbc, "release\n");
-	del_timer_sync(&mbc->timer);
+	del_timer(&mbc->timer);
 	list_del(&mbc->list);
 	kfree_skb(mbc->cs_tx_skb);
 	kfree(mbc);
+}
+
+static void dect_mbc_timeout(unsigned long data)
+{
+	struct dect_mbc *mbc = (struct dect_mbc *)data;
+	enum dect_release_reasons reason;
+
+	mbc_debug(mbc, "timeout\n");
+	reason = DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED;
+	mbc->ch->ops->tbc_release(mbc->ch, &mbc->id, reason);
+	dect_dlc_mac_dis_indicate(mbc->cl, mbc->id.mcei, reason);
+	dect_mbc_release(mbc);
 }
 
 static struct dect_mbc *dect_mbc_init(struct dect_cluster *cl,
@@ -149,6 +154,7 @@ static struct dect_mbc *dect_mbc_init(struct dect_cluster *cl,
 	mbc = kzalloc(sizeof(*mbc), GFP_ATOMIC);
 	if (mbc == NULL)
 		return NULL;
+	mbc->cl = cl;
 	memcpy(&mbc->id, id, sizeof(mbc->id));
 	mbc->state = DECT_MBC_NONE;
 	mbc->cs_tx_seq = 1;
@@ -285,9 +291,14 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 	case DECT_TBC_SETUP_COMPLETE:
 		switch (mbc->state) {
 		case DECT_MBC_NONE:
-			return dect_dlc_mac_conn_indicate(cl, id);
+			if (del_timer(&mbc->timer))
+				return dect_dlc_mac_conn_indicate(cl, id);
+			return 0;
 		case DECT_MBC_INITIATED:
-			return dect_dlc_mac_conn_confirm(cl, id->mcei, id->service);
+			if (del_timer(&mbc->timer))
+				return dect_dlc_mac_conn_confirm(cl, id->mcei,
+								 id->service);
+			return 0;
 		default:
 			return WARN_ON(-1);
 		}

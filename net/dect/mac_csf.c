@@ -1288,6 +1288,7 @@ static void dect_bearer_release(struct dect_cell *cell,
 {
 	struct dect_transceiver *trx = bearer->trx;
 
+	dect_timer_del(&bearer->tx_timer);
 	dect_bearer_disable(bearer);
 	dect_disable_cipher(trx, bearer->chd.slot);
 	dect_scan_bearer_enable(trx, &bearer->chd);
@@ -1316,6 +1317,7 @@ static struct dect_bearer *dect_bearer_init(struct dect_cell *cell,
 	bearer->chd   = *chd;
 	bearer->mode  = mode;
 	bearer->state = DECT_BEARER_INACTIVE;
+	dect_timer_setup(&bearer->tx_timer, NULL, NULL);
 	skb_queue_head_init(&bearer->m_tx_queue);
 	bearer->data  = data;
 
@@ -2123,7 +2125,9 @@ static void dect_tbc_release_timer(struct dect_cell *cell, void *data)
 	struct dect_tbc *tbc = data;
 	struct sk_buff *m_skb;
 
-	if (tbc->state == DECT_TBC_REQ_SENT || tbc->state == DECT_TBC_RELEASED)
+	if (tbc->state == DECT_TBC_NONE ||
+	    tbc->state == DECT_TBC_REQ_SENT ||
+	    tbc->state == DECT_TBC_RELEASED)
 		return dect_tbc_destroy(cell, tbc);
 
 	tbc_debug(tbc, "TX RELEASE\n");
@@ -2804,6 +2808,7 @@ static struct dect_tbc *dect_tbc_init(struct dect_cell *cell,
 		goto err1;
 	tbc->cell = cell;
 	memcpy(&tbc->id, id, sizeof(tbc->id));
+	INIT_LIST_HEAD(&tbc->bc.list);
 	dect_timer_init(&tbc->wait_timer);
 	dect_timer_setup(&tbc->wd_timer, dect_tbc_watchdog_timer, tbc);
 	dect_timer_setup(&tbc->release_timer, dect_tbc_release_timer, tbc);

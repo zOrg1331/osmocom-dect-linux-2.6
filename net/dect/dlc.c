@@ -70,7 +70,8 @@ void dect_dlc_mac_conn_unbind(struct dect_mac_conn *mc)
 	if (--mc->use)
 		return;
 
-	if (mc->state == DECT_MAC_CONN_OPEN)
+	if (mc->state == DECT_MAC_CONN_OPEN ||
+	    mc->state == DECT_MAC_CONN_OPEN_PENDING)
 		dect_mbc_dis_request(mc->cl, mc->mcei);
 	dect_dlc_mac_conn_destroy(mc);
 }

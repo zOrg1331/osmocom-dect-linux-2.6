@@ -8,7 +8,10 @@
  * published by the Free Software Foundation.
  */
 
-//#define DEBUG
+#ifdef CONFIG_DECT_DEBUG
+#define DEBUG
+#endif
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/list.h>
@@ -1936,8 +1939,8 @@ static void dect_bc_rcv(struct dect_cell *cell, struct dect_bc *bc,
 	} else if (ti == DECT_TI_PT) {
 		if (tm->page.length == DECT_PT_ZERO_PAGE &&
 		    tm->page.rfpi != dect_build_page_rfpi(cell))
-			printk("RFPI mismatch %.3x %.3x\n",
-				tm->page.rfpi, dect_build_page_rfpi(cell));
+			pr_debug("RFPI mismatch %.3x %.3x\n",
+				 tm->page.rfpi, dect_build_page_rfpi(cell));
 	}
 
 	switch (tm->type) {
@@ -2945,6 +2948,8 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 		if (0 && cell->mode == DECT_MODE_FP)
 			break;
 	default:
+		rx_debug(cell, "unhandled TBC request: %llu\n",
+			 (unsigned long long)tm->cctl.cmd);
 		goto err1;
 	}
 
@@ -3861,7 +3866,7 @@ void dect_mac_rcv(struct dect_transceiver *trx,
 		ts->bearer->ops->rcv(cell, ts->bearer, skb);
 	else {
 		if (ts->bearer == NULL && net_ratelimit())
-			printk("packet without bearer slot %u\n", ts->chd.slot);
+			pr_debug("packet without bearer slot %u\n", ts->chd.slot);
 		kfree_skb(skb);
 	}
 }
@@ -3873,8 +3878,8 @@ void dect_mac_report_rssi(struct dect_transceiver *trx,
 	struct dect_cell *cell = trx->cell;
 
 	if (ts->bearer == NULL) {
-		printk("%s: rssi slot %u state %u no bearer\n",
-			trx->name, ts->chd.slot, ts->state);
+		pr_debug("%s: rssi slot %u state %u no bearer\n",
+			 trx->name, ts->chd.slot, ts->state);
 		return;
 	}
 	if (ts->bearer->state != DECT_BEARER_ENABLED)
@@ -4067,7 +4072,7 @@ static void dect_scan_report(struct dect_cell *cell,
 	case DECT_SCAN_FAIL:
 		break;
 	case DECT_SCAN_TIMEOUT:
-		printk("timeout\n");
+		pr_debug("timeout\n");
 	case DECT_SCAN_COMPLETE:
 		res.lreq = irc->lreq;
 		res.rssi = irc->rssi;

@@ -8,7 +8,10 @@
  * published by the Free Software Foundation.
  */
 
+#ifdef CONFIG_DECT_DEBUG
 #define DEBUG
+#endif
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/list.h>
@@ -492,7 +495,7 @@ static void dect_ccp_cl_disconnect(void *handle, u32 portref,
 	struct dect_cell_handle *ch = handle;
 	struct dect_cluster_handle *clh = ch->clh;
 
-	printk("cell disconnected\n");
+	pr_debug("cell disconnected\n");
 	clh->ops->unbind(clh, ch);
 	kfree(ch);
 }
@@ -632,7 +635,7 @@ static void dect_ccp_cluster_disconnect(void *handle, u32 portref,
 					struct sk_buff **pskb,
 					const u8 *data, u32 size, int reason)
 {
-	printk("Cluster disconnected\n");
+	pr_debug("Cluster disconnected\n");
 #if 0
 	struct dect_cell_handle *clh = handle;
 

@@ -7,6 +7,13 @@ menuconfig DECT
 
 if DECT
 
+config DECT_DEBUG
+	bool "DECT debugging"
+	help
+	  This option enables support for debugging in the DECT modules.
+
+	  If unsure, say N.
+
 config DECT_CSF
 	tristate "DECT Cell Site Functions (CSF) support"
 	help

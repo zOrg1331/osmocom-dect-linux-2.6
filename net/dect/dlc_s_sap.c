@@ -8,7 +8,10 @@
  * published by the Free Software Foundation.
  */
 
+#ifdef CONFIG_DECT_DEBUG
 #define DEBUG
+#endif
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -108,10 +111,10 @@ static void dect_ssap_close(struct sock *sk, long timeout)
 	struct dect_ssap *ssap = dect_ssap(sk);
 	struct sock *req;
 
-	printk("close sock %p refcnt %u rmem %u wmem %u\n",
-		sk, atomic_read(&sk->sk_refcnt),
-		atomic_read(&sk->sk_rmem_alloc),
-		atomic_read(&sk->sk_wmem_alloc));
+	pr_debug("close sock %p refcnt %u rmem %u wmem %u\n",
+		 sk, atomic_read(&sk->sk_refcnt),
+		 atomic_read(&sk->sk_rmem_alloc),
+		 atomic_read(&sk->sk_wmem_alloc));
 
 	spin_lock_bh(&dect_ssap_lock);
 	dect_ssap_unlink(sk);

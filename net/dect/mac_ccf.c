@@ -8,7 +8,10 @@
  * published by the Free Software Foundation.
  */
 
+#ifdef CONFIG_DECT_DEBUG
 #define DEBUG
+#endif
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/list.h>
@@ -46,7 +49,7 @@ static void dect_mac_info_indicate(const struct dect_cluster_handle *clh,
 {
 	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
 
-	printk("cl %p: mac info indicate\n", cl);
+	pr_debug("cl %p: mac info indicate\n", cl);
 	memcpy(&cl->si, si, sizeof(cl->si));
 }
 

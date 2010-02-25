@@ -8,7 +8,10 @@
  * published by the Free Software Foundation.
  */
 
+#ifdef CONFIG_DECT_DEBUG
 #define DEBUG
+#endif
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -238,7 +241,7 @@ struct sk_buff *dect_dlc_mac_co_dtr_indicate(struct dect_cluster *cl, u32 mcei,
 	mc = dect_mac_conn_get_by_mcei(cl, mcei);
 	if (mc == NULL) {
 		if (net_ratelimit())
-			printk("DLC: DTR no connection\n");
+			pr_debug("DLC: DTR no connection\n");
 		return NULL;
 	}
 

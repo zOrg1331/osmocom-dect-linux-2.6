@@ -154,7 +154,7 @@ static int dect_lu1_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 	lu1->mc = mc;
 	mc->fbx = &lu1->lux.fbx;
 	dect_dlc_mac_conn_bind(lu1->mc);
-	printk("LU1: bound to MCEI %u\n", mc->mcei);
+	pr_debug("LU1: bound to MCEI %u\n", mc->mcei);
 	return 0;
 
 err1:
@@ -218,7 +218,7 @@ copy:
 	} while (1);
 
 out:
-	printk("LU1: %p: recv err %d copied %zu\n", sk, err, copied);
+	pr_debug("LU1: %p: recv err %d copied %zu\n", sk, err, copied);
 	release_sock(sk);
 	return copied ? : err;
 }
@@ -248,7 +248,7 @@ static int dect_lu1_sendmsg(struct kiocb *kiocb, struct sock *sk,
 err2:
 	kfree_skb(skb);
 err1:
-	printk("LU1: %p: send err %d wmem %u\n", sk, err, atomic_read(&sk->sk_wmem_alloc));
+	pr_debug("LU1: %p: send err %d wmem %u\n", sk, err, atomic_read(&sk->sk_wmem_alloc));
 	return err;
 }
 

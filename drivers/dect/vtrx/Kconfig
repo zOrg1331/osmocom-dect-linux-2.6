@@ -1,0 +1,5 @@
+config DECT_VTRX
+	tristate "DECT virtual transceiver support"
+	depends on DECT
+	help
+	  This option enables support for the virtual DECT transceiver.

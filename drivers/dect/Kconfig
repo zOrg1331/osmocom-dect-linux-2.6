@@ -5,6 +5,7 @@ menuconfig DECTDEVICES
 
 if DECTDEVICES
 
+source "drivers/dect/vtrx/Kconfig"
 source "drivers/dect/coa/Kconfig"
 
 endif

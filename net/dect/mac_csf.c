@@ -2204,6 +2204,8 @@ static void dect_tbc_normal_rx_timer(struct dect_cell *cell, void *data)
 			dect_tbc_event(tbc, DECT_TBC_ACK_RECEIVED);
 		} else
 			tbc_debug(tbc, "C-channel data lost\n");
+
+		tbc->c_tx_ok = false;
 	}
 
 	tbc->rxb->q = 0;
@@ -2249,8 +2251,8 @@ static void dect_tbc_normal_tx_timer(struct dect_cell *cell, void *data)
 		if (tbc->c_tx_skb != NULL) {
 			kfree_skb(tbc->c_tx_skb);
 			tbc->c_tx_skb = NULL;
+			tbc->c_tx_ok = false;
 		}
-		tbc->c_tx_ok = false;
 		clh->ops->mbc_dtr_indicate(clh, &tbc->id, DECT_MC_C_S);
 	}
 

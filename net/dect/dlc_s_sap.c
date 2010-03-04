@@ -30,6 +30,7 @@ static HLIST_HEAD(dect_ssap_listeners);
 
 struct dect_ssap {
 	struct dect_csk		csk;
+	int			index;
 	struct dect_dlei	dlei;
 	struct dect_lapc	*lapc;
 };
@@ -137,7 +138,7 @@ static void dect_ssap_close(struct sock *sk, long timeout)
 	sk_common_release(sk);
 }
 
-static int dect_ssap_bind_conflict(const struct dect_dlei *dlei)
+static int dect_ssap_bind_conflict(int index, const struct dect_dlei *dlei)
 {
 	struct dect_ssap *ssap;
 	struct hlist_node *n;
@@ -146,7 +147,8 @@ static int dect_ssap_bind_conflict(const struct dect_dlei *dlei)
 	// FIXME: wildcards
 	sk_for_each(sk, n, &dect_ssap_sockets) {
 		ssap = dect_ssap(sk);
-		if (!dect_pmid_cmp(&ssap->dlei.mci.pmid, &dlei->mci.pmid) &&
+		if (ssap->index == index &&
+		    !dect_pmid_cmp(&ssap->dlei.mci.pmid, &dlei->mci.pmid) &&
 		    ssap->dlei.lln == dlei->lln)
 			return -EADDRINUSE;
 	}
@@ -170,10 +172,11 @@ static int dect_ssap_bind(struct sock *sk, struct sockaddr *uaddr, int len)
 	lock_sock(sk);
 	spin_lock_bh(&dect_ssap_lock);
 
-	err = dect_ssap_bind_conflict(&dlei);
+	err = dect_ssap_bind_conflict(addr->dect_index, &dlei);
 	if (err < 0)
 		goto out;
 
+	ssap->index = addr->dect_index;
 	memcpy(&ssap->dlei, &dlei, sizeof(ssap->dlei));
 	dect_ssap_insert(sk);
 out:
@@ -182,7 +185,8 @@ out:
 	return err;
 }
 
-static struct dect_ssap *dect_ssap_lookup_listener(const struct dect_dli *dli,
+static struct dect_ssap *dect_ssap_lookup_listener(const struct dect_cluster *cl,
+						   const struct dect_dli *dli,
 						   enum dect_sapis sapi)
 {
 	struct dect_ssap *ssap;
@@ -192,6 +196,8 @@ static struct dect_ssap *dect_ssap_lookup_listener(const struct dect_dli *dli,
 	pr_debug("lookup listener: lln %u sapi %u\n", dli->lln, sapi);
 	sk_for_each_bound(sk, n, &dect_ssap_listeners) {
 		ssap = dect_ssap(sk);
+		if (cl->index != ssap->index)
+			continue;
 #if 0
 		if (!dect_ari_cmp(&ssap->dlei.mci.ari, &dli->mci.ari))
 			continue;
@@ -218,7 +224,7 @@ struct dect_lapc *dect_ssap_rcv_request(struct dect_lc *lc,
 	struct dect_lapc *lapc = NULL;
 
 	spin_lock(&dect_ssap_lock);
-	ssap = dect_ssap_lookup_listener(dli, sapi);
+	ssap = dect_ssap_lookup_listener(lc->mc->cl, dli, sapi);
 	if (ssap == NULL)
 		goto out;
 
@@ -240,6 +246,7 @@ struct dect_lapc *dect_ssap_rcv_request(struct dect_lc *lc,
 		goto err1;
 
 	newssap = dect_ssap(newsk);
+	newssap->index     = lc->mc->cl->index;
 	memcpy(&newssap->dlei.mci, &dli->mci, sizeof(newssap->dlei.mci));
 	newssap->dlei.lln  = dli->lln;
 	newssap->dlei.sapi = sapi;
@@ -351,7 +358,7 @@ static int dect_ssap_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 		goto err1;
 
 	err = -ENODEV;
-	cl = dect_cluster_get_by_pari(&dlei.mci.ari);
+	cl = dect_cluster_get_by_index(addr->dect_index);
 	if (cl == NULL)
 		goto err1;
 
@@ -446,6 +453,7 @@ static int dect_ssap_getname(struct sock *sk, struct sockaddr *uaddr, int *len,
 	if (peer)
 		return -EOPNOTSUPP;
 #endif
+	addr->dect_index = ssap->index;
 	dect_build_dlei(addr, &ssap->dlei);
 	*len = sizeof(*addr);
 	return 0;

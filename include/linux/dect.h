@@ -47,17 +47,23 @@ struct dect_raw_auxdata {
  * struct sockaddr_dect_ssap
  *
  * @dect_family:	family (AF_DECT)
- * @dect_dlei:		Data Link Endpoint Identifier
- * @dect_class:		Class A/B
+ * @dect_lln:		logical link number
+ * @dect_sapi:		service access point identifier
+ * @dect_class:		class A/B
+ * @dect_index:		cluster index
+ * @dect_ari:		ARI
+ * @dect_pmid:		PMID
+ * @dect_lcn:		logical connection number
  */
 struct sockaddr_dect_ssap {
 	sa_family_t	dect_family;
-	__u64		dect_ari:40,
-			dect_pmid:20,
-			dect_lcn:3;
 	__u8		dect_lln:4,
 			dect_sapi:4;
 	__u8		dect_class;
+	int		dect_index;
+	__u64		dect_ari:40,
+			dect_pmid:20,
+			dect_lcn:3;
 };
 
 /* S-SAP primitives */
@@ -86,6 +92,7 @@ struct dect_dl_encrypt {
  */
 struct sockaddr_dect_lu {
 	sa_family_t	dect_family;
+	int		dect_index;
 	__u64		dect_ari:40,
 			dect_pmid:20,
 			dect_lcn:3;

@@ -19,6 +19,7 @@
 
 struct dect_lu1_sap {
 	struct sock			sk;
+	int				index;
 	struct dect_ulei		ulei;
 	struct dect_mac_conn		*mc;
 	struct dect_lux			lux;
@@ -111,6 +112,7 @@ static int dect_lu1_getname(struct sock *sk, struct sockaddr *uaddr,
 	if (peer)
 		return -EOPNOTSUPP;
 
+	addr->dect_index = lu1->index;
 	dect_build_ulei(addr, &lu1->ulei);
 	*len = sizeof(*addr);
 	return 0;
@@ -130,7 +132,7 @@ static int dect_lu1_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 		goto err1;
 
 	err = -ENODEV;
-	cl = dect_cluster_get_by_pari(&ulei.mci.ari);
+	cl = dect_cluster_get_by_index(addr->dect_index);
 	if (cl == NULL)
 		goto err1;
 

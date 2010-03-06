@@ -458,14 +458,8 @@ int __init dect_af_module_init(void)
 	if (err < 0)
 		goto err3;
 
-	err = dect_lu1_sap_module_init();
-	if (err < 0)
-		goto err4;
-
 	return 0;
 
-err4:
-	dect_ssap_module_exit();
 err3:
 	dect_bsap_module_exit();
 err2:
@@ -476,7 +470,6 @@ err1:
 
 void dect_af_module_exit(void)
 {
-	dect_lu1_sap_module_exit();
 	dect_bsap_module_exit();
 	dect_ssap_module_exit();
 	sock_unregister(PF_DECT);

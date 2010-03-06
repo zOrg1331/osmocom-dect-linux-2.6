@@ -196,9 +196,6 @@ extern void dect_bsap_module_exit(void);
 extern int dect_ssap_module_init(void);
 extern void dect_ssap_module_exit(void);
 
-extern int dect_lu1_sap_module_init(void);
-extern void dect_lu1_sap_module_exit(void);
-
 extern int dect_netlink_module_init(void);
 extern void dect_netlink_module_exit(void);
 

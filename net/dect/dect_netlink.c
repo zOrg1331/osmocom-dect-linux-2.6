@@ -58,6 +58,7 @@ struct dect_cluster *dect_cluster_get_by_pari(const struct dect_ari *ari)
 	}
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(dect_cluster_get_by_pari);
 
 struct dect_cell *dect_cell_get_by_index(u32 index)
 {

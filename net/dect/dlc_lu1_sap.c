@@ -277,13 +277,12 @@ void dect_lu1_sap_module_exit(void)
 {
 	dect_proto_unregister(&dect_lu1_proto);
 }
-#if 0
-module_init(dect_lu1_init);
-module_exit(dect_lu1_exit);
+
+module_init(dect_lu1_sap_module_init);
+module_exit(dect_lu1_sap_module_exit);
 
 MODULE_AUTHOR("Patrick McHardy <kaber@trash.net>");
 MODULE_DESCRIPTION("DECT DLC LU1 SAP sockets");
 MODULE_LICENSE("GPL");
-#endif
 
-MODULE_ALIAS_NET_PF_PROTO(PF_DECT, DECT_LU1);
+MODULE_ALIAS_NET_PF_PROTO(PF_DECT, DECT_LU1_SAP);

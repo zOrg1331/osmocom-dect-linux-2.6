@@ -50,6 +50,7 @@ dect_mac_conn_get_by_mci(const struct dect_cluster *cl, const struct dect_mci *m
 	}
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(dect_mac_conn_get_by_mci);
 
 void dect_dlc_mac_conn_destroy(struct dect_mac_conn *mc)
 {
@@ -63,6 +64,7 @@ void dect_dlc_mac_conn_bind(struct dect_mac_conn *mc)
 	mc_debug(mc, "bind use %u\n", mc->use);
 	mc->use++;
 }
+EXPORT_SYMBOL_GPL(dect_dlc_mac_conn_bind);
 
 void dect_dlc_mac_conn_unbind(struct dect_mac_conn *mc)
 {
@@ -75,6 +77,7 @@ void dect_dlc_mac_conn_unbind(struct dect_mac_conn *mc)
 		dect_mbc_dis_request(mc->cl, mc->mcei);
 	dect_dlc_mac_conn_destroy(mc);
 }
+EXPORT_SYMBOL_GPL(dect_dlc_mac_conn_unbind);
 
 struct dect_mac_conn *dect_mac_conn_init(struct dect_cluster *cl,
 					 const struct dect_mci *mci,

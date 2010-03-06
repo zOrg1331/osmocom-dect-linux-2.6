@@ -39,6 +39,7 @@ const struct dect_fbx_ops dect_fbn_ops = {
 	.dequeue	= dect_fbn_dequeue,
 	.enqueue	= dect_fbn_enqueue,
 };
+EXPORT_SYMBOL_GPL(dect_fbn_ops);
 
 struct sk_buff *dect_uplane_dtr(struct dect_mac_conn *mc, enum dect_data_channels chan)
 {

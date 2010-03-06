@@ -158,6 +158,7 @@ void dect_parse_pmid(struct dect_pmid *pmid, u32 p)
 		pmid->tpui = p & DECT_PMID_ASSIGNED_TPUI_MASK;
 	}
 }
+EXPORT_SYMBOL_GPL(dect_parse_pmid);
 
 u32 dect_build_pmid(const struct dect_pmid *pmid)
 {
@@ -178,6 +179,7 @@ u32 dect_build_pmid(const struct dect_pmid *pmid)
 	}
 	return p;
 }
+EXPORT_SYMBOL_GPL(dect_build_pmid);
 
 bool dect_pmid_cmp(const struct dect_pmid *p1, const struct dect_pmid *p2)
 {

@@ -3522,6 +3522,21 @@ static void dect_irc_enable(struct dect_cell *cell, struct dect_irc *irc)
 	dect_timer_add(cell, &irc->rx_frame_timer, DECT_TIMER_RX, 0, 23);
 }
 
+static void dect_irc_disable(struct dect_cell *cell, struct dect_irc *irc)
+{
+	struct dect_transceiver *trx = irc->trx;
+	u8 slot;
+
+	dect_timer_del(&irc->rx_frame_timer);
+	dect_timer_del(&irc->tx_frame_timer);
+
+	dect_foreach_slot(slot) {
+		if (trx->slots[slot].state != DECT_SLOT_SCANNING)
+			continue;
+		dect_scan_bearer_disable(trx, &trx->slots[slot].chd);
+	}
+}
+
 static struct dect_irc *dect_irc_init(struct dect_cell *cell,
 				      struct dect_transceiver *trx)
 {
@@ -4277,6 +4292,7 @@ err1:
 void dect_cell_detach_transceiver(struct dect_cell *cell,
 				  struct dect_transceiver *trx)
 {
+	dect_irc_disable(cell, trx->irc);
 	dect_transceiver_disable(trx);
 	dect_transceiver_group_remove(&cell->trg, trx);
 	kfree(trx->irc);

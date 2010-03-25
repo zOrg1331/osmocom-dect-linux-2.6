@@ -3065,6 +3065,7 @@ err1:
 	kfree_skb(skb);
 }
 
+#if 0
 /*
  * Connectionless Bearer Control (CBC)
  */
@@ -3107,6 +3108,7 @@ static struct dect_cbc *dect_cbc_init(struct dect_cell *cell,
 	dect_bc_init(cell, &cbc->bc);
 	return cbc;
 }
+#endif
 
 /*
  * Dummy Bearer Control (DBC)

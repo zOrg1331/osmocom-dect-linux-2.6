@@ -565,7 +565,7 @@ static int dect_parse_static_system_information(struct dect_tail_msg *tm, u64 t)
 	ssi->cn     = (t & DECT_QT_SSI_CN_MASK) >> DECT_QT_SSI_CN_SHIFT;
 	ssi->pscn   = (t & DECT_QT_SSI_PSCN_MASK) >> DECT_QT_SSI_PSCN_SHIFT;
 
-	if (ssi->sn > 11 || ssi->cn > 9 || ssi->pscn > 9)
+	if (ssi->sn > 11 || ssi->cn > 9 || ssi->pscn > 9 || ssi->rfcars == 0)
 		return -1;
 	tm->type = DECT_TM_TYPE_SSI;
 

@@ -96,6 +96,7 @@ enum dect_transceiver_attrs {
 enum dect_cell_flags {
 	DECT_CELL_CCP		= (1 << 0),
 	DECT_CELL_SLAVE		= (1 << 1),
+	DECT_CELL_MONITOR	= (1 << 2),
 };
 
 enum dect_cell_attrs {
@@ -121,7 +122,6 @@ enum dect_cluster_attrs {
 enum dect_cluster_modes {
 	DECT_MODE_FP,
 	DECT_MODE_PP,
-	DECT_MODE_MONITOR,
 };
 
 /**

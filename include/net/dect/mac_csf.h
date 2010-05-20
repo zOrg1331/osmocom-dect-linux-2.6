@@ -130,6 +130,7 @@ enum dect_bearer_states {
 	DECT_DUMMY_BEARER,
 	DECT_TRAFFIC_BEARER,
 	DECT_CL_BEARER,
+	DECT_MONITOR_BEARER,
 };
 
 enum dect_bearer_modes {
@@ -195,6 +196,7 @@ struct dect_bearer {
 		struct dect_dbc		*dbc;
 		struct dect_cbc		*cbc;
 		struct dect_tbc		*tbc;
+		struct dect_dmb		*dmb;
 		struct dect_irc		*irc;
 		void			*data;
 	};
@@ -397,6 +399,23 @@ enum dect_scan_status {
 };
 
 /**
+ * struct dect_dmb - Monitor Bearer
+ *
+ * @list:	cell dmbs list node
+ * @cell:	DECT cell
+ * @rxb1:	receive bearer 1
+ * @rxb2:	receive bearer 2
+ */
+struct dect_dmb {
+	struct list_head		list;
+	struct dect_cell		*cell;
+
+	struct dect_bearer		*rxb1;
+	struct dect_bearer		*rxb2;
+	struct dect_bc			bc;
+};
+
+/**
  * struct dect_irc - Idle receiver control
  *
  * @cell:		DECT cell
@@ -540,6 +559,7 @@ enum dect_cell_states {
  * @tbcs:		list of Traffic Bearer Controllers
  * @tbc_num_est:	Number of TBCs in ESTABLISHED state
  * @tbc_last_chd:	Channel description of last TBC leaving ESTABLISHED state
+ * @dmbs:		list of Monitor Bearers
  * @chanlists:		list of channel lists for different channel types
  * @timer_base:		RX/TX timer bases
  * @trg:		DECT transceiver group
@@ -587,6 +607,8 @@ struct dect_cell {
 	struct list_head		tbcs;
 	unsigned int			tbc_num_est;
 	struct dect_channel_desc	tbc_last_chd;
+
+	struct list_head		dmbs;
 
 	/* channel lists */
 	struct list_head		chl_pending;

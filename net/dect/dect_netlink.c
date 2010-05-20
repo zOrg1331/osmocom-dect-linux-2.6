@@ -704,7 +704,6 @@ static int dect_new_cluster(const struct sk_buff *skb,
 		switch (mode) {
 		case DECT_MODE_FP:
 		case DECT_MODE_PP:
-		case DECT_MODE_MONITOR:
 			break;
 		default:
 			return -EINVAL;
@@ -930,7 +929,8 @@ static int dect_new_cell(const struct sk_buff *skb,
 
 	if (tb[DECTA_CELL_FLAGS] != NULL) {
 		flags = nla_get_u32(tb[DECTA_CELL_FLAGS]);
-		if (flags & ~(DECT_CELL_CCP | DECT_CELL_SLAVE))
+		if (flags & ~(DECT_CELL_CCP | DECT_CELL_SLAVE |
+			      DECT_CELL_MONITOR))
 			return -EINVAL;
 	}
 

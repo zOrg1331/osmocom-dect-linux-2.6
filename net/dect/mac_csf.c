@@ -2303,10 +2303,10 @@ static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 	dect_bc_release(&tbc->bc);
 
 	dect_channel_release(cell, tbc->txb->trx, &tbc->txb->chd);
-	dect_bearer_release(tbc->cell, tbc->txb);
+	dect_bearer_release(cell, tbc->txb);
 
 	dect_channel_release(cell, tbc->rxb->trx, &tbc->rxb->chd);
-	dect_bearer_release(tbc->cell, tbc->rxb);
+	dect_bearer_release(cell, tbc->rxb);
 
 	list_del(&tbc->list);
 	kfree_skb(tbc->c_rx_skb);
@@ -3444,6 +3444,149 @@ err1:
 }
 
 /*
+ * Monitor Bearer
+ */
+
+static void dect_dmb_release(struct dect_cell *cell, struct dect_dmb *dmb)
+{
+	cell->tbc_last_chd = dmb->rxb2->chd;
+
+	dect_transceiver_release(&cell->trg, dmb->rxb1->trx, &dmb->rxb1->chd);
+	dect_bearer_release(dmb->cell, dmb->rxb1);
+
+	dect_transceiver_release(&cell->trg, dmb->rxb2->trx, &dmb->rxb2->chd);
+	dect_bearer_release(dmb->cell, dmb->rxb2);
+
+	dect_bc_release(&dmb->bc);
+	list_del(&dmb->list);
+	kfree(dmb);
+}
+
+static void dect_dmb_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
+			 struct sk_buff *skb)
+{
+	struct dect_dmb *dmb = bearer->dmb;
+	struct dect_tail_msg tm;
+
+	dect_raw_rcv(skb);
+	if (dect_parse_tail_msg(&tm, skb) < 0)
+		goto err;
+
+	dect_bc_rcv(cell, &dmb->bc, skb, &tm);
+
+	switch (tm.type) {
+	case DECT_TM_TYPE_BCCTRL:
+	case DECT_TM_TYPE_ACCTRL:
+		if (tm.cctl.cmd == DECT_CCTRL_RELEASE)
+			return dect_dmb_release(cell, dmb);
+		break;
+	default:
+		break;
+	}
+err:
+	kfree_skb(skb);
+}
+
+static const struct dect_bearer_ops dect_dmb_ops = {
+	.state		= DECT_MONITOR_BEARER,
+	.rcv		= dect_dmb_rcv,
+};
+
+static struct dect_dmb *dect_dmb_init(struct dect_cell *cell,
+				      struct dect_transceiver *trx1,
+				      struct dect_transceiver *trx2,
+				      const struct dect_channel_desc *chd1,
+				      const struct dect_channel_desc *chd2)
+{
+	struct dect_dmb *dmb;
+
+	dmb = kzalloc(sizeof(*dmb), GFP_ATOMIC);
+	if (dmb == NULL)
+		goto err1;
+	dmb->cell = cell;
+
+	dmb->rxb1 = dect_bearer_init(cell, &dect_dmb_ops, DECT_DUPLEX_BEARER,
+				     trx1, chd1, DECT_BEARER_RX, dmb);
+	if (dmb->rxb1 == NULL)
+		goto err2;
+
+	dmb->rxb2 = dect_bearer_init(cell, &dect_dmb_ops, DECT_DUPLEX_BEARER,
+				     trx2, chd2, DECT_BEARER_RX, dmb);
+	if (dmb->rxb2 == NULL)
+		goto err3;
+	dect_bc_init(cell, &dmb->bc);
+
+	list_add_tail(&dmb->list, &cell->dmbs);
+	return dmb;
+
+err3:
+	dect_bearer_release(cell, dmb->rxb1);
+err2:
+	kfree(dmb);
+err1:
+	return NULL;
+}
+
+static void dect_dmb_rcv_request(struct dect_cell *cell,
+				 const struct dect_transceiver_slot *ts,
+				 const struct dect_tail_msg *tm,
+				 struct sk_buff *skb)
+{
+	struct dect_transceiver *trx1, *trx2;
+	struct dect_channel_desc chd1, chd2;
+	struct dect_dmb *dmb;
+
+	if (tm->cctl.fmid != cell->fmid)
+		goto err1;
+	dect_raw_rcv(skb);
+
+	switch (tm->cctl.cmd) {
+	case DECT_CCTRL_ACCESS_REQ:
+	case DECT_CCTRL_BEARER_HANDOVER_REQ:
+	case DECT_CCTRL_CONNECTION_HANDOVER_REQ:
+		break;
+	default:
+		rx_debug(cell, "unhandled DMB request: %llu\n",
+			 (unsigned long long)tm->cctl.cmd);
+		goto err1;
+	}
+
+	rx_debug(cell, "DMB: RCV ACCESS_REQUEST\n");
+
+	/* Select transceivers for RX/TX and reserve resources */
+	memcpy(&chd1, &ts->chd, sizeof(chd1));
+	chd1.pkt   = DECT_PACKET_P32;
+	chd1.b_fmt = DECT_B_UNPROTECTED;
+	trx1 = dect_select_transceiver(cell, &chd1);
+	if (trx1 == NULL)
+		goto err1;
+	dect_transceiver_reserve(&cell->trg, trx1, &chd1);
+
+	dect_tdd_channel_desc(&chd2, &chd1);
+	trx2 = dect_select_transceiver(cell, &chd2);
+	if (trx2 == NULL)
+		goto err2;
+	dect_transceiver_reserve(&cell->trg, trx2, &chd2);
+
+	dmb = dect_dmb_init(cell, trx1, trx2, &chd1, &chd2);
+	if (dmb == NULL)
+		goto err3;
+
+	dect_bearer_enable(dmb->rxb1);
+	dect_bearer_enable(dmb->rxb2);
+
+	kfree_skb(skb);
+	return;
+
+err3:
+	dect_transceiver_release(&cell->trg, trx2, &chd2);
+err2:
+	dect_transceiver_release(&cell->trg, trx1, &chd1);
+err1:
+	kfree_skb(skb);
+}
+
+/*
  * Idle Receiver Control
  */
 
@@ -3549,13 +3692,19 @@ static void dect_scan_bearer_rcv(struct dect_cell *cell,
 	struct dect_transceiver_slot *ts;
 	enum dect_tail_identifications ti;
 	struct dect_tail_msg tm;
+	bool monitor = false;
 
 	ti = dect_parse_tail(skb);
 	/* A PP uses a special encoding for the first transmission */
-	if (cell->mode == DECT_MODE_PP && ti != DECT_TI_MT)
-		goto out;
 	if (cell->mode == DECT_MODE_FP && ti != DECT_TI_MT_PKT_0)
 		goto out;
+	if (cell->mode == DECT_MODE_PP) {
+		if (cell->flags & DECT_CELL_MONITOR && ti == DECT_TI_MT_PKT_0)
+			monitor = true;
+		else if (ti != DECT_TI_MT)
+			goto out;
+	}
+
 	if (dect_parse_tail_msg(&tm, skb) < 0)
 		goto out;
 
@@ -3563,7 +3712,10 @@ static void dect_scan_bearer_rcv(struct dect_cell *cell,
 	switch (tm.type) {
 	case DECT_TM_TYPE_BCCTRL:
 	case DECT_TM_TYPE_ACCTRL:
-		return dect_tbc_rcv_request(cell, ts, &tm, skb);
+		if (monitor)
+			return dect_dmb_rcv_request(cell, ts, &tm, skb);
+		else
+			return dect_tbc_rcv_request(cell, ts, &tm, skb);
 	default:
 		break;
 	}
@@ -3658,10 +3810,12 @@ static void dect_irc_tx_frame_timer(struct dect_cell *cell, void *data)
 				continue;
 			dect_scan_bearer_enable(trx, &chd);
 		}
-		dect_foreach_transmit_slot(chd.slot, end, cell) {
-			if (trx->slots[chd.slot].state != DECT_SLOT_SCANNING)
-				continue;
-			dect_scan_bearer_disable(trx, &chd);
+		if (!(cell->flags & DECT_CELL_MONITOR)) {
+			dect_foreach_transmit_slot(chd.slot, end, cell) {
+				if (trx->slots[chd.slot].state != DECT_SLOT_SCANNING)
+					continue;
+				dect_scan_bearer_disable(trx, &chd);
+			}
 		}
 	}
 
@@ -3708,6 +3862,14 @@ static void dect_irc_enable(struct dect_cell *cell, struct dect_irc *irc)
 			if (!dect_transceiver_channel_available(trx, &chd))
 				continue;
 			dect_scan_bearer_enable(trx, &chd);
+		}
+
+		if (cell->flags & DECT_CELL_MONITOR) {
+			dect_foreach_transmit_slot(chd.slot, end, cell) {
+				if (!dect_transceiver_channel_available(trx, &chd))
+					continue;
+				dect_scan_bearer_enable(trx, &chd);
+			}
 		}
 	}
 
@@ -3880,6 +4042,7 @@ static struct sk_buff *dect_pt_t_mux(struct dect_cell *cell,
 	switch (bearer->ops->state) {
 	case DECT_DUMMY_BEARER:
 	case DECT_CL_BEARER:
+	case DECT_MONITOR_BEARER:
 		WARN_ON(0);
 		break;
 	case DECT_TRAFFIC_BEARER:
@@ -3946,6 +4109,7 @@ static struct sk_buff *dect_rfp_t_mux(struct dect_cell *cell,
 		bc = &bearer->tbc->bc;
 		break;
 	case DECT_CL_BEARER:
+	case DECT_MONITOR_BEARER:
 		break;
 	}
 
@@ -4010,8 +4174,6 @@ static struct sk_buff *dect_a_map(struct dect_cell *cell,
 	case DECT_MODE_FP:
 		skb = dect_rfp_t_mux(cell, bearer);
 		break;
-	default:
-		return NULL;
 	}
 
 	if (skb == NULL)
@@ -4149,8 +4311,6 @@ static void dect_mac_xmit_frame(struct dect_transceiver *trx,
 		skb->mac_len = sizeof(dect_pp_preamble);
 		memcpy(skb_mac_header(skb), dect_pp_preamble, skb->mac_len);
 		break;
-	case DECT_MODE_MONITOR:
-		BUG();
 	}
 
 	DECT_TRX_CB(skb)->trx   = trx;
@@ -4241,13 +4401,15 @@ static void dect_pp_state_process(struct dect_cell *cell)
 	struct dect_transceiver *trx = cell->trg.trx[0];
 	struct dect_dbc *dbc, *next;
 
-	if (cell->tbc_num_est) {
+	if (cell->tbc_num_est || !list_empty(&cell->dmbs)) {
 		/* Active locked state: release DBCs */
 		list_for_each_entry_safe(dbc, next, &cell->dbcs, list)
 			dect_dbc_release(dbc);
 	} else if (trx->state == DECT_TRANSCEIVER_LOCKED) {
 		/* Idle locked state: install DBC if none present */
-		if (list_empty(&cell->dbcs) && list_empty(&cell->tbcs)) {
+		if (list_empty(&cell->dbcs) &&
+		    list_empty(&cell->tbcs) &&
+		    list_empty(&cell->dmbs)) {
 			struct dect_channel_desc chd;
 
 			chd.pkt		= DECT_PACKET_P00;
@@ -4276,7 +4438,7 @@ static void dect_cell_state_process(struct dect_cell *cell)
 		dect_chl_schedule_update(cell, DECT_PACKET_P32);
 	}
 
-	switch ((int)cell->mode) {
+	switch (cell->mode) {
 	case DECT_MODE_FP:
 		return dect_fp_state_process(cell);
 	case DECT_MODE_PP:
@@ -4297,6 +4459,7 @@ void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 	struct dect_cell *cell = container_of(grp, struct dect_cell, trg);
 	struct dect_transceiver_slot *ts;
 	struct dect_transceiver *trx;
+	u8 scn;
 
 	/* TX timers run at the beginning of a slot, update the time first */
 	dect_timer_base_update(cell, DECT_TIMER_TX, slot);
@@ -4313,7 +4476,13 @@ void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 
 		switch (ts->state) {
 		case DECT_SLOT_SCANNING:
-			dect_set_carrier(trx, slot, trx->irc->tx_scn);
+			scn = trx->irc->tx_scn;
+
+			if (cell->flags & DECT_CELL_MONITOR &&
+			    slot >= DECT_HALF_FRAME_SIZE)
+				scn = dect_prev_carrier(cell->si.ssi.rfcars, scn);
+
+			dect_set_carrier(trx, slot, scn);
 			break;
 		case DECT_SLOT_TX:
 			dect_mac_xmit_frame(trx, ts);
@@ -4502,6 +4671,7 @@ void dect_cell_init(struct dect_cell *cell)
 	INIT_LIST_HEAD(&cell->bcs);
 	INIT_LIST_HEAD(&cell->dbcs);
 	INIT_LIST_HEAD(&cell->tbcs);
+	INIT_LIST_HEAD(&cell->dmbs);
 	INIT_LIST_HEAD(&cell->chl_pending);
 	INIT_LIST_HEAD(&cell->chanlists);
 	INIT_LIST_HEAD(&cell->timer_base[DECT_TIMER_RX].timers);

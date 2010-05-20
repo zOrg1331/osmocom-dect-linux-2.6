@@ -86,6 +86,7 @@ static void dect_timer_synchronize_mfn(struct dect_cell *cell, u32 mfn)
 {
 	cell->timer_base[DECT_TIMER_RX].mfn = mfn;
 	cell->timer_base[DECT_TIMER_TX].mfn = mfn;
+	cell->timer_sync_stamp = mfn;
 }
 
 static void dect_run_timers(struct dect_cell *cell, enum dect_timer_bases b)
@@ -2096,6 +2097,14 @@ static int dect_tbc_send_attributes_confirm(const struct dect_tbc *tbc)
 
 static void dect_tbc_state_change(struct dect_tbc *tbc, enum dect_tbc_state state)
 {
+	struct dect_cell *cell = tbc->cell;
+
+	if (tbc->state == DECT_TBC_ESTABLISHED) {
+		cell->tbc_num_est--;
+		cell->tbc_last_chd = tbc->rxb->chd;
+	} else if (state == DECT_TBC_ESTABLISHED)
+		cell->tbc_num_est++;
+
 	tbc->state = state;
 }
 
@@ -3129,8 +3138,19 @@ static void dect_dbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	struct dect_dbc *dbc = bearer->dbc;
 	struct dect_tail_msg tm;
 
-	dect_parse_tail_msg(&tm, skb);
+	/* Update A-field receive time stamp (A-field CRC is always correct) */
+	if (dect_framenum(cell, DECT_TIMER_RX) == 0)
+		cell->a_rcv_stamp = jiffies;
+
+	if (dect_parse_tail_msg(&tm, skb) < 0)
+		goto err;
+
+	/* Update Nt receive stamp if PARI matches */
+	if (tm.type == DECT_TM_TYPE_ID && !dect_rfpi_cmp(&tm.idi, &cell->idi))
+		cell->nt_rcv_stamp = jiffies;
+
 	dect_bc_rcv(cell, &dbc->bc, skb, &tm);
+err:
 	kfree_skb(skb);
 }
 
@@ -3189,8 +3209,14 @@ static const struct dect_bearer_ops dect_dbc_ops = {
 
 static void dect_dbc_release(struct dect_dbc *dbc)
 {
+	struct dect_cell *cell = dbc->cell;
+
+	dect_transceiver_release(&cell->trg, dbc->bearer->trx, &dbc->bearer->chd);
+	dect_bearer_release(cell, dbc->bearer);
+
 	dect_timer_del(&dbc->qctrl_timer);
 	dect_bc_release(&dbc->bc);
+	list_del(&dbc->list);
 	kfree(dbc);
 }
 
@@ -3241,8 +3267,12 @@ static struct dect_dbc *dect_dbc_init(struct dect_cell *cell,
 
 	if (cell->mode == DECT_MODE_FP)
 		dect_tx_bearer_schedule(cell, dbc->bearer, rssi);
-	else
+	else {
 		dect_bearer_enable(dbc->bearer);
+
+		cell->a_rcv_stamp  = jiffies;
+		cell->nt_rcv_stamp = jiffies;
+	}
 
 	list_add_tail(&dbc->list, &cell->dbcs);
 	return dbc;
@@ -4010,6 +4040,77 @@ void dect_mac_report_rssi(struct dect_transceiver *trx,
 		ts->bearer->ops->report_rssi(cell, ts->bearer, ts->chd.slot, rssi);
 }
 
+static void dect_fp_state_process(struct dect_cell *cell)
+{
+	if (list_empty(&cell->dbcs))
+		dect_dbc_init(cell, NULL);
+}
+
+static bool dect_pp_idle_timeout(const struct dect_cell *cell)
+{
+	u32 mfn;
+
+	mfn = dect_mfn_add(cell->timer_sync_stamp, DECT_CELL_TIMER_RESYNC_TIMEOUT);
+	if (dect_mfn_after(dect_mfn(cell, DECT_TIMER_RX), mfn) ||
+	    time_after(jiffies, cell->a_rcv_stamp + DECT_CELL_A_RCV_TIMEOUT) ||
+	    time_after(jiffies, cell->nt_rcv_stamp + DECT_CELL_NT_RCV_TIMEOUT)) {
+		pr_debug("timeout, unlock, a: %ld nt: %ld mfn: %d\n",
+			 jiffies - cell->a_rcv_stamp, jiffies - cell->nt_rcv_stamp,
+			 dect_mfn(cell, DECT_TIMER_RX) - cell->timer_sync_stamp);
+		return true;
+	}
+
+	return false;
+}
+
+static void dect_pp_state_process(struct dect_cell *cell)
+{
+	struct dect_transceiver *trx = cell->trg.trx[0];
+	struct dect_dbc *dbc, *next;
+
+	if (cell->tbc_num_est) {
+		/* Active locked state: release DBCs */
+		list_for_each_entry_safe(dbc, next, &cell->dbcs, list)
+			dect_dbc_release(dbc);
+	} else if (trx->state == DECT_TRANSCEIVER_LOCKED) {
+		/* Idle locked state: install DBC if none present */
+		if (list_empty(&cell->dbcs) && list_empty(&cell->tbcs)) {
+			struct dect_channel_desc chd;
+
+			chd.pkt		= DECT_PACKET_P00;
+			chd.b_fmt	= DECT_B_NONE;
+			chd.slot	= cell->tbc_last_chd.slot;
+			chd.carrier	= cell->tbc_last_chd.carrier;
+
+			dect_dbc_init(cell, &chd);
+		}
+
+		if (!list_empty(&cell->dbcs) && dect_pp_idle_timeout(cell)) {
+			list_for_each_entry_safe(dbc, next, &cell->dbcs, list)
+				dect_dbc_release(dbc);
+
+			dect_irc_disable(cell, trx->irc);
+			dect_transceiver_unlock(trx);
+			dect_attempt_lock(cell, trx);
+		}
+	}
+}
+
+static void dect_cell_state_process(struct dect_cell *cell)
+{
+	if (list_empty(&cell->chanlists) && list_empty(&cell->chl_pending)) {
+		dect_chl_schedule_update(cell, DECT_PACKET_P00);
+		dect_chl_schedule_update(cell, DECT_PACKET_P32);
+	}
+
+	switch ((int)cell->mode) {
+	case DECT_MODE_FP:
+		return dect_fp_state_process(cell);
+	case DECT_MODE_PP:
+		return dect_pp_state_process(cell);
+	}
+}
+
 void dect_mac_rx_tick(struct dect_transceiver_group *grp, u8 slot)
 {
 	struct dect_cell *cell = container_of(grp, struct dect_cell, trg);
@@ -4021,29 +4122,14 @@ void dect_mac_rx_tick(struct dect_transceiver_group *grp, u8 slot)
 void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 {
 	struct dect_cell *cell = container_of(grp, struct dect_cell, trg);
-	struct dect_channel_desc chd;
-	struct dect_transceiver *trx;
 	struct dect_transceiver_slot *ts;
+	struct dect_transceiver *trx;
 
 	/* TX timers run at the beginning of a slot, update the time first */
 	dect_timer_base_update(cell, DECT_TIMER_TX, slot);
 	dect_run_timers(cell, DECT_TIMER_TX);
 
-	// FIXME: move somewhere reasonable
-	if (list_empty(&cell->chanlists) && list_empty(&cell->chl_pending)) {
-		dect_chl_schedule_update(cell, DECT_PACKET_P00);
-		dect_chl_schedule_update(cell, DECT_PACKET_P32);
-	}
-
-	switch ((int)cell->mode) {
-	case DECT_MODE_FP:
-		if (!list_empty(&cell->dbcs))
-			break;
-		dect_dbc_init(cell, &chd);
-		break;
-	case DECT_MODE_PP:
-		break;
-	}
+	dect_cell_state_process(cell);
 
 	dect_foreach_transceiver(trx, grp) {
 		if (trx->state != DECT_TRANSCEIVER_LOCKED)

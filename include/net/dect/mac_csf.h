@@ -531,10 +531,15 @@ enum dect_cell_states {
  * @idi:		FP System Identity
  * @fmid:		FMID (Fixed MAC IDentity)
  * @si:			FP System Information
+ * @timer_sync_stamp:	Time (multiframe number) of last multiframe number sync
+ * @a_rcv_stamp:	Time (jiffies) of last received A-Field with correct CRC
+ * @nt_rcv_stamp:	Time (jiffies) of last received Nt-Tail containing the PARI
  * @bcs:		Broadcast Controllers
  * @cbc:		Connectionless Bearer Controller
  * @dbcs:		Dummy Bearer Controllers
  * @tbcs:		list of Traffic Bearer Controllers
+ * @tbc_num_est:	Number of TBCs in ESTABLISHED state
+ * @tbc_last_chd:	Channel description of last TBC leaving ESTABLISHED state
  * @chanlists:		list of channel lists for different channel types
  * @timer_base:		RX/TX timer bases
  * @trg:		DECT transceiver group
@@ -559,6 +564,11 @@ struct dect_cell {
 	struct dect_si			si;
 	u32				blind_full_slots;
 
+	/* PP state maintenance */
+	u32				timer_sync_stamp;
+	unsigned long			a_rcv_stamp;
+	unsigned long			nt_rcv_stamp;
+
 	/* Broadcast controllers and related data */
 	struct dect_timer		page_timer;
 	struct sk_buff_head		page_queue;
@@ -572,7 +582,10 @@ struct dect_cell {
 
 	struct dect_cbc			cbc;
 	struct list_head		dbcs;
+
 	struct list_head		tbcs;
+	unsigned int			tbc_num_est;
+	struct dect_channel_desc	tbc_last_chd;
 
 	/* channel lists */
 	struct list_head		chl_pending;
@@ -586,6 +599,10 @@ struct dect_cell {
 	struct dect_timer_base		timer_base[DECT_TIMER_BASE_MAX + 1];
 	struct dect_transceiver_group	trg;
 };
+
+#define DECT_CELL_TIMER_RESYNC_TIMEOUT	8		/* T216: 8 multiframes */
+#define DECT_CELL_A_RCV_TIMEOUT		(5 * HZ)	/* T207: 5 seconds */
+#define DECT_CELL_NT_RCV_TIMEOUT	(20 * HZ)	/* T208: 20 seconds */
 
 static inline u8 dect_normal_transmit_base(const struct dect_cell *cell)
 {

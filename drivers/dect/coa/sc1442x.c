@@ -582,6 +582,7 @@ static void sc1442x_unlock(const struct dect_transceiver *trx)
 	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 	sc1442x_write_cmd(dev, SyncLoop, BR, Sync);
+	sc1442x_write_cmd(dev, SlotTable, BR, SyncInit);
 	sc1442x_unlock_mem(dev);
 }
 
@@ -597,6 +598,7 @@ static void sc1442x_lock(const struct dect_transceiver *trx, u8 slot)
 	 */
 	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
+	sc1442x_write_cmd(dev, SlotTable, SLOTZERO, 0);
 	sc1442x_write_cmd(dev, SyncLoop, BR, jumptable[slot]);
 	sc1442x_unlock_mem(dev);
 }

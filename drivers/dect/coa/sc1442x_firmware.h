@@ -13,6 +13,7 @@ extern const unsigned char sc1442x_firmware[509];
 #define SD_CSUM_OFF 0x1
 #define SD_PREAMBLE_OFF 0x1
 #define SD_DATA_OFF 0x6
+#define SlotTable 0x2
 #define PP0 0x4
 #define PP2 0x6
 #define PP4 0x8

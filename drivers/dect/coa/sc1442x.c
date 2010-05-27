@@ -677,6 +677,7 @@ static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 	if (ts->flags & DECT_SLOT_CIPHER && slot < DECT_HALF_FRAME_SIZE)
 		sc1442x_dcs_init(dev, trx, slot, cb->mfn, cb->frame);
 
+	sc1442x_toggle_led(dev);
 	sc1442x_unlock_mem(dev);
 	kfree_skb(skb);
 }
@@ -821,6 +822,8 @@ static void sc1442x_process_slot(struct coa_device *dev,
 
 	ts->rx_bytes += skb->len;
 	ts->rx_packets++;
+
+	sc1442x_toggle_led(dev);
 out:
 	ts->rssi = dect_average_rssi(ts->rssi, rssi);
 	dect_transceiver_record_rssi(event, slot, rssi);
@@ -846,9 +849,6 @@ irqreturn_t sc1442x_interrupt(int irq, void *dev_id)
 
 	if (unlikely(hweight8(irq) != 1 && net_ratelimit()))
 		dev_info(dev->dev, "lost some interrupts\n");
-
-	if (irq & SC1442X_IRQ_SLOT_0_5)
-		sc1442x_toggle_led(dev);
 
 	for (i = 0; i < 4; i++) {
 		if (!(irq & (1 << i)))

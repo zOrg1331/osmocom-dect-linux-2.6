@@ -142,7 +142,8 @@ static void dect_mbc_timeout(unsigned long data)
 	mbc_debug(mbc, "timeout\n");
 	reason = DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED;
 	mbc->ch->ops->tbc_release(mbc->ch, &mbc->id, reason);
-	dect_dlc_mac_dis_indicate(mbc->cl, mbc->id.mcei, reason);
+	if (mbc->state != DECT_MBC_NONE)
+		dect_dlc_mac_dis_indicate(mbc->cl, mbc->id.mcei, reason);
 	dect_mbc_release(mbc);
 }
 

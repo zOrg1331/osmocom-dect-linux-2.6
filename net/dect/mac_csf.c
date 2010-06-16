@@ -2099,6 +2099,8 @@ static void dect_tbc_state_change(struct dect_tbc *tbc, enum dect_tbc_state stat
 {
 	struct dect_cell *cell = tbc->cell;
 
+	tbc_debug(tbc, "state change %u -> %u\n", tbc->state, state);
+
 	if (tbc->state == DECT_TBC_ESTABLISHED) {
 		cell->tbc_num_est--;
 		cell->tbc_last_chd = tbc->rxb->chd;
@@ -2149,6 +2151,8 @@ static struct dect_tbc *dect_tbc_lookup(const struct dect_cell *cell,
 static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 {
 	tbc_debug(tbc, "destroy\n");
+	dect_tbc_state_change(tbc, DECT_TBC_NONE);
+
 	dect_timer_del(&tbc->wd_timer);
 	dect_timer_del(&tbc->wait_timer);
 	dect_timer_del(&tbc->release_timer);

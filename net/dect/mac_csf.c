@@ -2094,6 +2094,11 @@ static int dect_tbc_send_attributes_confirm(const struct dect_tbc *tbc)
 	return 0;
 }
 
+static void dect_tbc_state_change(struct dect_tbc *tbc, enum dect_tbc_state state)
+{
+	tbc->state = state;
+}
+
 static int dect_tbc_event(const struct dect_tbc *tbc, enum dect_tbc_event event)
 {
 	const struct dect_cluster_handle *clh = tbc->cell->handle.clh;
@@ -2177,10 +2182,10 @@ static void dect_tbc_release_timer(struct dect_cell *cell, void *data)
 
 	switch (tbc->state) {
 	default:
-		tbc->state = DECT_TBC_RELEASING;
+		dect_tbc_state_change(tbc, DECT_TBC_RELEASING);
 		break;
 	case DECT_TBC_RELEASING:
-		tbc->state = DECT_TBC_RELEASED;
+		dect_tbc_state_change(tbc, DECT_TBC_RELEASED);
 		break;
 	}
 
@@ -2323,7 +2328,7 @@ static int dect_tbc_establish(struct dect_cell *cell, struct dect_tbc *tbc)
 {
 	tbc_debug(tbc, "established\n");
 
-	tbc->state = DECT_TBC_ESTABLISHED;
+	dect_tbc_state_change(tbc, DECT_TBC_ESTABLISHED);
 	if (dect_tbc_event(tbc, DECT_TBC_SETUP_COMPLETE) < 0)
 		return -1;
 
@@ -2462,7 +2467,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 		/*
 		 * Receiving side, initial request.
 		 */
-		tbc->state = DECT_TBC_REQ_RCVD;
+		dect_tbc_state_change(tbc, DECT_TBC_REQ_RCVD);
 		break;
 
 	case DECT_TBC_REQ_RCVD:
@@ -2501,7 +2506,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 				goto release;
 			skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
 
-			tbc->state = DECT_TBC_WAIT_RCVD;
+			dect_tbc_state_change(tbc, DECT_TBC_WAIT_RCVD);
 		} else {
 			tbc_debug(tbc, "Confirmed\n");
 			m_skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_WAIT);
@@ -2509,7 +2514,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 				goto release;
 			skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
 
-			tbc->state = DECT_TBC_OTHER_WAIT;
+			dect_tbc_state_change(tbc, DECT_TBC_OTHER_WAIT);
 		}
 		break;
 
@@ -2810,7 +2815,7 @@ static void dect_tbc_enable_timer(struct dect_cell *cell,
 
 	dect_tbc_enable(cell, tbc);
 	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
-	tbc->state = DECT_TBC_REQ_SENT;
+	dect_tbc_state_change(tbc, DECT_TBC_REQ_SENT);
 
 	/* Start watchdog */
 	dect_bearer_timer_add(cell, tbc->rxb, &tbc->wd_timer, 1);
@@ -2940,7 +2945,7 @@ static int dect_tbc_confirm(const struct dect_cell_handle *ch,
 		err = dect_tbc_send_attributes_confirm(tbc);
 	if (err < 0)
 		return err;
-	tbc->state = DECT_TBC_OTHER_WAIT;
+	dect_tbc_state_change(tbc, DECT_TBC_OTHER_WAIT);
 	return 0;
 }
 
@@ -2959,7 +2964,7 @@ static void dect_tbc_wait_timer(struct dect_cell *cell, void *data)
 		skb->priority = DECT_MT_HIGH_PRIORITY;
 	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
 
-	tbc->state = DECT_TBC_RESPONSE_SENT;
+	dect_tbc_state_change(tbc, DECT_TBC_RESPONSE_SENT);
 }
 
 /**
@@ -3028,7 +3033,7 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 	tbc = dect_tbc_init(cell, &id, rtrx, ttrx, &rchd, &tchd);
 	if (tbc == NULL)
 		goto err3;
-	tbc->state = DECT_TBC_REQ_RCVD;
+	dect_tbc_state_change(tbc, DECT_TBC_REQ_RCVD);
 	tbc_debug(tbc, "RCV ACCESS_REQUEST\n");
 
 	/* Set Q2 bit on first response */
@@ -3049,7 +3054,7 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 	} else {
 		if (dect_tbc_send_confirm(tbc) < 0)
 			goto err4;
-		tbc->state = DECT_TBC_RESPONSE_SENT;
+		dect_tbc_state_change(tbc, DECT_TBC_RESPONSE_SENT);
 	}
 
 	kfree_skb(skb);

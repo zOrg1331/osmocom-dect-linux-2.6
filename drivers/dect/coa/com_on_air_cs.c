@@ -65,9 +65,6 @@ static int com_on_air_probe(struct pcmcia_device *link)
 	link->io.NumPorts1	= 16;
 	link->io.Attributes2	= 0;
 
-	link->irq.Attributes	= IRQ_TYPE_DYNAMIC_SHARING;
-	link->irq.Handler	= sc1442x_interrupt;
-
 	link->conf.Attributes	= CONF_ENABLE_IRQ;
 	link->conf.IntType	= INT_MEMORY_AND_IO;
 	link->conf.ConfigIndex	= 1;
@@ -95,10 +92,9 @@ static int com_on_air_probe(struct pcmcia_device *link)
 	link->conf.Present      = PRESENT_OPTION;
 	link->socket->functions = 0;
 
-	err = pcmcia_request_irq(link, &link->irq);
+	err = pcmcia_request_irq(link, sc1442x_interrupt);
 	if (err < 0) {
-		dev_err(dev->dev, "failed to request IRQ%d\n",
-			link->irq.AssignedIRQ);
+		dev_err(dev->dev, "failed to request IRQ%d\n", link->irq);
 		goto err4;
 	}
 
@@ -119,8 +115,7 @@ static int com_on_air_probe(struct pcmcia_device *link)
 		link->conf.Copy, link->conf.ExtStatus);
 
 	dev_dbg(dev->dev, "Present       %d\n", link->conf.Present);
-	dev_dbg(dev->dev, "AssignedIRQ   0x%x\n", link->irq.AssignedIRQ);
-	dev_dbg(dev->dev, "IRQAttributes 0x%x\n", link->irq.Attributes);
+	dev_dbg(dev->dev, "IRQ           0x%x\n", link->irq);
 	dev_dbg(dev->dev, "BasePort1     0x%x\n", link->io.BasePort1);
 	dev_dbg(dev->dev, "NumPorts1     0x%x\n", link->io.NumPorts1);
 	dev_dbg(dev->dev, "Attributes1   0x%x\n", link->io.Attributes1);
@@ -148,7 +143,7 @@ static int com_on_air_probe(struct pcmcia_device *link)
 
 	dev_info(dev->dev, "Radio type %s\n", dev->radio_ops->type);
 
-	dev->irq	 = link->irq.AssignedIRQ;
+	dev->irq	 = link->irq;
 	dev->config_base = link->conf.ConfigBase;
 	err = sc1442x_init_device(dev);
 	if (err < 0)

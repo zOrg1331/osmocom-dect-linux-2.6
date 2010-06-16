@@ -142,7 +142,7 @@ static unsigned int dect_poll(struct file *file, struct socket *sock,
 	struct sock *sk = sock->sk;
 	unsigned int mask;
 
-	poll_wait(file, sk->sk_sleep, wait);
+	poll_wait(file, sk_sleep(sk), wait);
 	mask = 0;
 
 	if (sk->sk_state == DECT_SK_LISTEN) {

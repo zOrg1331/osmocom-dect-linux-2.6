@@ -3559,6 +3559,64 @@ static struct dect_irc *dect_irc_init(struct dect_cell *cell,
 	return irc;
 }
 
+static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
+			 enum dect_scan_status status)
+{
+	const struct dect_cluster_handle *clh = cell->handle.clh;
+	struct dect_irc *irc = trx->irc;
+	struct dect_si *si = &irc->si;
+	struct dect_channel_desc chd;
+
+	switch (status) {
+	case DECT_SCAN_FAIL:
+	case DECT_SCAN_TIMEOUT:
+		return dect_restart_scan(cell, trx);
+	case DECT_SCAN_COMPLETE:
+		break;
+	}
+
+	dect_set_channel_mode(trx, &trx->slots[DECT_SCAN_SLOT].chd, DECT_SLOT_IDLE);
+
+	chd.slot    = si->ssi.sn + (si->ssi.nr ? DECT_HALF_FRAME_SIZE : 0);
+	chd.carrier = si->ssi.cn;
+	chd.pkt     = DECT_PACKET_P00;
+	chd.b_fmt   = DECT_B_NONE;
+
+	if (!dect_transceiver_channel_available(trx, &chd))
+		return dect_restart_scan(cell, trx);
+
+	if (cell->mode != DECT_MODE_FP) {
+		memcpy(&cell->idi, &irc->idi, sizeof(cell->idi));
+		cell->fmid = dect_build_fmid(&cell->idi);
+		memcpy(&cell->si, si, sizeof(cell->si));
+
+		dect_timer_synchronize_mfn(cell, si->mfn.num);
+
+		/* Lock framing based on slot position and create DBC */
+		dect_transceiver_lock(trx, chd.slot);
+		dect_dbc_init(cell, &chd);
+
+		clh->ops->mac_info_indicate(clh, &cell->idi, &cell->si);
+	} else {
+		dect_transceiver_lock(trx, chd.slot);
+
+		/* Lock to the primary dummy bearer to keep the radio synchronized */
+		/* FIXME: do this cleanly */
+		dect_set_channel_mode(trx, &chd, DECT_SLOT_RX);
+		dect_set_flags(trx, chd.slot, DECT_SLOT_SYNC);
+		dect_set_carrier(trx, chd.slot, chd.carrier);
+	}
+
+	/* Enable IRC */
+	dect_irc_enable(cell, irc);
+}
+
+static void dect_attempt_lock(struct dect_cell *cell,
+			      struct dect_transceiver *trx)
+{
+	dect_initiate_scan(trx, &cell->idi.pari, NULL, dect_lock_fp);
+}
+
 /*
  * Transmission: A- and B-Field MUXes
  */
@@ -4002,64 +4060,6 @@ void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 	if (slot == DECT_FRAME_SIZE - 1)
 		cell->si.ssi.pscn = dect_next_carrier(cell->si.ssi.rfcars,
 						      cell->si.ssi.pscn);
-}
-
-static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
-			 enum dect_scan_status status)
-{
-	const struct dect_cluster_handle *clh = cell->handle.clh;
-	struct dect_irc *irc = trx->irc;
-	struct dect_si *si = &irc->si;
-	struct dect_channel_desc chd;
-
-	switch (status) {
-	case DECT_SCAN_FAIL:
-	case DECT_SCAN_TIMEOUT:
-		return dect_restart_scan(cell, trx);
-	case DECT_SCAN_COMPLETE:
-		break;
-	}
-
-	dect_set_channel_mode(trx, &trx->slots[DECT_SCAN_SLOT].chd, DECT_SLOT_IDLE);
-
-	chd.slot    = si->ssi.sn + (si->ssi.nr ? DECT_HALF_FRAME_SIZE : 0);
-	chd.carrier = si->ssi.cn;
-	chd.pkt     = DECT_PACKET_P00;
-	chd.b_fmt   = DECT_B_NONE;
-
-	if (!dect_transceiver_channel_available(trx, &chd))
-		return dect_restart_scan(cell, trx);
-
-	if (cell->mode != DECT_MODE_FP) {
-		memcpy(&cell->idi, &irc->idi, sizeof(cell->idi));
-		cell->fmid = dect_build_fmid(&cell->idi);
-		memcpy(&cell->si, si, sizeof(cell->si));
-
-		dect_timer_synchronize_mfn(cell, si->mfn.num);
-
-		/* Lock framing based on slot position and create DBC */
-		dect_transceiver_lock(trx, chd.slot);
-		dect_dbc_init(cell, &chd);
-
-		clh->ops->mac_info_indicate(clh, &cell->idi, &cell->si);
-	} else {
-		dect_transceiver_lock(trx, chd.slot);
-
-		/* Lock to the primary dummy bearer to keep the radio synchronized */
-		/* FIXME: do this cleanly */
-		dect_set_channel_mode(trx, &chd, DECT_SLOT_RX);
-		dect_set_flags(trx, chd.slot, DECT_SLOT_SYNC);
-		dect_set_carrier(trx, chd.slot, chd.carrier);
-	}
-
-	/* Enable IRC */
-	dect_irc_enable(cell, irc);
-}
-
-static void dect_attempt_lock(struct dect_cell *cell,
-			      struct dect_transceiver *trx)
-{
-	dect_initiate_scan(trx, &cell->idi.pari, NULL, dect_lock_fp);
 }
 
 static void dect_fp_init_primary(struct dect_cell *cell,

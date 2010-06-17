@@ -175,9 +175,8 @@ static void com_on_air_remove(struct pcmcia_device *link)
 	struct coa_device *dev = dect_transceiver_priv(trx);
 
 	sc1442x_shutdown_device(dev);
-	pcmcia_disable_device(link);
 	iounmap(dev->sc1442x_base);
-	pcmcia_release_window(link, link->win);
+	pcmcia_disable_device(link);
 	dect_unregister_transceiver(trx);
 }
 

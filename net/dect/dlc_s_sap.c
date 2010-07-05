@@ -466,7 +466,7 @@ static int dect_ssap_setsockopt(struct sock *sk, int level, int optname,
 				char __user *optval, unsigned int optlen)
 {
 	struct dect_ssap *ssap = dect_ssap(sk);
-	struct dect_dl_encrypt *dle;
+	struct dect_dl_encrypt dle;
 	int err;
 	u64 ck;
 
@@ -491,7 +491,7 @@ static int dect_ssap_setsockopt(struct sock *sk, int level, int optname,
 		if (copy_from_user(&dle, optval, sizeof(dle)))
 			return -EFAULT;
 		err = dect_dlc_mac_conn_enc_eks_request(ssap->lapc->lc->mc,
-						        dle->status);
+						        dle.status);
 		break;
 	default:
 		err = -ENOPROTOOPT;

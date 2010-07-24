@@ -18,6 +18,7 @@
 #include <linux/dect.h>
 #include <net/dect/dect.h>
 #include <net/dect/mac_csf.h>
+#include <net/dect/dsc.h>
 #include <net/dect/transceiver.h>
 #include <asm/io.h>
 
@@ -487,7 +488,7 @@ static void sc1442x_dcs_init(const struct coa_device *dev,
 	u16 off = sc1442x_slot_offset(slot);
 	__le64 iv;
 
-	iv = cpu_to_le64((mfn << 4) + framenum);
+	iv = dect_dsc_iv(mfn, framenum);
 	sc1442x_to_dmem(dev, off + DCS_IV, &iv, 8);
 	sc1442x_to_dmem(dev, off + DCS_CK, &ts->ck, 8);
 }

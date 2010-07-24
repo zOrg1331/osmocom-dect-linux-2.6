@@ -1,6 +1,6 @@
 dect-y				+= core.o identities.o dect_netlink.o af_dect.o
 
-dect_csf-y			+= mac_csf.o transceiver.o
+dect_csf-y			+= mac_csf.o dsc.o transceiver.o
 
 dect_ccf-y			+= mac_ccf.o
 dect_ccf-y			+= dlc.o

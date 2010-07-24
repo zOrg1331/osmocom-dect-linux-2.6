@@ -2010,8 +2010,8 @@ static void dect_bc_rcv(struct dect_cell *cell, struct dect_bc *bc,
 		 (tbc)->id.pmid.type == DECT_PMID_EMERGENCY ? "emergency" : "?", \
 		 (tbc)->id.pmid.tpui, (tbc)->cell->fmid, (tbc)->id.ecn, ## args);
 
-static struct sk_buff *dect_tbc_build_bcctrl(const struct dect_tbc *tbc,
-					     enum dect_cctrl_cmds cmd)
+static struct sk_buff *dect_tbc_build_cctrl(const struct dect_tbc *tbc,
+					    enum dect_cctrl_cmds cmd)
 {
 	struct dect_cctrl cctl;
 	struct sk_buff *skb;
@@ -2052,7 +2052,7 @@ static int dect_tbc_send_confirm(const struct dect_tbc *tbc)
 	struct sk_buff *skb;
 
 	tbc_debug(tbc, "TX CONFIRM\n");
-	skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_BEARER_CONFIRM);
+	skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_BEARER_CONFIRM);
 	if (skb == NULL)
 		return -ENOMEM;
 
@@ -2186,7 +2186,7 @@ static void dect_tbc_release_timer(struct dect_cell *cell, void *data)
 		return dect_tbc_destroy(cell, tbc);
 
 	tbc_debug(tbc, "TX RELEASE\n");
-	m_skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_RELEASE);
+	m_skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_RELEASE);
 	if (m_skb != NULL) {
 		/* RELEASE messages may appear in any frame */
 		m_skb->priority = DECT_MT_HIGH_PRIORITY;
@@ -2497,7 +2497,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 		else if (cctl->cmd != DECT_CCTRL_WAIT)
 			goto release;
 
-		m_skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_WAIT);
+		m_skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_WAIT);
 		if (m_skb == NULL)
 			goto release;
 		skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
@@ -2514,7 +2514,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 			if (cctl->cmd != DECT_CCTRL_WAIT)
 				goto release;
 
-			m_skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_WAIT);
+			m_skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_WAIT);
 			if (m_skb == NULL)
 				goto release;
 			skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
@@ -2522,7 +2522,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 			dect_tbc_state_change(tbc, DECT_TBC_WAIT_RCVD);
 		} else {
 			tbc_debug(tbc, "Confirmed\n");
-			m_skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_WAIT);
+			m_skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_WAIT);
 			if (m_skb == NULL)
 				goto release;
 			skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
@@ -2826,7 +2826,7 @@ static void dect_tbc_enable_timer(struct dect_cell *cell,
 	struct sk_buff *skb;
 
 	tbc_debug(tbc, "TX ACCESS_REQUEST\n");
-	skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_ACCESS_REQ);
+	skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_ACCESS_REQ);
 	if (skb == NULL)
 		return;
 
@@ -2980,7 +2980,7 @@ static void dect_tbc_wait_timer(struct dect_cell *cell, void *data)
 	struct sk_buff *skb;
 
 	tbc_debug(tbc, "wait timer\n");
-	skb = dect_tbc_build_bcctrl(tbc, DECT_CCTRL_WAIT);
+	skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_WAIT);
 	if (skb == NULL)
 		return;
 

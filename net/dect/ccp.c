@@ -254,6 +254,32 @@ static void dect_ccp_parse_enable(const struct dect_cell_handle *ch,
 	ch->ops->enable(ch);
 }
 
+static void dect_ccp_send_page_request(const struct dect_cell_handle *ch,
+				       struct sk_buff *skb)
+{
+	struct dect_ccp_page_msg *msg;
+
+	msg = (struct dect_ccp_page_msg *)__skb_push(skb, sizeof(*msg));
+	msg->expedited = DECT_BMC_CB(skb)->fast;
+
+	dect_ccp_send_to_cell(ch, skb, DECT_CCP_PAGE_REQUEST);
+}
+
+static void dect_ccp_parse_page_request(const struct dect_cell_handle *ch,
+					struct sk_buff *skb)
+{
+	struct dect_ccp_page_msg *msg;
+
+	if (!pskb_may_pull(skb, sizeof(*msg)))
+		return;
+	msg = (struct dect_ccp_page_msg *)skb->data;
+	__pskb_pull(skb, sizeof(*msg));
+
+	DECT_BMC_CB(skb)->fast = msg->expedited;
+
+	ch->ops->page_request(ch, skb);
+}
+
 static int dect_ccp_send_tbc_initiate(const struct dect_cell_handle *ch,
 				      const struct dect_mbc_id *id,
 				      const struct dect_channel_desc *cd)
@@ -332,9 +358,105 @@ static void dect_ccp_send_tbc_data_request(const struct dect_cell_handle *ch,
 	dect_ccp_send_to_cell(ch, skb, DECT_CCP_TBC_DATA_REQUEST);
 }
 
+static int dect_ccp_send_tbc_enc_key_request(const struct dect_cell_handle *ch,
+					     const struct dect_mbc_id *id, u64 ck)
+{
+	struct dect_ccp_enc_key_msg *msg;
+	struct sk_buff *skb;
+
+	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg) + sizeof(*msg));
+	if (skb == NULL)
+		return -ENOMEM;
+
+	dect_ccp_build_mbc_msg(skb, id, 0);
+	msg = (struct dect_ccp_enc_key_msg *)skb_tail_pointer(skb);
+	msg->key = cpu_to_be64(ck);
+
+	return dect_ccp_send_to_cell(ch, skb, DECT_CCP_TBC_ENC_KEY_REQUEST);
+}
+
+static void dect_ccp_parse_tbc_enc_key_request(const struct dect_cell_handle *ch,
+					       struct sk_buff *skb)
+{
+	const struct dect_ccp_enc_key_msg *msg;
+	struct dect_mbc_id id;
+	u64 ck;
+
+	if (!dect_ccp_parse_mbc_msg(&id, NULL, skb))
+		return;
+
+	if (!pskb_may_pull(skb, sizeof(*msg)))
+		return;
+	msg = (struct dect_ccp_enc_key_msg *)skb->data;
+	ck = be64_to_cpu(msg->key);
+
+	ch->ops->tbc_enc_key_request(ch, &id, ck);
+}
+
+static int dect_ccp_send_tbc_enc_eks_request(const struct dect_cell_handle *ch,
+					     const struct dect_mbc_id *id,
+					     enum dect_cipher_states status)
+{
+	struct sk_buff *skb;
+
+	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
+	if (skb == NULL)
+		return -ENOMEM;
+	dect_ccp_build_mbc_msg(skb, id, status);
+	return dect_ccp_send_to_cell(ch, skb, DECT_CCP_TBC_ENC_EKS_REQUEST);
+}
+
+static void dect_ccp_parse_tbc_enc_eks_request(const struct dect_cell_handle *ch,
+					       struct sk_buff *skb)
+{
+	struct dect_mbc_id id;
+	u8 status;
+
+	if (!dect_ccp_parse_mbc_msg(&id, &status, skb))
+		return;
+
+	switch (status) {
+	case DECT_CIPHER_DISABLED:
+	case DECT_CIPHER_ENABLED:
+		break;
+	default:
+		return;
+	}
+
+	ch->ops->tbc_enc_eks_request(ch, &id, status);
+}
+
 static void dect_ccp_send_scan_report(const struct dect_cluster_handle *clh,
 				      const struct dect_scan_result *res)
 {
+}
+
+static void dect_ccp_send_mac_info_indicate(const struct dect_cluster_handle *clh,
+					    const struct dect_idi *idi,
+					    const struct dect_si *si)
+{
+	struct sk_buff *skb;
+
+	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_sysinfo_msg));
+	if (skb == NULL)
+		return;
+
+	dect_ccp_build_sysinfo(skb, &idi->pari, idi->rpn, si);
+	dect_ccp_send_to_cluster(clh, skb, DECT_CCP_MAC_INFO_INDICATE);
+}
+
+static void dect_ccp_parse_mac_info_indicate(const struct dect_cell_handle *ch,
+					     struct sk_buff *skb)
+{
+	const struct dect_cluster_handle *clh = ch->clh;
+	struct dect_idi idi;
+	struct dect_si si;
+
+	if (!dect_ccp_parse_sysinfo(&idi.pari, &idi.rpn, &si, skb))
+		return;
+	idi.e = si.num_saris ? true : false;
+
+	clh->ops->mac_info_indicate(clh, &idi, &si);
 }
 
 static int dect_ccp_send_mbc_conn_indicate(const struct dect_cluster_handle *clh,
@@ -475,6 +597,8 @@ static void dect_ccp_rcv_cell_msg(void *handle, u32 portref,
 	__skb_pull(skb, sizeof(*h));
 
 	switch (h->primitive) {
+	case DECT_CCP_MAC_INFO_INDICATE:
+		return dect_ccp_parse_mac_info_indicate(ch, skb);
 	case DECT_CCP_MBC_CONN_INDICATE:
 		return dect_ccp_parse_mbc_conn_indicate(ch, skb);
 	case DECT_CCP_MBC_CONN_NOTIFY:
@@ -505,9 +629,12 @@ static const struct dect_csf_ops dect_ccp_csf_ops = {
 	.scan			= dect_ccp_send_scan,
 	.enable			= dect_ccp_send_enable,
 	.preload		= dect_ccp_send_preload,
+	.page_request		= dect_ccp_send_page_request,
 	.tbc_initiate		= dect_ccp_send_tbc_initiate,
 	.tbc_confirm		= dect_ccp_send_tbc_confirm,
 	.tbc_release		= dect_ccp_send_tbc_release,
+	.tbc_enc_key_request	= dect_ccp_send_tbc_enc_key_request,
+	.tbc_enc_eks_request	= dect_ccp_send_tbc_enc_eks_request,
 	.tbc_data_request	= dect_ccp_send_tbc_data_request,
 };
 
@@ -622,12 +749,18 @@ static void dect_ccp_rcv_cluster_msg(void *handle, u32 portref,
 		return dect_ccp_parse_enable(ch, skb);
 	case DECT_CCP_PRELOAD:
 		return dect_ccp_parse_preload(ch, skb);
+	case DECT_CCP_PAGE_REQUEST:
+		return dect_ccp_parse_page_request(ch, skb);
 	case DECT_CCP_TBC_INITIATE:
 		return dect_ccp_parse_tbc_initiate(ch, skb);
 	case DECT_CCP_TBC_CONFIRM:
 		return dect_ccp_parse_tbc_confirm(ch, skb);
 	case DECT_CCP_TBC_RELEASE:
 		return dect_ccp_parse_tbc_release(ch, skb);
+	case DECT_CCP_TBC_ENC_KEY_REQUEST:
+		return dect_ccp_parse_tbc_enc_key_request(ch, skb);
+	case DECT_CCP_TBC_ENC_EKS_REQUEST:
+		return dect_ccp_parse_tbc_enc_eks_request(ch, skb);
 	}
 }
 
@@ -746,6 +879,7 @@ static const struct dect_ccf_ops dect_ccp_ccf_ops = {
 	.bind			= dect_ccp_bind_cell,
 	.unbind			= dect_ccp_unbind_cell,
 	.scan_report		= dect_ccp_send_scan_report,
+	.mac_info_indicate	= dect_ccp_send_mac_info_indicate,
 	.mbc_conn_indicate	= dect_ccp_send_mbc_conn_indicate,
 	.mbc_conn_notify	= dect_ccp_send_mbc_conn_notify,
 	.mbc_dis_indicate	= dect_ccp_send_mbc_dis_indicate,

@@ -17,10 +17,14 @@ enum dect_ccp_primitives {
 	DECT_CCP_SCAN,
 	DECT_CCP_ENABLE,
 	DECT_CCP_PRELOAD,
+	DECT_CCP_MAC_INFO_INDICATE,
+	DECT_CCP_PAGE_REQUEST,
 	DECT_CCP_TBC_INITIATE,
 	DECT_CCP_TBC_CONFIRM,
 	DECT_CCP_TBC_DATA_REQUEST,
 	DECT_CCP_TBC_RELEASE,
+	DECT_CCP_TBC_ENC_KEY_REQUEST,
+	DECT_CCP_TBC_ENC_EKS_REQUEST,
 	/* CSF -> CCF */
 	DECT_CCP_MBC_CONN_INDICATE,
 	DECT_CCP_MBC_CONN_NOTIFY,
@@ -57,12 +61,20 @@ struct dect_ccp_sysinfo_msg {
 	u8		rpn;
 } __attribute__((packed));
 
+struct dect_ccp_page_msg {
+	u8		expedited;
+} __attribute__((packed));
+
 struct dect_ccp_mbc_msg {
 	__be32		mcei;
 	__be32		pmid;
 	__be64		ari;
 	u8		ecn;
 	u8		data;
+} __attribute__((packed));
+
+struct dect_ccp_enc_key_msg {
+	__be64		key;
 } __attribute__((packed));
 
 struct dect_ccp_data_msg {

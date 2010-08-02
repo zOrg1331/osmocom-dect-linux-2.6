@@ -51,6 +51,7 @@ static void dect_mac_info_indicate(const struct dect_cluster_handle *clh,
 
 	pr_debug("cl %p: mac info indicate\n", cl);
 	memcpy(&cl->si, si, sizeof(cl->si));
+	dect_llme_mac_info_ind(cl, &cl->si);
 }
 
 /*

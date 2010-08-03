@@ -272,6 +272,8 @@ static struct dect_proto dect_lu1_proto = {
 
 int __init dect_lu1_sap_module_init(void)
 {
+	BUILD_BUG_ON(sizeof(struct sockaddr_dect_lu) >
+		     sizeof(struct sockaddr));
 	return dect_proto_register(&dect_lu1_proto);
 }
 

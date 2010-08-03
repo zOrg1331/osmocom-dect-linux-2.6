@@ -237,6 +237,8 @@ static int __init dect_raw_init(void)
 {
 	int err;
 
+	BUILD_BUG_ON(sizeof(struct sockaddr_dect) >
+		     sizeof(struct sockaddr));
 	err = dect_proto_register(&dect_raw_proto);
 	if (err < 0)
 		return err;

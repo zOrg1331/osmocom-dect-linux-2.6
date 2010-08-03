@@ -2622,19 +2622,20 @@ static int dect_tbc_enc_state_process(struct dect_cell *cell,
 		dect_bearer_timer_add(cell, tbc->txb, &tbc->enc_timer, 0);
 		break;
 	case DECT_ENCCTRL_START_CONFIRM:
-		if (tbc->enc_state != DECT_TBC_ENC_START_REQ_SENT)
-			break;
-		tbc->enc_state = DECT_TBC_ENC_START_CFM_RCVD;
-		tbc->enc_msg_cnt = 0;
+		if (tbc->enc_state == DECT_TBC_ENC_START_REQ_SENT) {
+			tbc->enc_state = DECT_TBC_ENC_START_CFM_RCVD;
+			tbc->enc_msg_cnt = 0;
 
-		dect_timer_del(&tbc->enc_timer);
-		tbc_debug(tbc, "TX encryption enabled\n");
-		dect_enable_cipher(tbc->txb->trx, tbc->txb->chd.slot, tbc->ck);
-		/* fall through */
-	case DECT_TBC_ENC_START_CFM_RCVD:
-		skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_START_GRANT);
-		if (skb != NULL)
-			skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+			dect_timer_del(&tbc->enc_timer);
+			tbc_debug(tbc, "TX encryption enabled\n");
+			dect_enable_cipher(tbc->txb->trx, tbc->txb->chd.slot,
+					   tbc->ck);
+		}
+		if (tbc->enc_state == DECT_TBC_ENC_START_CFM_RCVD) {
+			skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_START_GRANT);
+			if (skb != NULL)
+				skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+		}
 		break;
 	case DECT_ENCCTRL_START_GRANT:
 		if (tbc->enc_state != DECT_TBC_ENC_START_CFM_SENT)

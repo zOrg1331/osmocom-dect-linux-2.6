@@ -288,12 +288,12 @@ enum dect_tbc_state {
 /**
  * enum dect_tbc_enc_state - DECT Traffic Bearer encryption state
  *
- * @DECT_TBC_ENC_DISABLED:	Encryption is disabled
+ * @DECT_TBC_ENC_DISABLED:	 Encryption is disabled
  * @DECT_TBC_ENC_START_REQ_RCVD: Start request received (FP)
  * @DECT_TBC_ENC_START_REQ_SENT: Start request sent (PP)
  * @DECT_TBC_ENC_START_CFM_RCVD: Start confirm received (PP)
  * @DECT_TBC_ENC_START_CFM_SENT: Start confirm sent (FP)
- * @DECT_TBC_ENC_ENABLED:	Encryption is enabled
+ * @DECT_TBC_ENC_ENABLED:	 Encryption is enabled
  */
 enum dect_tbc_enc_state {
 	DECT_TBC_ENC_DISABLED,

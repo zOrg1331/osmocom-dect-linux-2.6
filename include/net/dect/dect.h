@@ -95,6 +95,9 @@ extern void dect_cluster_shutdown(struct dect_cluster *cl);
 extern struct dect_cluster *dect_cluster_get_by_index(int index);
 extern struct dect_cluster *dect_cluster_get_by_pari(const struct dect_ari *ari);
 
+extern int dect_cluster_preload(struct dect_cluster *cl, const struct dect_ari *ari,
+				const struct dect_si *si);
+
 /**
  * struct dect_llme_req - LLME netlink request
  *

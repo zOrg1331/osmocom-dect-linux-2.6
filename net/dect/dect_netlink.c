@@ -414,6 +414,9 @@ static int dect_llme_mac_rfp_preload(struct dect_cluster *cl,
 	struct dect_si si;
 	int err = 0;
 
+	if (cl->mode != DECT_MODE_FP)
+		return -EINVAL;
+
 	if (tb[DECTA_MAC_INFO_PARI] != NULL) {
 		err = dect_nla_parse_ari(&pari, tb[DECTA_MAC_INFO_PARI]);
 		if (err < 0)
@@ -421,6 +424,7 @@ static int dect_llme_mac_rfp_preload(struct dect_cluster *cl,
 	} else
 		pari = cl->pari;
 
+	si = cl->si;
 	if (tb[DECTA_MAC_INFO_HLC])
 		si.fpc.hlc = nla_get_u16(tb[DECTA_MAC_INFO_HLC]);
 	if (tb[DECTA_MAC_INFO_EHLC])
@@ -428,7 +432,17 @@ static int dect_llme_mac_rfp_preload(struct dect_cluster *cl,
 	if (tb[DECTA_MAC_INFO_EHLC2])
 		si.efpc2.hlc = nla_get_u32(tb[DECTA_MAC_INFO_EHLC2]);
 
-	return err;
+	if (si.efpc2.fpc || si.efpc2.hlc)
+		si.efpc.fpc |= DECT_EFPC_EXTENDED_FP_INFO2;
+	else
+		si.efpc.fpc &= ~DECT_EFPC_EXTENDED_FP_INFO2;
+
+	if (si.efpc.fpc || si.efpc.hlc)
+		si.fpc.fpc |= DECT_FPC_EXTENDED_FP_INFO;
+	else
+		si.fpc.fpc &= ~DECT_FPC_EXTENDED_FP_INFO;
+
+	return dect_cluster_preload(cl, &pari, &si);
 }
 
 static struct sk_buff *dect_llme_fill(const struct dect_cluster *cl,

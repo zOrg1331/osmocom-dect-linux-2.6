@@ -489,6 +489,23 @@ static const struct dect_ccf_ops dect_ccf_ops = {
 	.bmc_page_indicate	= dect_bmc_page_indicate,
 };
 
+int dect_cluster_preload(struct dect_cluster *cl, const struct dect_ari *pari,
+			 const struct dect_si *si)
+{
+	const struct dect_cell_handle *ch;
+	int err = 0;
+
+	list_for_each_entry(ch, &cl->cells, list) {
+		err = ch->ops->preload(ch, pari, ch->rpn, si);
+		if (err < 0)
+			return err;
+	}
+
+	cl->pari = *pari;
+	cl->si   = *si;
+	return 0;
+}
+
 int dect_cluster_scan(struct dect_cluster *cl,
 		      const struct dect_llme_req *lreq,
 		      const struct dect_ari *pari,

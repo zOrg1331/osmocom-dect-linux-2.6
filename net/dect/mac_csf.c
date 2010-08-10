@@ -1016,15 +1016,22 @@ static u64 dect_build_cctrl_common(const struct dect_cctrl *cctl)
 
 static int dect_parse_cctrl_attr(struct dect_cctrl *cctl, u64 t)
 {
-	cctl->ecn     = (t & DECT_CCTRL_ATTR_ECN_MASK) >> DECT_CCTRL_ATTR_ECN_SHIFT;
-	cctl->lbn     = (t & DECT_CCTRL_ATTR_LBN_MASK) >> DECT_CCTRL_ATTR_LBN_SHIFT;
-	cctl->type    = (t & DECT_CCTRL_ATTR_TYPE_MASK) >> DECT_CCTRL_ATTR_TYPE_SHIFT;
-	cctl->service = (t & DECT_CCTRL_ATTR_SERVICE_MASK) >> DECT_CCTRL_ATTR_SERVICE_SHIFT;
-	cctl->slot    = (t & DECT_CCTRL_ATTR_SLOT_MASK) >> DECT_CCTRL_ATTR_SLOT_SHIFT;
+	cctl->ecn        = (t & DECT_CCTRL_ATTR_ECN_MASK) >> DECT_CCTRL_ATTR_ECN_SHIFT;
+	cctl->lbn        = (t & DECT_CCTRL_ATTR_LBN_MASK) >> DECT_CCTRL_ATTR_LBN_SHIFT;
+	cctl->type       = (t & DECT_CCTRL_ATTR_TYPE_MASK) >> DECT_CCTRL_ATTR_TYPE_SHIFT;
+	cctl->service    = (t & DECT_CCTRL_ATTR_SERVICE_MASK) >> DECT_CCTRL_ATTR_SERVICE_SHIFT;
+	cctl->slot       = (t & DECT_CCTRL_ATTR_SLOT_MASK) >> DECT_CCTRL_ATTR_SLOT_SHIFT;
+	cctl->cf         = (t & DECT_CCTRL_ATTR_CF_FLAG);
+	cctl->a_mod      = (t & DECT_CCTRL_ATTR_A_MOD_MASK) >> DECT_CCTRL_ATTR_A_MOD_SHIFT;
+	cctl->bz_mod     = (t & DECT_CCTRL_ATTR_BZ_MOD_MASK) >> DECT_CCTRL_ATTR_BZ_MOD_SHIFT;
+	cctl->bz_ext_mod = (t & DECT_CCTRL_ATTR_BZ_EXT_MOD_MASK) >> DECT_CCTRL_ATTR_BZ_EXT_MOD_SHIFT;
+	cctl->acr        = (t & DECT_CCTRL_ATTR_ACR_MASK) >> DECT_CCTRL_ATTR_ACR_SHIFT;
 
 	pr_debug("cctrl: cmd: %llx ecn: %x lbn: %x type: %x "
-		 "service: %x slot: %x\n", (unsigned long long)cctl->cmd,
-		 cctl->ecn, cctl->lbn, cctl->type, cctl->service, cctl->slot);
+		 "service: %x slot: %x cf %d a_mod %x bz_mod %x bz_ext_mod %x acr %x\n",
+		 (unsigned long long)cctl->cmd, cctl->ecn, cctl->lbn,
+		 cctl->type, cctl->service, cctl->slot, cctl->cf,
+		 cctl->a_mod, cctl->bz_mod, cctl->bz_ext_mod, cctl->acr);
 	return 0;
 }
 
@@ -1038,6 +1045,11 @@ static u64 dect_build_cctrl_attr(const struct dect_cctrl *cctl)
 	t |= (u64)cctl->type << DECT_CCTRL_ATTR_TYPE_SHIFT;
 	t |= (u64)cctl->service << DECT_CCTRL_ATTR_SERVICE_SHIFT;
 	t |= (u64)cctl->slot << DECT_CCTRL_ATTR_SLOT_SHIFT;
+	t |= cctl->cf ? DECT_CCTRL_ATTR_CF_FLAG : 0;
+	t |= (u64)cctl->a_mod << DECT_CCTRL_ATTR_A_MOD_SHIFT;
+	t |= (u64)cctl->bz_mod << DECT_CCTRL_ATTR_BZ_MOD_SHIFT;
+	t |= (u64)cctl->bz_ext_mod << DECT_CCTRL_ATTR_BZ_EXT_MOD_SHIFT;
+	t |= (u64)cctl->acr << DECT_CCTRL_ATTR_ACR_SHIFT;
 	return t;
 }
 
@@ -2210,6 +2222,7 @@ static int dect_tbc_send_attributes_confirm(const struct dect_tbc *tbc)
 	cctl.slot   = DECT_FULL_SLOT;
 	cctl.a_mod  = DECT_MODULATION_2_LEVEL;
 	cctl.bz_mod = DECT_MODULATION_2_LEVEL;
+	cctl.bz_ext_mod = 7;
 	cctl.acr    = 0;
 
 	if (tbc->id.type == DECT_MAC_CONN_BASIC)

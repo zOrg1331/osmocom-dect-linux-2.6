@@ -553,8 +553,6 @@ enum dect_mac_service_types {
 	DECT_SERVICE_IPQ_ERROR_CORRECTION	= 0x38,
 };
 
-#define DECT_SERVICE_LIFETIME_MASK		= 0x7
-
 #define DECT_CCTRL_ATTR_SLOT_MASK		0x000000f000000000ULL
 #define DECT_CCTRL_ATTR_SLOT_SHIFT		36
 
@@ -618,24 +616,25 @@ struct dect_cctrl {
 	enum dect_cctrl_cmds		cmd;
 	union {
 		struct {
-			u32		pmid;
 			u16		fmid;
+			u32		pmid;
 		};
 		struct {
-			u8		ecn;
 			u8		lbn;
+			u8		ecn;
 			u8		type;
 			u8		service;
 			u8		slot;
 			bool		cf;
 			u8		a_mod;
 			u8		bz_mod;
+			u8		bz_ext_mod;
 			u8		acr;
 		};
 		struct {
-			u32		pmid;
 			u8		lbn;
 			u8		reason;
+			u32		pmid;
 		};
 	};
 };

@@ -2095,11 +2095,24 @@ static int dect_tbc_send_attributes_confirm(const struct dect_tbc *tbc)
 	return 0;
 }
 
+static const char *tbc_states[] = {
+	[DECT_TBC_NONE]			= "NONE",
+	[DECT_TBC_REQ_SENT]		= "REQ_SENT",
+	[DECT_TBC_WAIT_RCVD]		= "WAIT_RCVD",
+	[DECT_TBC_REQ_RCVD]		= "REQ_RCVD",
+	[DECT_TBC_RESPONSE_SENT]	= "RESPONSE_SENT",
+	[DECT_TBC_OTHER_WAIT]		= "OTHER_WAIT",
+	[DECT_TBC_ESTABLISHED]		= "ESTABLISHED",
+	[DECT_TBC_RELEASING]		= "RELEASING",
+	[DECT_TBC_RELEASED]		= "RELEASED",
+};
+
 static void dect_tbc_state_change(struct dect_tbc *tbc, enum dect_tbc_state state)
 {
 	struct dect_cell *cell = tbc->cell;
 
-	tbc_debug(tbc, "state change %u -> %u\n", tbc->state, state);
+	tbc_debug(tbc, "state change %s (%u) -> %s (%u)\n",
+		  tbc_states[tbc->state], tbc->state, tbc_states[state], state);
 
 	if (tbc->state == DECT_TBC_ESTABLISHED) {
 		cell->tbc_num_est--;

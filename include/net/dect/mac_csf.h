@@ -265,7 +265,6 @@ struct dect_cbc {
  * @DECT_TBC_NONE:		Initial state
  * @DECT_TBC_REQ_SENT:		Initiator: bearer request sent
  * @DECT_TBC_WAIT_RCVD:		Initiator: intermediate state
- * @DECT_TBC_CONFIRM_WAIT:	Initiator: waiting for confirmation
  * @DECT_TBC_REQ_RCVD:		Responder: request received
  * @DECT_TBC_RESPONSE_SENT:	Responder: immediate response to request sent
  * @DECT_TBC_OTHER_WAIT:	Waiting for "other" message

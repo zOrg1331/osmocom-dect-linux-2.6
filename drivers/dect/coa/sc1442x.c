@@ -896,7 +896,7 @@ static void sc1442x_write_bmc_config(const struct coa_device *dev,
 	sc1442x_dwriteb(dev, off + 3, 0);
 
 	cfg  = SC1442X_BC4_ADP;
-	cfg |= 0xf;
+	cfg |= 0xf & SC1442X_BC4_WIN_MASK;
 	cfg |= 0x80;
 	sc1442x_dwriteb(dev, off + 4, cfg);
 

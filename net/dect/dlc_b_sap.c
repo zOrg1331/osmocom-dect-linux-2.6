@@ -108,6 +108,7 @@ static int dect_bsap_recvmsg(struct kiocb *iocb, struct sock *sk,
 			     int noblock, int flags, int *addrlen)
 {
 	struct sockaddr_dect *addr;
+	struct dect_bsap_auxdata aux;
 	struct sk_buff *skb;
 	size_t copied = 0;
 	int err;
@@ -140,6 +141,9 @@ static int dect_bsap_recvmsg(struct kiocb *iocb, struct sock *sk,
 
 	sock_recv_timestamp(msg, sk, skb);
 
+	aux.long_page = DECT_BMC_CB(skb)->long_page;
+	put_cmsg(msg, SOL_DECT, DECT_BSAP_AUXDATA, sizeof(aux), &aux);
+
 	if (flags & MSG_TRUNC)
 		copied = skb->len;
 out_free:
@@ -155,6 +159,9 @@ static int dect_bsap_sendmsg(struct kiocb *kiocb, struct sock *sk,
 	bool expedited = msg->msg_flags & MSG_OOB;
 	struct dect_cluster *cl;
 	struct sk_buff *skb;
+	struct cmsghdr *cmsg;
+	struct dect_bsap_auxdata *aux;
+	bool long_page = false;
 	int index;
 	int err;
 
@@ -172,18 +179,39 @@ static int dect_bsap_sendmsg(struct kiocb *kiocb, struct sock *sk,
 	if (cl->mode != DECT_MODE_FP)
 		return -EOPNOTSUPP;
 
+	for (cmsg = CMSG_FIRSTHDR(msg); cmsg != NULL; cmsg = CMSG_NXTHDR(msg, cmsg)) {
+		if (!CMSG_OK(msg, cmsg))
+			return -EINVAL;
+		if (cmsg->cmsg_level != SOL_DECT)
+			continue;
+
+		switch (cmsg->cmsg_type) {
+		case DECT_BSAP_AUXDATA:
+			if (cmsg->cmsg_len != CMSG_LEN(sizeof(*aux)))
+				return -EINVAL;
+			aux = (struct dect_bsap_auxdata *)CMSG_DATA(cmsg);
+			long_page = aux->long_page;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
 	/* Valid frame sizes are 3 bytes (short frame), 5 bytes (long frame)
 	 * or multiples of 5 bytes up to 30 bytes (extended frame). Extended
 	 * frames can not use expedited operation. */
-	if (len != DECT_LB_SHORT_FRAME_SIZE &&
-	    len != DECT_LB_LONG_FRAME_SIZE) {
-		if (len % DECT_LB_LONG_FRAME_SIZE != 0)
+	if (len == DECT_LB_SHORT_FRAME_SIZE) {
+		if (long_page)
+			return -EINVAL;
+	} else if (len % DECT_LB_LONG_FRAME_SIZE == 0) {
+		if (len > DECT_LB_LONG_FRAME_SIZE && !long_page)
 			return -EINVAL;
 		if (len > DECT_LB_EXTENDED_FRAME_SIZE_MAX)
 			return -EMSGSIZE;
 		if (expedited)
 			return -EOPNOTSUPP;
-	}
+	} else
+		return -EINVAL;
 
 	skb = sock_alloc_send_skb(sk, len, msg->msg_flags & MSG_DONTWAIT, &err);
 	if (skb == NULL)
@@ -191,7 +219,9 @@ static int dect_bsap_sendmsg(struct kiocb *kiocb, struct sock *sk,
 	err = memcpy_fromiovec(skb_put(skb, len), msg->msg_iov, len);
 	if (err < 0)
 		goto err2;
-	dect_bmc_mac_page_request(cl, skb, expedited);
+	DECT_BMC_CB(skb)->long_page = long_page;
+	DECT_BMC_CB(skb)->fast_page = expedited;
+	dect_bmc_mac_page_request(cl, skb);
 	return len;
 
 err2:

@@ -63,17 +63,14 @@ static void dect_mac_info_indicate(const struct dect_cluster_handle *clh,
  *
  * @cl:		DECT cluster
  * @skb:	SDU
- * @expedited:	fast/normal page indication
  */
-void dect_bmc_mac_page_request(struct dect_cluster *cl, struct sk_buff *skb,
-			       bool expedited)
+void dect_bmc_mac_page_request(struct dect_cluster *cl, struct sk_buff *skb)
 {
 	const struct dect_cell_handle *ch, *last = NULL;
 	struct sk_buff *clone;
 
 	BUG_ON(cl->mode != DECT_MODE_FP);
 
-	DECT_BMC_CB(skb)->fast = expedited;
 	list_for_each_entry(ch, &cl->cells, list) {
 		if (last != NULL) {
 			clone = skb_clone(skb, GFP_ATOMIC);

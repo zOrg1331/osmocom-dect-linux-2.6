@@ -62,7 +62,8 @@ struct dect_ccp_sysinfo_msg {
 } __attribute__((packed));
 
 struct dect_ccp_page_msg {
-	u8		expedited;
+	u8		fast_page;
+	u8		long_page;
 } __attribute__((packed));
 
 struct dect_ccp_mbc_msg {

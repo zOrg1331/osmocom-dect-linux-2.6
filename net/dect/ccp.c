@@ -260,7 +260,8 @@ static void dect_ccp_send_page_request(const struct dect_cell_handle *ch,
 	struct dect_ccp_page_msg *msg;
 
 	msg = (struct dect_ccp_page_msg *)__skb_push(skb, sizeof(*msg));
-	msg->expedited = DECT_BMC_CB(skb)->fast;
+	msg->fast_page = DECT_BMC_CB(skb)->fast_page;
+	msg->long_page = DECT_BMC_CB(skb)->long_page;
 
 	dect_ccp_send_to_cell(ch, skb, DECT_CCP_PAGE_REQUEST);
 }
@@ -275,7 +276,8 @@ static void dect_ccp_parse_page_request(const struct dect_cell_handle *ch,
 	msg = (struct dect_ccp_page_msg *)skb->data;
 	__pskb_pull(skb, sizeof(*msg));
 
-	DECT_BMC_CB(skb)->fast = msg->expedited;
+	DECT_BMC_CB(skb)->fast_page = msg->fast_page;
+	DECT_BMC_CB(skb)->long_page = msg->long_page;
 
 	ch->ops->page_request(ch, skb);
 }

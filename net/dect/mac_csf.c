@@ -970,6 +970,8 @@ static int dect_parse_paging_msg(struct dect_tail_msg *tm, u64 t)
 	case DECT_PT_LONG_PAGE_LAST:
 	case DECT_PT_LONG_PAGE_ALL:
 		tm->type = DECT_TM_TYPE_PAGE;
+		pr_debug("full/long page: extend: %u length: %llx\n",
+			 tm->page.extend, (unsigned long long)tm->page.length);
 		return 0;
 	default:
 		return -1;
@@ -1519,7 +1521,7 @@ static void dect_page_timer_schedule(struct dect_cell *cell)
 static void dect_queue_page(struct dect_cell *cell, struct sk_buff *skb)
 {
 	u8 repetitions = DECT_BMC_CB(skb)->repetitions;
-	bool fast = DECT_BMC_CB(skb)->fast;
+	bool fast = DECT_BMC_CB(skb)->fast_page;
 	struct sk_buff_head *page_queue;
 
 	page_queue = fast ? &cell->page_fast_queue : &cell->page_queue;
@@ -1540,6 +1542,7 @@ static void dect_queue_page(struct dect_cell *cell, struct sk_buff *skb)
 static void dect_queue_page_segments(struct sk_buff_head *list,
 				     struct sk_buff *skb)
 {
+	unsigned int len = skb->len;
 	struct sk_buff *seg;
 	u64 t;
 
@@ -1548,12 +1551,15 @@ static void dect_queue_page_segments(struct sk_buff_head *list,
 		if (seg == NULL)
 			goto err;
 		skb_trim(seg, DECT_PT_LFP_BS_DATA_SIZE);
+
 		if (skb_queue_empty(list))
 			t = DECT_PT_LONG_PAGE_FIRST;
 		else
 			t = DECT_PT_LONG_PAGE;
-		seg->data[0] |= t >> DECT_PT_HDR_LENGTH_SHIFT;
 
+		seg->data[0] |= t >> 56;
+		pr_debug("queue page segment len %u hdr %x\n",
+			 seg->len, seg->data[0] & 0xf0);
 		__skb_queue_tail(list, seg);
 
 		skb_pull(skb, DECT_PT_LFP_BS_DATA_SIZE);
@@ -1564,13 +1570,16 @@ static void dect_queue_page_segments(struct sk_buff_head *list,
 	 */
 	if (skb->len == DECT_PT_SP_BS_DATA_SIZE)
 		t = DECT_PT_SHORT_PAGE | DECT_PT_HDR_EXTEND_FLAG;
-	else if (skb_queue_empty(list))
+	else if (!DECT_BMC_CB(skb)->long_page)
 		t = DECT_PT_FULL_PAGE | DECT_PT_HDR_EXTEND_FLAG;
+	else if (len == DECT_PT_LFP_BS_DATA_SIZE)
+		t = DECT_PT_LONG_PAGE_ALL;
 	else
-		t = 0 ? DECT_PT_LONG_PAGE_ALL : DECT_PT_LONG_PAGE_LAST;
+		t = DECT_PT_LONG_PAGE_LAST;
 
 	skb->data[0] |= t >> 56;
-	pr_debug("queue page segment len %u hdr %x\n", skb->len, skb->data[0] & 0xf0);
+	pr_debug("queue page segment len %u hdr %x\n",
+		 skb->len, skb->data[0] & 0xf0);
 	__skb_queue_tail(list, skb);
 	return;
 
@@ -1638,7 +1647,7 @@ static void dect_page_tx_timer(struct dect_cell *cell, void *data)
 	}
 
 	/* Save a copy of short and full pages for repetitions. */
-	if (skb->len <= DECT_PT_LFP_BS_DATA_SIZE &&
+	if (!DECT_BMC_CB(skb)->long_page &&
 	    DECT_BMC_CB(skb)->repetitions < 3)
 		cell->page_sdu = skb_clone(skb, GFP_ATOMIC);
 
@@ -1913,13 +1922,16 @@ static void dect_bc_queue_bs_data(struct dect_cell *cell, struct dect_bc *bc,
 	case DECT_PT_SHORT_PAGE:
 		skb_trim(skb, DECT_PT_SP_BS_DATA_SIZE);
 		break;
-	case DECT_PT_FULL_PAGE:
 	case DECT_PT_LONG_PAGE_ALL:
+		DECT_BMC_CB(skb)->long_page = true;
+		/* fall through */
+	case DECT_PT_FULL_PAGE:
 		skb_trim(skb, DECT_PT_LFP_BS_DATA_SIZE);
 		break;
 	case DECT_PT_LONG_PAGE_FIRST:
 		if (head != NULL)
 			goto err;
+		DECT_BMC_CB(skb)->long_page = true;
 		skb_trim(skb, DECT_PT_LFP_BS_DATA_SIZE);
 		bc->p_rx_skb = skb;
 		return;

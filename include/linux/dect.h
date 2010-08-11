@@ -43,6 +43,17 @@ struct dect_raw_auxdata {
 	__u8		rssi;
 };
 
+#define DECT_BSAP_AUXDATA	0
+
+/**
+ * struct dect_bsap_auxdata
+ *
+ * @long_page:	message contains a long page
+ */
+struct dect_bsap_auxdata {
+	__u8		long_page;
+};
+
 /**
  * struct sockaddr_dect_ssap
  *

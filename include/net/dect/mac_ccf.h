@@ -14,12 +14,14 @@
 /**
  * struct dect_bmc_skb_cb
  *
- * @fast:		fast page
+ * @fast_page:		page message is a fast page
+ * @long_page:		page message is a long page
  * @stamp:		multiframe number at time of TX request
  * @repetitions:	number of page repetitions
  */
 struct dect_bmc_skb_cb {
-	bool				fast;
+	bool				fast_page;
+	bool				long_page;
 	u32				stamp;
 	u8				repetitions;
 };
@@ -98,7 +100,7 @@ extern int dect_mbc_enc_eks_request(const struct dect_cluster *cl, u32 mcei,
 				    enum dect_cipher_states status);
 
 extern void dect_bmc_mac_page_request(struct dect_cluster *cl,
-				      struct sk_buff *skb, bool expedited);
+				      struct sk_buff *skb);
 
 struct dect_llme_req;
 extern int dect_cluster_scan(struct dect_cluster *cl,

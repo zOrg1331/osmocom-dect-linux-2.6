@@ -205,10 +205,12 @@ struct dect_bearer {
  *
  * @list:		broadcast message control BC list node
  * @p_rx_skb:		current RX P-channel message
+ * @p_tx_mask:		bitmask of scheduled mac layer pages
  */
 struct dect_bc {
 	struct list_head		list;
 	struct sk_buff			*p_rx_skb;
+	u32				p_tx_mask;
 };
 
 /*
@@ -578,6 +580,7 @@ struct dect_cell {
 
 	struct list_head		bcs;
 	unsigned int			si_idx;
+	unsigned long			bfs_xmit_stamp;
 
 	struct dect_cbc			cbc;
 	struct list_head		dbcs;

@@ -27,6 +27,8 @@
 #undef KERN_DEBUG
 #define KERN_DEBUG
 
+static void dect_cell_schedule_page(struct dect_cell *cell, u32 mask);
+
 static const u8 dect_fp_preamble[]	= { 0x55, 0x55, 0xe9, 0x8a};
 static const u8 dect_pp_preamble[]	= { 0xaa, 0xaa, 0x16, 0x75};
 
@@ -400,6 +402,8 @@ static void dect_update_blind_full_slots(struct dect_cell *cell)
 
 	bfs = ~(cell->trg.blind_full_slots | (cell->trg.blind_full_slots >> 12));
 	cell->trg_blind_full_slots = bfs & ((1 << DECT_HALF_FRAME_SIZE) - 1);
+
+	dect_cell_schedule_page(cell, 1 << DECT_TM_TYPE_BFS);
 }
 
 /**
@@ -1645,6 +1649,14 @@ out:
 		dect_page_timer_schedule(cell);
 }
 
+static void dect_cell_schedule_page(struct dect_cell *cell, u32 mask)
+{
+	struct dect_bc *bc;
+
+	list_for_each_entry(bc, &cell->bcs, list)
+		bc->p_tx_mask |= mask;
+}
+
 static void dect_cell_bmc_init(struct dect_cell *cell)
 {
 	skb_queue_head_init(&cell->page_queue);
@@ -1749,29 +1761,42 @@ static struct sk_buff *dect_bc_q_dequeue(struct dect_cell *cell,
 	}
 }
 
-static void dect_page_add_mac_info(struct dect_cell *cell, struct sk_buff *skb)
+static void dect_page_add_mac_info(struct dect_cell *cell, struct dect_bc *bc,
+				   struct sk_buff *skb)
 {
 	struct dect_tail_msg tm;
-	void *data = NULL;
+	struct dect_dbc *dbc;
 	u64 t;
 	u8 *it;
 
 	memset(&tm, 0, sizeof(tm));
-	tm.type = DECT_TM_TYPE_ACTIVE_CARRIERS;
+	if (bc->p_tx_mask & (1 << DECT_TM_TYPE_BFS))
+		tm.type = DECT_TM_TYPE_BFS;
+	else if (bc->p_tx_mask & (1 << DECT_TM_TYPE_BD))
+		tm.type = DECT_TM_TYPE_BD;
+	else
+		tm.type = DECT_TM_TYPE_ACTIVE_CARRIERS;
 
 	switch (tm.type) {
 	case DECT_TM_TYPE_BFS:
-		tm.bfs.mask = cell->trg.blind_full_slots;
-		t = dect_build_blind_full_slots(data);
+		tm.bfs.mask = cell->trg_blind_full_slots;
+		t = dect_build_blind_full_slots(&tm.bfs);
 		break;
 	case DECT_TM_TYPE_BD:
-		t = dect_build_bearer_description(data);
+		dbc = list_first_entry(&cell->dbcs, struct dect_dbc, list);
+		if (dbc == NULL)
+			goto out;
+		tm.bd.bt = DECT_PT_IT_DUMMY_OR_CL_BEARER_POSITION;
+		tm.bd.sn = dbc->bearer->chd.slot;
+		tm.bd.sp = 0;
+		tm.bd.cn = dbc->bearer->chd.carrier;
+		t = dect_build_bearer_description(&tm.bd);
 		break;
 	case DECT_TM_TYPE_RFP_ID:
-		t = dect_build_rfp_identity(data);
+		t = dect_build_rfp_identity(&tm.rfp_id);
 		break;
 	case DECT_TM_TYPE_RFP_STATUS:
-		t = dect_build_rfp_status(data);
+		t = dect_build_rfp_status(&tm.rfp_status);
 		break;
 	case DECT_TM_TYPE_ACTIVE_CARRIERS:
 	default:
@@ -1782,34 +1807,59 @@ static void dect_page_add_mac_info(struct dect_cell *cell, struct sk_buff *skb)
 	it = skb_put(skb, DECT_PT_INFO_TYPE_SIZE);
 	it[0] = t >> 32;
 	it[1] = t >> 24;
+out:
+	bc->p_tx_mask &= ~(1 << tm.type);
 }
 
 static struct sk_buff *dect_bc_p_dequeue(struct dect_cell *cell,
-					 struct dect_bearer *bearer)
+					 struct dect_bearer *bearer,
+					 struct dect_bc *bc)
 {
 	unsigned int headroom, tailroom = 0;
 	struct sk_buff *skb;
+	u8 *hdr;
+	u64 t;
 
 	/* Send higher layer page messages if present */
 	skb = skb_peek(&cell->page_tx_queue);
-	if (skb == NULL)
-		return NULL;
+	if (skb != NULL) {
+		/* The frame needs headroom for the preamble and hdr-field.
+		 * Short pages need additional tailroom for the MAC Layer
+		 * Information. */
+		headroom = DECT_PREAMBLE_SIZE + DECT_HDR_FIELD_SIZE;
+		if (skb->len == DECT_PT_SP_BS_DATA_SIZE)
+			tailroom = DECT_PT_INFO_TYPE_SIZE;
 
-	/* The frame needs headroom for the preamble and hdr-field. Short and
-	 * zero pages need additional tailroom for the MAC Layer Information. */
-	headroom = DECT_PREAMBLE_SIZE + DECT_HDR_FIELD_SIZE;
-	if (skb->len == DECT_PT_SP_BS_DATA_SIZE)
+		skb = skb_copy_expand(skb, headroom, tailroom, GFP_ATOMIC);
+		if (skb == NULL)
+			return NULL;
+		/* Reserve space for preamble */
+		skb_set_mac_header(skb, -headroom);
+	} else {
+		/* Send zero-length page if required */
+		if (dect_framenum(cell, DECT_TIMER_TX) == 0 ||
+		    bc->p_tx_mask == 0)
+			return NULL;
+
+		skb = dect_t_skb_alloc();
+		if (skb == NULL)
+			return NULL;
+
+		t  = DECT_PT_ZERO_PAGE | DECT_PT_HDR_EXTEND_FLAG;
+		t |= (u64)dect_build_page_rfpi(cell) << DECT_PT_ZP_RFPI_SHIFT;
+
+		hdr = skb_put(skb, 3);
+		hdr[0] = t >> 56;
+		hdr[1] = t >> 48;
+		hdr[2] = t >> 40;
+
 		tailroom = DECT_PT_INFO_TYPE_SIZE;
-
-	skb = skb_copy_expand(skb, headroom, tailroom, GFP_ATOMIC);
-	if (skb == NULL)
-		return NULL;
-	/* Reserve space for preamble */
-	skb_set_mac_header(skb, -headroom);
+	}
 
 	DECT_A_CB(skb)->id = DECT_TI_PT;
 	if (tailroom > 0)
-		dect_page_add_mac_info(cell, skb);
+		dect_page_add_mac_info(cell, bc, skb);
+
 	return skb;
 }
 
@@ -1822,7 +1872,7 @@ static struct sk_buff *dect_bc_dequeue(struct dect_cell *cell,
 
 	switch (chan) {
 	case DECT_MC_P:
-		return dect_bc_p_dequeue(cell, bearer);
+		return dect_bc_p_dequeue(cell, bearer, bc);
 	case DECT_MC_Q:
 		return dect_bc_q_dequeue(cell, bearer);
 	case DECT_MC_N:
@@ -4117,6 +4167,12 @@ static void dect_fp_state_process(struct dect_cell *cell)
 {
 	if (list_empty(&cell->dbcs))
 		dect_dbc_init(cell, NULL);
+
+	if (time_before(cell->bfs_xmit_stamp + HZ, jiffies)) {
+		dect_cell_schedule_page(cell, (1 << DECT_TM_TYPE_BFS) |
+					      (1 << DECT_TM_TYPE_BD));
+		cell->bfs_xmit_stamp = jiffies;
+	}
 }
 
 static bool dect_pp_idle_timeout(const struct dect_cell *cell)

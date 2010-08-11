@@ -394,6 +394,46 @@ static u8 dect_channel_delay(const struct dect_cell *cell,
 	return frames;
 }
 
+static void dect_update_blind_full_slots(struct dect_cell *cell)
+{
+	u16 bfs;
+
+	bfs = ~(cell->trg.blind_full_slots | (cell->trg.blind_full_slots >> 12));
+	cell->trg_blind_full_slots = bfs & ((1 << DECT_HALF_FRAME_SIZE) - 1);
+}
+
+/**
+ * dect_channel_reserve - reserve a channel on a transceiver
+ *
+ * Reserve the specified transceiver and schedule a blind-full-slots
+ * page message if the visibility state changed.
+ */
+static void dect_channel_reserve(struct dect_cell *cell,
+				 struct dect_transceiver *trx,
+				 const struct dect_channel_desc *chd)
+{
+	if (!dect_transceiver_reserve(&cell->trg, trx, chd))
+		return;
+
+	dect_update_blind_full_slots(cell);
+}
+
+/**
+ * dect_channel_release - release a channel on a transceiver
+ *
+ * Release the specified transceiver and schedule a blind-full-slots
+ * page message if the visibility state changed.
+ */
+static void dect_channel_release(struct dect_cell *cell,
+				 struct dect_transceiver *trx,
+				 const struct dect_channel_desc *chd)
+{
+	if (!dect_transceiver_release(&cell->trg, trx, chd))
+		return;
+
+	dect_update_blind_full_slots(cell);
+}
+
 /**
  * dect_select_transceiver - select a transceiver for placing a bearer
  *
@@ -463,10 +503,13 @@ retry:
 	last = max_t(u8, first + quick ? 3 : 1, ARRAY_SIZE(chl->bins));
 	for (bin = first; sel == NULL && bin < last; bin++) {
 		list_for_each_entry(e, &chl->bins[bin], list) {
-			if (cell->trg.blind_full_slots & (1 << e->slot))
+			u8 n = DECT_HALF_FRAME_SIZE - 1 - e->slot;
+
+			if (!(cell->trg_blind_full_slots & (1 << n)))
 				continue;
+
 			if (cell->mode == DECT_MODE_PP &&
-			    !(cell->blind_full_slots & (1 << (11 - e->slot))))
+			    !(cell->blind_full_slots & (1 << n)))
 				continue;
 
 			chd->carrier = e->carrier;
@@ -2176,10 +2219,10 @@ static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 	dect_timer_del(&tbc->enc_timer);
 	dect_bc_release(&tbc->bc);
 
-	dect_transceiver_release(&cell->trg, tbc->txb->trx, &tbc->txb->chd);
+	dect_channel_release(cell, tbc->txb->trx, &tbc->txb->chd);
 	dect_bearer_release(tbc->cell, tbc->txb);
 
-	dect_transceiver_release(&cell->trg, tbc->rxb->trx, &tbc->rxb->chd);
+	dect_channel_release(cell, tbc->rxb->trx, &tbc->rxb->chd);
 	dect_bearer_release(tbc->cell, tbc->rxb);
 
 	list_del(&tbc->list);
@@ -2939,14 +2982,14 @@ static int dect_tbc_initiate(const struct dect_cell_handle *ch,
 	err = dect_select_channel(cell, &ttrx, &tchd, &rssi, true);
 	if (err < 0)
 		goto err1;
-	dect_transceiver_reserve(&cell->trg, ttrx, &tchd);
+	dect_channel_reserve(cell, ttrx, &tchd);
 
 	err = -ENOSPC;
 	dect_tdd_channel_desc(&rchd, &tchd);
 	rtrx = dect_select_transceiver(cell, &rchd);
 	if (rtrx == NULL)
 		goto err2;
-	dect_transceiver_reserve(&cell->trg, rtrx, &rchd);
+	dect_channel_reserve(cell, rtrx, &rchd);
 
 	err = -ENOMEM;
 	tbc = dect_tbc_init(cell, id, rtrx, ttrx, &rchd, &tchd);
@@ -2956,9 +2999,9 @@ static int dect_tbc_initiate(const struct dect_cell_handle *ch,
 	return 0;
 
 err3:
-	dect_transceiver_release(&cell->trg, rtrx, &rchd);
+	dect_channel_release(cell, rtrx, &rchd);
 err2:
-	dect_transceiver_release(&cell->trg, ttrx, &tchd);
+	dect_channel_release(cell, ttrx, &tchd);
 err1:
 	return err;
 }
@@ -3046,13 +3089,13 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 	rtrx = dect_select_transceiver(cell, &rchd);
 	if (rtrx == NULL)
 		goto err1;
-	dect_transceiver_reserve(&cell->trg, rtrx, &rchd);
+	dect_channel_reserve(cell, rtrx, &rchd);
 
 	dect_tdd_channel_desc(&tchd, &rchd);
 	ttrx = dect_select_transceiver(cell, &tchd);
 	if (ttrx == NULL)
 		goto err2;
-	dect_transceiver_reserve(&cell->trg, ttrx, &tchd);
+	dect_channel_reserve(cell, ttrx, &tchd);
 
 	memset(&id, 0, sizeof(id));
 	memcpy(&id.ari, &cell->idi.pari, sizeof(id.ari));
@@ -3102,9 +3145,9 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 err4:
 	dect_tbc_destroy(cell, tbc);
 err3:
-	dect_transceiver_release(&cell->trg, ttrx, &tchd);
+	dect_channel_release(cell, ttrx, &tchd);
 err2:
-	dect_transceiver_release(&cell->trg, rtrx, &rchd);
+	dect_channel_release(cell, rtrx, &rchd);
 err1:
 	kfree_skb(skb);
 }
@@ -3241,7 +3284,7 @@ static void dect_dbc_release(struct dect_dbc *dbc)
 {
 	struct dect_cell *cell = dbc->cell;
 
-	dect_transceiver_release(&cell->trg, dbc->bearer->trx, &dbc->bearer->chd);
+	dect_channel_release(cell, dbc->bearer->trx, &dbc->bearer->chd);
 	dect_bearer_release(cell, dbc->bearer);
 
 	dect_timer_del(&dbc->qctrl_timer);
@@ -3281,7 +3324,7 @@ static struct dect_dbc *dect_dbc_init(struct dect_cell *cell,
 		mode = DECT_BEARER_RX;
 	}
 
-	dect_transceiver_reserve(&cell->trg, trx, chd);
+	dect_channel_reserve(cell, trx, chd);
 
 	dbc = kzalloc(sizeof(*dbc), GFP_ATOMIC);
 	if (dbc == NULL)
@@ -3310,7 +3353,7 @@ static struct dect_dbc *dect_dbc_init(struct dect_cell *cell,
 err3:
 	kfree(dbc);
 err2:
-	dect_transceiver_release(&cell->trg, trx, chd);
+	dect_channel_release(cell, trx, chd);
 err1:
 	return NULL;
 }
@@ -4365,7 +4408,8 @@ void dect_cell_init(struct dect_cell *cell)
 	INIT_LIST_HEAD(&cell->timer_base[DECT_TIMER_TX].timers);
 	skb_queue_head_init(&cell->raw_tx_queue);
 	dect_cell_bmc_init(cell);
-	cell->blind_full_slots = DECT_SLOT_MASK,
+	cell->blind_full_slots = (1 << DECT_HALF_FRAME_SIZE) - 1;
+	cell->trg_blind_full_slots = (1 << DECT_HALF_FRAME_SIZE) - 1;
 	dect_transceiver_group_init(&cell->trg);
 	cell->handle.ops = &dect_csf_ops;
 }

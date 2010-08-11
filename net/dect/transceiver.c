@@ -413,18 +413,20 @@ void dect_transceiver_lock(struct dect_transceiver *trx, u8 slot)
 bool dect_transceiver_channel_available(const struct dect_transceiver *trx,
 				        const struct dect_channel_desc *chd)
 {
+	u8 n = DECT_FRAME_SIZE - 1 - chd->slot;
+
 	if (trx->slots[chd->slot].state == DECT_SLOT_RX ||
 	    trx->slots[chd->slot].state == DECT_SLOT_TX)
 		return false;
 
 	switch ((int)chd->pkt) {
 	case DECT_PACKET_P80:
-		if (trx->blind_full_slots & (1 << (chd->slot + 1)))
+		if (trx->blind_full_slots & (1 << (n + 1)))
 			return false;
 	case DECT_PACKET_P32:
 	case DECT_PACKET_P08:
 	case DECT_PACKET_P00:
-		if (trx->blind_full_slots & (1 << chd->slot))
+		if (trx->blind_full_slots & (1 << n))
 			return false;
 		break;
 	}
@@ -460,13 +462,15 @@ bool dect_transceiver_reserve(struct dect_transceiver_group *trg,
 			      struct dect_transceiver *trx,
 			      const struct dect_channel_desc *chd)
 {
+	u8 n = DECT_FRAME_SIZE - 1 - chd->slot;
+
 	switch ((int)chd->pkt) {
 	case DECT_PACKET_P80:
-		trx->blind_full_slots |= 1 << (chd->slot + 1);
+		trx->blind_full_slots |= 1 << (n + 1);
 	case DECT_PACKET_P32:
 	case DECT_PACKET_P08:
 	case DECT_PACKET_P00:
-		trx->blind_full_slots |= 1 << chd->slot;
+		trx->blind_full_slots |= 1 << n;
 		break;
 	}
 
@@ -485,13 +489,15 @@ bool dect_transceiver_release(struct dect_transceiver_group *trg,
 			      struct dect_transceiver *trx,
 			      const struct dect_channel_desc *chd)
 {
+	u8 n = DECT_FRAME_SIZE - 1 - chd->slot;
+
 	switch ((int)chd->pkt) {
 	case DECT_PACKET_P80:
-		trx->blind_full_slots &= ~(1 << (chd->slot + 1));
+		trx->blind_full_slots &= ~(1 << (n + 1));
 	case DECT_PACKET_P32:
 	case DECT_PACKET_P08:
 	case DECT_PACKET_P00:
-		trx->blind_full_slots &= ~(1 << chd->slot);
+		trx->blind_full_slots &= ~(1 << n);
 		break;
 	}
 
@@ -534,7 +540,7 @@ struct dect_transceiver *dect_transceiver_alloc(const struct dect_transceiver_op
 
 	trx->state = DECT_TRANSCEIVER_STOPPED;
 	trx->ops = ops;
-	trx->blind_full_slots = ~ops->slotmask & DECT_SLOT_MASK;
+	trx->blind_full_slots = ops->slotmask;
 	for (i = 0; i < DECT_FRAME_SIZE; i++)
 		trx->slots[i].chd.slot = i;
 

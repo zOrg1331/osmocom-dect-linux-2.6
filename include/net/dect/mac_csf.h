@@ -597,6 +597,7 @@ struct dect_cell {
 
 	struct dect_timer_base		timer_base[DECT_TIMER_BASE_MAX + 1];
 	struct dect_transceiver_group	trg;
+	u32				trg_blind_full_slots;
 };
 
 #define DECT_CELL_TIMER_RESYNC_TIMEOUT	8		/* T216: 8 multiframes */

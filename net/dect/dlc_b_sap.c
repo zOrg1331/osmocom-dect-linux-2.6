@@ -204,10 +204,10 @@ static int dect_bsap_sendmsg(struct kiocb *kiocb, struct sock *sk,
 		if (long_page)
 			return -EINVAL;
 	} else if (len % DECT_LB_LONG_FRAME_SIZE == 0) {
+		if (len == 0 || len > DECT_LB_EXTENDED_FRAME_SIZE_MAX)
+			return -EMSGSIZE;
 		if (len > DECT_LB_LONG_FRAME_SIZE && !long_page)
 			return -EINVAL;
-		if (len > DECT_LB_EXTENDED_FRAME_SIZE_MAX)
-			return -EMSGSIZE;
 		if (expedited)
 			return -EOPNOTSUPP;
 	} else

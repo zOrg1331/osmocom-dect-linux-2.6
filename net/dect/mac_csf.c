@@ -4335,7 +4335,7 @@ static int dect_cell_preload(const struct dect_cell_handle *ch,
 	cell->idi.rpn = rpn;
 	cell->fmid = dect_build_fmid(&cell->idi);
 
-	memcpy(&cell->si.ssi, &si->ssi, sizeof(cell->si.ssi));
+	cell->si.ssi.rfcars = 0x3ff;
 	memcpy(&cell->si.erfc, &si->erfc, sizeof(cell->si.erfc));
 	memcpy(&cell->si.fpc, &si->fpc, sizeof(cell->si.fpc));
 	memcpy(&cell->si.efpc, &si->efpc, sizeof(cell->si.efpc));

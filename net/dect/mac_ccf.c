@@ -521,7 +521,6 @@ static void dect_fp_init_si(struct dect_cluster *cl)
 	struct dect_si *si = &cl->si;
 
 	/* Make phone not go into "call technician" mode :) */
-	si->ssi.rfcars = 0x3ff;
 	si->fpc.fpc = DECT_FPC_FULL_SLOT |
 		      DECT_FPC_CO_SETUP_ON_DUMMY |
    		      DECT_FPC_CL_UPLINK |

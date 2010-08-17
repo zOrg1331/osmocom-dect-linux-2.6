@@ -1750,7 +1750,7 @@ static struct sk_buff *dect_bc_q_dequeue(struct dect_cell *cell,
 			return dect_build_tail_msg(skb, DECT_TM_TYPE_SSI, &ssi);
 		case DECT_QT_SI_ERFC:
 			if (!si->ssi.mc)
-				break;
+				continue;
 			return dect_build_tail_msg(skb, DECT_TM_TYPE_ERFC,
 						   &si->erfc);
 		case DECT_QT_SI_SARI:
@@ -1760,12 +1760,12 @@ static struct sk_buff *dect_bc_q_dequeue(struct dect_cell *cell,
 						   &si->fpc);
 		case DECT_QT_SI_EFPC:
 			if (!(si->fpc.fpc & DECT_FPC_EXTENDED_FP_INFO))
-				break;
+				continue;
 			return dect_build_tail_msg(skb, DECT_TM_TYPE_EFPC,
 						   &si->efpc);
 		case DECT_QT_SI_EFPC2:
 			if (!(si->efpc.fpc & DECT_EFPC_EXTENDED_FP_INFO2))
-				break;
+				continue;
 			return dect_build_tail_msg(skb, DECT_TM_TYPE_EFPC2,
 						   &si->efpc2);
 		case DECT_QT_SI_MFN:

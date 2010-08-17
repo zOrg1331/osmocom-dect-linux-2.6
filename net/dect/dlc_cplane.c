@@ -71,8 +71,8 @@ static void dect_lapc_transmit_skb(struct dect_lapc *lapc)
 		return;
 
 	fh = (struct dect_fa_hdr *)skb->data;
-	lapc_debug(lapc, "queue I-frame v_a: %u v_r: %u v_s: %u "
-		   "len: %u addr: %.2x ctrl: %.2x\n", lapc->v_a, lapc->v_r,
+	lapc_debug(lapc, "queue I-frame: v_a: %u v_r: %u v_s: %u "
+		   "len: %u addr: %02x ctrl: %02x\n", lapc->v_a, lapc->v_r,
 		   lapc->v_s, skb->len, fh->addr, fh->ctrl);
 	skb_queue_tail(&lapc->lc->txq, skb);
 }
@@ -230,7 +230,7 @@ static bool dect_lapc_send_iframe(struct dect_lapc *lapc, bool pf)
 	struct sk_buff *skb;
 
 	/* Window size full? */
-	lapc_debug(lapc, "send iframe v_a: %u window: %u v_s: %u\n",
+	lapc_debug(lapc, "send I-frame: v_a: %u window: %u v_s: %u\n",
 		   lapc->v_a, lapc->window, lapc->v_s);
 	if (lapc_seq_add(lapc, lapc->v_a, lapc->window) == lapc->v_s)
 		return false;
@@ -277,7 +277,7 @@ static bool dect_lapc_send_sframe(struct dect_lapc *lapc, u8 cr,
 	fh->ctrl |= cr;
 	fh->ctrl |= pf ? DECT_FA_CTRL_S_PF_FLAG : 0;
 
-	lapc_debug(lapc, "queue S-frame v_r: %u len: %u addr: %.2x ctrl: %.2x\n",
+	lapc_debug(lapc, "queue S-frame: v_r: %u len: %u addr: %02x ctrl: %02x\n",
 		   lapc->v_r, skb->len, fh->addr, fh->ctrl);
 	skb_queue_tail(&lapc->lc->txq, skb);
 
@@ -292,7 +292,7 @@ static bool dect_lapc_send_sframe(struct dect_lapc *lapc, u8 cr,
  */
 static void dect_lapc_send_ack(struct dect_lapc *lapc, bool pf)
 {
-	lapc_debug(lapc, "send ACK I-frame present: %u\n",
+	lapc_debug(lapc, "send ACK: I-frame present: %u\n",
 		   skb_peek(&lapc->sk->sk_write_queue) ? 1 : 0);
 	if (lapc->dli.lln != DECT_LLN_CLASS_A && lapc->busy)
 		dect_lapc_send_sframe(lapc, DECT_FA_CTRL_S_CR_RNR, false, false);
@@ -311,14 +311,14 @@ static void dect_lapc_queue_data(struct dect_lapc *lapc, struct sk_buff *skb)
 		kfree_skb(skb);
 		return;
 	}
-	lapc_debug(lapc, "reassemble: segment len %u more %u\n",
+	lapc_debug(lapc, "reassemble message: segment len: %u more: %u\n",
 		   skb->len, (fh->li & DECT_FA_LI_M_FLAG) ? 1 : 0);
 
 	lapc->rcv_head = skb_append_frag(lapc->rcv_head, skb);
 	if (!(fh->li & DECT_FA_LI_M_FLAG)) {
 		skb = lapc->rcv_head;
 		lapc->rcv_head = NULL;
-		lapc_debug(lapc, "reassembled: message len %u\n", skb->len);
+		lapc_debug(lapc, "reassembled message: len: %u\n", skb->len);
 		sock_queue_rcv_skb(lapc->sk, skb);
 	}
 }
@@ -329,10 +329,12 @@ static bool dect_lapc_update_ack(struct dect_lapc *lapc, u8 seq)
 
 	lapc_debug(lapc, "update ACK: v_a: %u v_s: %u seq: %u\n",
 		   lapc->v_a, lapc->v_s, seq);
+#if 0
 	lapc_debug(lapc, "seq %u after v_a %u: %u\n", seq, lapc->v_a,
 		   dect_fa_seq_after(lapc, seq, lapc->v_a));
 	lapc_debug(lapc, "v_s %u !after seq %u: %u\n", lapc->v_s, seq,
 		   !dect_fa_seq_after(lapc, lapc->v_s, seq));
+#endif
 
 	/* If all outstanding I-frames have been acknowledged, stop
 	 * retransmission timer, otherwise reset it.
@@ -350,7 +352,7 @@ static bool dect_lapc_update_ack(struct dect_lapc *lapc, u8 seq)
 
 	/* Purge acknowledged frames from transmit queue */
 	while (v_a != lapc->v_a) {
-		lapc_debug(lapc, "purge retransmit queue seq: %u\n", v_a);
+		lapc_debug(lapc, "purge retransmit queue: seq: %u\n", v_a);
 		kfree_skb(skb_dequeue(&lapc->retransmit_queue));
 		v_a = lapc_seq_add(lapc, v_a, 1);
 	}
@@ -497,7 +499,7 @@ static void dect_lapc_rcv_uframe(struct dect_lapc *lapc, struct sk_buff *skb)
 	if (cr == DECT_FA_CTRL_U_CR_UI) {
 		if (lapc->dli.lln != DECT_LLN_CLASS_U)
 			goto err;
-		lapc_debug(lapc, "queue UI message len: %u\n", skb->len);
+		lapc_debug(lapc, "queue UI message: len: %u\n", skb->len);
 		sock_queue_rcv_skb(lapc->sk, skb);
 		return;
 	}
@@ -568,7 +570,7 @@ int dect_lapc_establish(struct dect_lapc *lapc)
  */
 void dect_lapc_release(struct dect_lapc *lapc, bool normal)
 {
-	lapc_debug(lapc, "release normal: %u\n", normal);
+	lapc_debug(lapc, "release: normal: %u\n", normal);
 	if (dect_lapc_done(lapc) || !normal) {
 		lapc->sk->sk_state = DECT_SK_RELEASED;
 		dect_lapc_destroy(lapc);
@@ -859,6 +861,8 @@ void dect_cplane_rcv(struct dect_mac_conn *mc, enum dect_data_channels chan,
 			goto err;
 		mc->lc = lc;
 	}
+
+	lc_debug(mc->lc, "MAC_CO_DATA-ind: chan: %u len: %u\n", chan, skb->len);
 	return dect_lc_rcv(mc->lc, chan, skb);
 
 err:
@@ -872,7 +876,7 @@ struct sk_buff *dect_cplane_dtr(struct dect_mac_conn *mc, enum dect_data_channel
 	lc = mc->lc;
 	if (lc == NULL)
 		return NULL;
-	lc_debug(lc, "DTR channel %u\n", chan);
+	lc_debug(lc, "MAC_CO-DTR-ind: chan: %u\n", chan);
 	return dect_lc_tx(lc);
 }
 

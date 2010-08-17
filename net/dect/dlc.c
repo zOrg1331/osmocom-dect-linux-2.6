@@ -22,8 +22,14 @@
 #include <net/dect/dect.h>
 
 #define mc_debug(mc, fmt, args...) \
-	pr_debug("MC (MCEI %u state %u): " fmt, \
-		 (mc)->mcei, (mc)->state, ## args)
+	pr_debug("MC (MCEI: %u %s): " fmt, \
+		 (mc)->mcei, dect_mc_states[(mc)->state], ## args)
+
+static const char * const dect_mc_states[] = {
+	[DECT_MAC_CONN_CLOSED]		= "CLOSED",
+	[DECT_MAC_CONN_OPEN_PENDING]	= "OPEN_PENDING",
+	[DECT_MAC_CONN_OPEN]		= "OPEN",
+};
 
 static struct dect_mac_conn *
 dect_mac_conn_get_by_mcei(const struct dect_cluster *cl, u32 mcei)
@@ -102,7 +108,10 @@ struct dect_mac_conn *dect_mac_conn_init(struct dect_cluster *cl,
 static void dect_mac_conn_state_change(struct dect_mac_conn *mc,
 				       enum dect_mac_conn_states state)
 {
-	mc_debug(mc, "state change %u->%u\n", mc->state, state);
+	mc_debug(mc, "state change: %s (%u) -> %s (%u)\n",
+		 dect_mc_states[mc->state], mc->state,
+		 dect_mc_states[state], state);
+
 	mc->state = state;
 	dect_cplane_notify_state_change(mc);
 }
@@ -191,6 +200,7 @@ void dect_dlc_mac_enc_eks_indicate(struct dect_cluster *cl, u32 mcei,
 	mc = dect_mac_conn_get_by_mcei(cl, mcei);
 	if (WARN_ON(mc == NULL))
 		return;
+	mc_debug(mc, "MAC_ENC_EKS-ind: status: %u\n", status);
 	dect_cplane_mac_enc_eks_indicate(mc, status);
 }
 
@@ -203,6 +213,7 @@ int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
 	if (WARN_ON(mc == NULL))
 		return -ENOENT;
 
+	mc_debug(mc, "MAC_DIS-ind: reason: %x\n", reason);
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_CLOSED);
 	/* If nothing is using the connection, release immediately */
 	if (mc->use == 0)
@@ -222,7 +233,7 @@ void dect_dlc_mac_co_data_indicate(struct dect_cluster *cl, u32 mcei,
 	if (WARN_ON(mc == NULL))
 		goto err;
 
-	mc_debug(mc, "data chan %u len %u\n", chan, skb->len);
+	mc_debug(mc, "MAC_CO_DATA-ind: chan: %u len: %u\n", chan, skb->len);
 	switch (chan) {
 	case DECT_MC_C_S:
 	case DECT_MC_C_F:
@@ -249,7 +260,7 @@ struct sk_buff *dect_dlc_mac_co_dtr_indicate(struct dect_cluster *cl, u32 mcei,
 		return NULL;
 	}
 
-	mc_debug(mc, "dtr chan %u\n", chan);
+	mc_debug(mc, "MAC_CO_DTR-ind: chan: %u\n", chan);
 	switch (chan) {
 	case DECT_MC_C_S:
 	case DECT_MC_C_F:

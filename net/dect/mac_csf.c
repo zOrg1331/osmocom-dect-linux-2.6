@@ -32,6 +32,17 @@ static void dect_cell_schedule_page(struct dect_cell *cell, u32 mask);
 static const u8 dect_fp_preamble[]	= { 0x55, 0x55, 0xe9, 0x8a};
 static const u8 dect_pp_preamble[]	= { 0xaa, 0xaa, 0x16, 0x75};
 
+#define mac_debug(cell, base, fmt, args...) \
+	pr_debug("%s %u.%.2u.%.2u: " fmt, \
+		 (base) == DECT_TIMER_TX ? "TX" : "RX", \
+		 cell->timer_base[(base)].mfn, cell->timer_base[(base)].framenum, \
+		 cell->timer_base[(base)].slot, ## args)
+
+#define rx_debug(cell, fmt, args...) \
+	mac_debug(cell, DECT_TIMER_RX, fmt, ## args)
+#define tx_debug(cell, fmt, args...) \
+	mac_debug(cell, DECT_TIMER_TX, fmt, ## args)
+
 static struct dect_cell *dect_cell(const struct dect_cell_handle *ch)
 {
 	return container_of(ch, struct dect_cell, handle);
@@ -41,14 +52,12 @@ static struct dect_cell *dect_cell(const struct dect_cell_handle *ch)
  * MAC layer timers
  */
 
+#if 0
 #define timer_debug(cell, base, fmt, args...) \
-	pr_debug("%s %u.%.2u.%.2u: " fmt, \
-		 (base) == DECT_TIMER_TX ? "TX" : "RX", \
-		 cell->timer_base[(base)].mfn, cell->timer_base[(base)].framenum, \
-		 cell->timer_base[(base)].slot, ## args)
-
-#define rx_debug(cell, fmt, args...)	timer_debug(cell, DECT_TIMER_RX, fmt, ## args)
-#define tx_debug(cell, fmt, args...)	timer_debug(cell, DECT_TIMER_TX, fmt, ## args)
+	mac_debug(cell, base, fmt, ## args)
+#else
+#define timer_debug(cell, base, fmt, args...)
+#endif
 
 static u8 dect_slotnum(const struct dect_cell *cell, enum dect_timer_bases b)
 {
@@ -979,6 +988,8 @@ static int dect_parse_paging_msg(struct dect_tail_msg *tm, u64 t)
 			 tm->page.extend, (unsigned long long)tm->page.length);
 		return 0;
 	default:
+		pr_debug("invalid page length %llx\n",
+			 (unsigned long long)tm->page.length);
 		return -1;
 	}
 }
@@ -1074,6 +1085,7 @@ static int dect_parse_basic_cctrl(struct dect_tail_msg *tm, u64 t)
 	case DECT_CCTRL_RELEASE:
 		return dect_parse_cctrl_release(cctl, t);
 	default:
+		pr_debug("unknown basic cctrl command: %llx\n", cctl->cmd);
 		return -1;
 	}
 }
@@ -1102,6 +1114,7 @@ static int dect_parse_advanced_cctrl(struct dect_tail_msg *tm, u64 t)
 	case DECT_CCTRL_RELEASE:
 		return dect_parse_cctrl_release(cctl, t);
 	default:
+		pr_debug("unknown adv cctrl command: %llx\n", cctl->cmd);
 		return -1;
 	}
 }
@@ -1148,6 +1161,8 @@ static int dect_parse_mac_ctrl(struct dect_tail_msg *tm, u64 t)
 		tm->type = DECT_TM_TYPE_ENCCTRL;
 		return 0;
 	default:
+		pr_debug("Unknown MAC control %llx\n",
+			 (unsigned long long)t & DECT_MT_HDR_MASK);
 		return -1;
 	}
 }
@@ -1193,11 +1208,6 @@ static int dect_parse_tail_msg(struct dect_tail_msg *tm,
 {
 	u64 t;
 
-	pr_debug("%s: Q1: %d Q2: %d csum %x ", DECT_TRX_CB(skb)->trx->name,
-		 skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG,
-		 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG,
-		 *(u16 *)&skb->data[DECT_RA_FIELD_OFF]);
-
 	tm->type = DECT_TM_TYPE_INVALID;
 	t = get_unaligned_be64((__be64 *)&skb->data[DECT_T_FIELD_OFF]);
 
@@ -1219,6 +1229,7 @@ static int dect_parse_tail_msg(struct dect_tail_msg *tm,
 	case DECT_TI_MT:
 		return dect_parse_mac_ctrl(tm, t);
 	default:
+		pr_debug("unknown tail %x\n", dect_parse_tail(skb));
 		return -1;
 	}
 }
@@ -2226,7 +2237,7 @@ static void dect_tbc_state_change(struct dect_tbc *tbc, enum dect_tbc_state stat
 {
 	struct dect_cell *cell = tbc->cell;
 
-	tbc_debug(tbc, "state change %s (%u) -> %s (%u)\n",
+	tbc_debug(tbc, "state change: %s (%u) -> %s (%u)\n",
 		  tbc_states[tbc->state], tbc->state, tbc_states[state], state);
 
 	if (tbc->state == DECT_TBC_ESTABLISHED) {
@@ -2617,7 +2628,8 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 		 * Receiving side: waiting for LLME to create MBC. Only "WAIT"
 		 * messages are valid in both directions.
 		 */
-		tbc_debug(tbc, "RX in REQ_RCVD: %llx\n", (unsigned long long)cctl->cmd);
+		tbc_debug(tbc, "RX in REQ_RCVD: %llx\n",
+			  (unsigned long long)cctl->cmd);
 
 		if (tbc->id.type == DECT_MAC_CONN_ADVANCED &&
 		    cctl->cmd == DECT_CCTRL_ATTRIBUTES_T_REQUEST)
@@ -2878,7 +2890,7 @@ static void dect_tbc_data_request(const struct dect_cell_handle *ch,
 
 	switch (chan) {
 	case DECT_MC_C_S:
-		tbc_debug(tbc, "data request len: %u sequence: %u cur_tx: %p\n",
+		tbc_debug(tbc, "TBC_DATA-req: len: %u sequence: %u cur_tx: %p\n",
 			  skb->len, DECT_CS_CB(skb)->seq, tbc->c_tx_skb);
 
 		DECT_A_CB(skb)->id = DECT_CS_CB(skb)->seq ? DECT_TI_CT_PKT_1 :
@@ -2932,7 +2944,7 @@ static int dect_tbc_enc_key_request(const struct dect_cell_handle *ch,
 	if (tbc == NULL)
 		return -ENOENT;
 
-	tbc_debug(tbc, "enc key request: %.16llx\n", (unsigned long long)ck);
+	tbc_debug(tbc, "TBC_ENC_KEY-req: key: %.16llx\n", (unsigned long long)ck);
 	tbc->ck = ck;
 	return 0;
 }
@@ -4121,8 +4133,8 @@ static void dect_mac_xmit_frame(struct dect_transceiver *trx,
 
 	tx_debug(cell, "%s: TX slot %u carrier %u PSCN %u Q1: %d Q2: %d\n",
 		 trx->name, ts->chd.slot, ts->chd.carrier, cell->si.ssi.pscn,
-		 skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG,
-		 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG);
+		 skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG ? 1 : 0,
+		 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG ? 1 : 0);
 
 	switch (cell->mode) {
 	case DECT_MODE_FP:
@@ -4152,7 +4164,13 @@ void dect_mac_rcv(struct dect_transceiver *trx,
 {
 	struct dect_cell *cell = trx->cell;
 
-	rx_debug(cell, "slot %u: ", DECT_TRX_CB(skb)->slot);
+	rx_debug(cell, "%s: Q1: %d Q2: %d A/B: %02x ",
+		 trx->name,
+		 skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG ? 1 : 0,
+		 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG ? 1 : 0,
+		 skb->data[DECT_HDR_TA_OFF] &
+		 (DECT_HDR_TA_MASK | DECT_HDR_BA_MASK));
+
 	DECT_TRX_CB(skb)->frame = dect_framenum(cell, DECT_TIMER_RX);
 	DECT_TRX_CB(skb)->mfn	= dect_mfn(cell, DECT_TIMER_RX);
 	dect_raw_rcv(skb);

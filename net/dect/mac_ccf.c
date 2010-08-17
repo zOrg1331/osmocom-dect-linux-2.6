@@ -231,7 +231,7 @@ void dect_mbc_dis_request(struct dect_cluster *cl, u32 mcei)
 	mbc = dect_mbc_get_by_mcei(cl, mcei);
 	if (mbc == NULL)
 		return;
-	mbc_debug(mbc, "disconnect\n");
+	mbc_debug(mbc, "MAC_DIS-req\n");
 	mbc->ch->ops->tbc_release(mbc->ch, &mbc->id, DECT_REASON_CONNECTION_RELEASE);
 	dect_mbc_release(mbc);
 }
@@ -335,7 +335,7 @@ static void dect_mbc_dis_indicate(const struct dect_cluster_handle *clh,
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
 	if (mbc == NULL)
 		return;
-	mbc_debug(mbc, "disconnect reason: %u\n", reason);
+	mbc_debug(mbc, "MAC_DIS-ind: reason: %u\n", reason);
 	dect_dlc_mac_dis_indicate(cl, id->mcei, reason);
 	dect_mbc_release(mbc);
 }
@@ -347,7 +347,7 @@ int dect_mbc_enc_key_request(const struct dect_cluster *cl, u32 mcei, u64 ck)
 	mbc = dect_mbc_get_by_mcei(cl, mcei);
 	if (mbc == NULL)
 		return -ENOENT;
-	mbc_debug(mbc, "enc key request: %.16llx\n", (unsigned long long)ck);
+	mbc_debug(mbc, "MAC_ENC_KEY-req: key: %016llx\n", (unsigned long long)ck);
 	return mbc->ch->ops->tbc_enc_key_request(mbc->ch, &mbc->id, ck);
 }
 
@@ -359,7 +359,7 @@ int dect_mbc_enc_eks_request(const struct dect_cluster *cl, u32 mcei,
 	mbc = dect_mbc_get_by_mcei(cl, mcei);
 	if (mbc == NULL)
 		return -ENOENT;
-	mbc_debug(mbc, "enc eks request: %d\n", status);
+	mbc_debug(mbc, "MAC_ENC_EKS-req: status: %d\n", status);
 	return mbc->ch->ops->tbc_enc_eks_request(mbc->ch, &mbc->id, status);
 }
 
@@ -403,7 +403,7 @@ static void dect_mbc_dtr_indicate(const struct dect_cluster_handle *clh,
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
 	if (mbc == NULL)
 		return;
-	mbc_debug(mbc, "DTR-indicate\n");
+	mbc_debug(mbc, "MAC_CO_DTR-ind: chan: %u\n", chan);
 
 	switch (chan) {
 	case DECT_MC_C_S:

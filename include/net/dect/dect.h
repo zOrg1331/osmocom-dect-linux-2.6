@@ -77,6 +77,7 @@ struct dect_cluster {
 
 	struct dect_ari			pari;
 	struct dect_si			si;
+	u8				rpn;
 
 	u32				pmid;
 
@@ -113,6 +114,7 @@ struct dect_scan_result;
 extern void dect_llme_scan_result_notify(const struct dect_cluster *cl,
 					 const struct dect_scan_result *res);
 extern void dect_llme_mac_info_ind(const struct dect_cluster *cl,
+				   const struct dect_idi *idi,
 				   const struct dect_si *si);
 
 #include <net/sock.h>

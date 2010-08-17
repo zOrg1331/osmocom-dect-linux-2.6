@@ -273,6 +273,8 @@ static int dect_llme_fill_mac_info(const struct dect_cluster *cl,
 		nla_nest_end(skb, nla);
 	}
 
+	NLA_PUT_U8(skb, DECTA_MAC_INFO_RPN, cl->rpn);
+
 	if (si->mask & (1 << DECT_TM_TYPE_FPC)) {
 		NLA_PUT_U32(skb, DECTA_MAC_INFO_FPC, si->fpc.fpc);
 		NLA_PUT_U16(skb, DECTA_MAC_INFO_HLC, si->fpc.hlc);
@@ -335,6 +337,7 @@ err:
 }
 
 void dect_llme_mac_info_ind(const struct dect_cluster *cl,
+			    const struct dect_idi *idi,
 			    const struct dect_si *si)
 {
 	struct sk_buff *skb;

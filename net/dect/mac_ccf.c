@@ -73,21 +73,21 @@ static void dect_mac_info_indicate(const struct dect_cluster_handle *clh,
  */
 void dect_bmc_mac_page_request(struct dect_cluster *cl, struct sk_buff *skb)
 {
-	const struct dect_cell_handle *ch, *last = NULL;
+	const struct dect_cell_handle *ch, *prev = NULL;
 	struct sk_buff *clone;
 
 	BUG_ON(cl->mode != DECT_MODE_FP);
 
 	list_for_each_entry(ch, &cl->cells, list) {
-		if (last != NULL) {
+		if (prev != NULL) {
 			clone = skb_clone(skb, GFP_ATOMIC);
 			if (clone != NULL)
-				ch->ops->page_request(ch, clone);
+				prev->ops->page_request(prev, clone);
 		}
 		last = ch;
 	}
-	if (last != NULL)
-		last->ops->page_request(last, skb);
+	if (prev != NULL)
+		prev->ops->page_request(prev, skb);
 }
 
 static void dect_bmc_page_indicate(const struct dect_cluster_handle *clh,

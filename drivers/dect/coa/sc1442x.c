@@ -100,6 +100,8 @@
 
 /* Interrupt status 1: DIP/CLK100/TIM1/TIM0/SPI/UART/P10/KEYB */
 #define SC14424_RESET_INT_PENDING_1	0x1f02
+/* Interrupt status 2: CLK8K/TONE */
+#define SC14424_RESET_INT_PENDING_2	0x1f03
 
 /* DIP_INT and CLK100_INT priority level */
 #define SC14424_INT_PRIORITY_1		0x1f06
@@ -988,10 +990,12 @@ int sc1442x_init_device(struct coa_device *dev)
 		sc1442x_init_slot(dev, slot);
 
 	if (dev->type == COA_TYPE_PCI) {
+		/* Clear pening interrupts */
+		sc1442x_writeb(dev, SC14424_RESET_INT_PENDING_1, 0xff);
+		sc1442x_writeb(dev, SC14424_RESET_INT_PENDING_2, 0xff);
 		/* Enable DIP interrupt */
 		sc1442x_writeb(dev, SC14424_INT_PRIORITY_1, 0x70);
-
-		/* Enable SPI */
+		/* Enable SPI for LED control */
 		sc1442x_writeb(dev, SC14424_P1_DIR_REG, 0xd6);
 	}
 	return 0;

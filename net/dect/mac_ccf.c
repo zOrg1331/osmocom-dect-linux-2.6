@@ -84,7 +84,7 @@ void dect_bmc_mac_page_request(struct dect_cluster *cl, struct sk_buff *skb)
 			if (clone != NULL)
 				prev->ops->page_request(prev, clone);
 		}
-		last = ch;
+		prev = ch;
 	}
 	if (prev != NULL)
 		prev->ops->page_request(prev, skb);

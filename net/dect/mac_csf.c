@@ -32,6 +32,11 @@ static void dect_cell_schedule_page(struct dect_cell *cell, u32 mask);
 static const u8 dect_fp_preamble[]	= { 0x55, 0x55, 0xe9, 0x8a};
 static const u8 dect_pp_preamble[]	= { 0xaa, 0xaa, 0x16, 0x75};
 
+static struct dect_cell *dect_cell(const struct dect_cell_handle *ch)
+{
+	return container_of(ch, struct dect_cell, handle);
+}
+
 /*
  * MAC layer timers
  */
@@ -2333,7 +2338,7 @@ static void dect_tbc_release(const struct dect_cell_handle *ch,
 			     const struct dect_mbc_id *id,
 			     enum dect_release_reasons reason)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 	struct dect_tbc *tbc;
 
 	tbc = dect_tbc_lookup(cell, id);
@@ -2864,7 +2869,7 @@ static void dect_tbc_data_request(const struct dect_cell_handle *ch,
 				  enum dect_data_channels chan,
 				  struct sk_buff *skb)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 	struct dect_tbc *tbc;
 
 	tbc = dect_tbc_lookup(cell, id);
@@ -2896,7 +2901,7 @@ static int dect_tbc_enc_eks_request(const struct dect_cell_handle *ch,
 				    const struct dect_mbc_id *id,
 				    enum dect_cipher_states status)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 	struct dect_tbc *tbc;
 	struct sk_buff *skb;
 
@@ -2920,7 +2925,7 @@ static int dect_tbc_enc_eks_request(const struct dect_cell_handle *ch,
 static int dect_tbc_enc_key_request(const struct dect_cell_handle *ch,
 				    const struct dect_mbc_id *id, u64 ck)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 	struct dect_tbc *tbc;
 
 	tbc = dect_tbc_lookup(cell, id);
@@ -3036,7 +3041,7 @@ static int dect_tbc_initiate(const struct dect_cell_handle *ch,
 			     const struct dect_mbc_id *id,
 			     const struct dect_channel_desc *chd)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 	struct dect_transceiver *ttrx, *rtrx;
 	struct dect_channel_desc tchd, rchd;
 	struct dect_tbc *tbc;
@@ -3076,7 +3081,7 @@ err1:
 static int dect_tbc_confirm(const struct dect_cell_handle *ch,
 			    const struct dect_mbc_id *id)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 	struct dect_tbc *tbc;
 	int err;
 
@@ -4326,7 +4331,7 @@ static int dect_cell_preload(const struct dect_cell_handle *ch,
 			     const struct dect_ari *pari, u8 rpn,
 			     const struct dect_si *si)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 
 	/* Initialise identity */
 	spin_lock_bh(&cell->lock);
@@ -4348,7 +4353,7 @@ static int dect_cell_preload(const struct dect_cell_handle *ch,
 
 static int dect_cell_enable(const struct dect_cell_handle *ch)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 	struct dect_transceiver *trx;
 
 	cell->state |= DECT_CELL_ENABLED;
@@ -4390,7 +4395,7 @@ static int dect_cell_scan(const struct dect_cell_handle *ch,
 			  const struct dect_ari *pari,
 			  const struct dect_ari *pari_mask)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 	struct dect_transceiver *trx = cell->trg.trx[0];
 
 	if (trx == NULL)
@@ -4404,7 +4409,7 @@ static int dect_cell_scan(const struct dect_cell_handle *ch,
 static int dect_cell_set_mode(const struct dect_cell_handle *ch,
 			      enum dect_cluster_modes mode)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 
 	cell->mode = mode;
 	return 0;
@@ -4413,7 +4418,7 @@ static int dect_cell_set_mode(const struct dect_cell_handle *ch,
 static void dect_cell_page_request(const struct dect_cell_handle *ch,
 				   struct sk_buff *skb)
 {
-	struct dect_cell *cell = container_of(ch, struct dect_cell, handle);
+	struct dect_cell *cell = dect_cell(ch);
 
 	DECT_BMC_CB(skb)->stamp = dect_mfn(cell, DECT_TIMER_TX);
 	dect_queue_page(cell, skb);

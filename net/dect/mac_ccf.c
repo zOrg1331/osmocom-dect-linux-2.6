@@ -23,6 +23,11 @@
 #include <net/dect/mac_csf.h>
 #include <net/dect/ccp.h>
 
+static struct dect_cluster *dect_cluster(const struct dect_cluster_handle *clh)
+{
+	return container_of(clh, struct dect_cluster, handle);
+}
+
 static struct dect_cell_handle *
 dect_cluster_get_cell_by_rpn(struct dect_cluster *cl, u8 rpn)
 {
@@ -38,7 +43,7 @@ dect_cluster_get_cell_by_rpn(struct dect_cluster *cl, u8 rpn)
 static void dect_scan_report(const struct dect_cluster_handle *clh,
 			     const struct dect_scan_result *res)
 {
-	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_cluster *cl = dect_cluster(clh);
 
 	dect_llme_scan_result_notify(cl, res);
 }
@@ -47,7 +52,7 @@ static void dect_mac_info_indicate(const struct dect_cluster_handle *clh,
 				   const struct dect_idi *idi,
 				   const struct dect_si *si)
 {
-	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_cluster *cl = dect_cluster(clh);
 
 	pr_debug("cl %p: mac info indicate\n", cl);
 	memcpy(&cl->si, si, sizeof(cl->si));
@@ -86,7 +91,7 @@ void dect_bmc_mac_page_request(struct dect_cluster *cl, struct sk_buff *skb)
 static void dect_bmc_page_indicate(const struct dect_cluster_handle *clh,
 				   struct sk_buff *skb)
 {
-	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_cluster *cl = dect_cluster(clh);
 
 	return dect_dlc_mac_page_indicate(cl, skb);
 }
@@ -233,7 +238,7 @@ static int dect_mbc_conn_indicate(const struct dect_cluster_handle *clh,
 				  const struct dect_cell_handle *ch,
 				  const struct dect_mbc_id *id)
 {
-	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc_id mid;
 	struct dect_mbc *mbc;
 	int err;
@@ -263,7 +268,7 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 				const struct dect_mbc_id *id,
 				enum dect_tbc_event event)
 {
-	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
 
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
@@ -322,7 +327,7 @@ static void dect_mbc_dis_indicate(const struct dect_cluster_handle *clh,
 				  const struct dect_mbc_id *id,
 				  enum dect_release_reasons reason)
 {
-	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
 
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
@@ -361,7 +366,7 @@ static void dect_mbc_data_indicate(const struct dect_cluster_handle *clh,
 				   enum dect_data_channels chan,
 				   struct sk_buff *skb)
 {
-	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
 
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
@@ -389,7 +394,7 @@ static void dect_mbc_dtr_indicate(const struct dect_cluster_handle *clh,
 				  const struct dect_mbc_id *id,
 				  enum dect_data_channels chan)
 {
-	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
 	struct sk_buff *skb;
 
@@ -445,7 +450,7 @@ static int dect_cluster_enable_cell(struct dect_cluster *cl,
 static int dect_cluster_bind_cell(struct dect_cluster_handle *clh,
 				  struct dect_cell_handle *ch)
 {
-	struct dect_cluster *cl = container_of(clh, struct dect_cluster, handle);
+	struct dect_cluster *cl = dect_cluster(clh);
 	u8 rpn, max;
 	int err;
 

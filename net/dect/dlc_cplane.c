@@ -21,7 +21,7 @@
 #include <linux/dect.h>
 #include <net/dect/dect.h>
 
-void dect_dlc_mac_page_indicate(struct dect_cluster *cl, struct sk_buff *skb)
+void dect_mac_page_ind(struct dect_cluster *cl, struct sk_buff *skb)
 {
 	dect_bsap_rcv(cl, skb);
 }
@@ -876,7 +876,7 @@ struct sk_buff *dect_cplane_dtr(struct dect_mac_conn *mc, enum dect_data_channel
 	lc = mc->lc;
 	if (lc == NULL)
 		return NULL;
-	lc_debug(lc, "MAC_CO-DTR-ind: chan: %u\n", chan);
+	lc_debug(lc, "MAC_CO_DTR-ind: chan: %u\n", chan);
 	return dect_lc_tx(lc);
 }
 
@@ -906,8 +906,8 @@ void dect_cplane_notify_state_change(struct dect_mac_conn *mc)
 	}
 }
 
-void dect_cplane_mac_dis_indicate(const struct dect_mac_conn *mc,
-				  enum dect_release_reasons reason)
+void dect_cplane_mac_dis_ind(const struct dect_mac_conn *mc,
+			     enum dect_release_reasons reason)
 {
 	struct dect_lc *lc = mc->lc;
 	unsigned int i;
@@ -945,8 +945,8 @@ void dect_cplane_mac_dis_indicate(const struct dect_mac_conn *mc,
 	}
 }
 
-void dect_cplane_mac_enc_eks_indicate(const struct dect_mac_conn *mc,
-				      enum dect_cipher_states status)
+void dect_cplane_mac_enc_eks_ind(const struct dect_mac_conn *mc,
+				 enum dect_cipher_states status)
 {
 	struct dect_lc *lc = mc->lc;
 	struct dect_dl_encrypt enc;

@@ -487,7 +487,7 @@ static int dect_ssap_setsockopt(struct sock *sk, int level, int optname,
 			return -ENOTCONN;
 		if (copy_from_user(&ck, optval, sizeof(ck)))
 			return -EFAULT;
-		err = dect_dlc_mac_conn_enc_key_request(ssap->lapc->lc->mc, ck);
+		err = dect_dlc_mac_conn_enc_key_req(ssap->lapc->lc->mc, ck);
 		break;
 	case DECT_DL_ENCRYPT:
 		if (optlen != sizeof(dle))
@@ -498,8 +498,8 @@ static int dect_ssap_setsockopt(struct sock *sk, int level, int optname,
 			return -EOPNOTSUPP;
 		if (copy_from_user(&dle, optval, sizeof(dle)))
 			return -EFAULT;
-		err = dect_dlc_mac_conn_enc_eks_request(ssap->lapc->lc->mc,
-						        dle.status);
+		err = dect_dlc_mac_conn_enc_eks_req(ssap->lapc->lc->mc,
+						    dle.status);
 		break;
 	default:
 		err = -ENOPROTOOPT;

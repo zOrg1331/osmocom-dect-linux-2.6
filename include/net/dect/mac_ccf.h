@@ -90,17 +90,15 @@ struct dect_mbc {
 #define DECT_MBC_SETUP_MAX_ATTEMPTS	10
 
 extern u32 dect_mbc_alloc_mcei(struct dect_cluster *cl);
-extern int dect_mbc_con_request(struct dect_cluster *cl,
-				const struct dect_mbc_id *id);
-extern void dect_mbc_dis_request(struct dect_cluster *cl, u32 mcei);
+extern int dect_mac_con_req(struct dect_cluster *cl,
+			    const struct dect_mbc_id *id);
+extern void dect_mac_dis_req(struct dect_cluster *cl, u32 mcei);
 
-extern int dect_mbc_enc_key_request(const struct dect_cluster *cl, u32 mcei,
-				    u64 ck);
-extern int dect_mbc_enc_eks_request(const struct dect_cluster *cl, u32 mcei,
-				    enum dect_cipher_states status);
+extern int dect_mac_enc_key_req(const struct dect_cluster *cl, u32 mcei, u64 ck);
+extern int dect_mac_enc_eks_req(const struct dect_cluster *cl, u32 mcei,
+				enum dect_cipher_states status);
 
-extern void dect_bmc_mac_page_request(struct dect_cluster *cl,
-				      struct sk_buff *skb);
+extern void dect_bmc_mac_page_req(struct dect_cluster *cl, struct sk_buff *skb);
 
 struct dect_llme_req;
 extern int dect_cluster_scan(struct dect_cluster *cl,
@@ -132,29 +130,29 @@ struct dect_ccf_ops {
 	void	(*scan_report)(const struct dect_cluster_handle *,
 			       const struct dect_scan_result *);
 
-	void	(*mac_info_indicate)(const struct dect_cluster_handle *,
-				     const struct dect_idi *,
-				     const struct dect_si *);
+	void	(*mac_info_ind)(const struct dect_cluster_handle *,
+				const struct dect_idi *,
+				const struct dect_si *);
 
-	int	(*mbc_conn_indicate)(const struct dect_cluster_handle *,
+	int	(*tbc_establish_ind)(const struct dect_cluster_handle *,
 				     const struct dect_cell_handle *,
 				     const struct dect_mbc_id *);
-	void	(*mbc_dis_indicate)(const struct dect_cluster_handle *,
-				    const struct dect_mbc_id *,
-				    enum dect_release_reasons);
+	void	(*tbc_dis_ind)(const struct dect_cluster_handle *,
+			       const struct dect_mbc_id *,
+			       enum dect_release_reasons);
 	int	(*mbc_conn_notify)(const struct dect_cluster_handle *,
 				   const struct dect_mbc_id *,
 				   enum dect_tbc_event);
-	void	(*mbc_data_indicate)(const struct dect_cluster_handle *,
-				     const struct dect_mbc_id *,
-				     enum dect_data_channels chan,
-				     struct sk_buff *);
-	void	(*mbc_dtr_indicate)(const struct dect_cluster_handle *,
-				    const struct dect_mbc_id *,
-				    enum dect_data_channels chan);
+	void	(*tbc_data_ind)(const struct dect_cluster_handle *,
+				const struct dect_mbc_id *,
+				enum dect_data_channels chan,
+				struct sk_buff *);
+	void	(*tbc_dtr_ind)(const struct dect_cluster_handle *,
+			       const struct dect_mbc_id *,
+			       enum dect_data_channels chan);
 
-	void	(*bmc_page_indicate)(const struct dect_cluster_handle *,
-				     struct sk_buff *);
+	void	(*bmc_page_ind)(const struct dect_cluster_handle *,
+				struct sk_buff *);
 };
 
 /**

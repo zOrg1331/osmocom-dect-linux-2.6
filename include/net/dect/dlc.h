@@ -414,28 +414,28 @@ extern void dect_dlc_mac_conn_bind(struct dect_mac_conn *mc);
 extern void dect_dlc_mac_conn_unbind(struct dect_mac_conn *mc);
 extern int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc);
 
-extern int dect_dlc_mac_conn_confirm(struct dect_cluster *cl, u32 mcei,
-				     enum dect_mac_service_types service);
-extern int dect_dlc_mac_conn_indicate(struct dect_cluster *cl,
-				      const struct dect_mbc_id *id);
+extern int dect_mac_con_cfm(struct dect_cluster *cl, u32 mcei,
+			    enum dect_mac_service_types service);
+extern int dect_mac_con_ind(struct dect_cluster *cl,
+			    const struct dect_mbc_id *id);
 
-extern int dect_dlc_mac_conn_enc_key_request(struct dect_mac_conn *mc, u64 key);
-extern int dect_dlc_mac_conn_enc_eks_request(struct dect_mac_conn *mc,
-					     enum dect_cipher_states status);
-extern void dect_dlc_mac_enc_eks_confirm(struct dect_cluster *cl, u32 mcei,
+extern int dect_dlc_mac_conn_enc_key_req(struct dect_mac_conn *mc, u64 key);
+extern int dect_dlc_mac_conn_enc_eks_req(struct dect_mac_conn *mc,
 					 enum dect_cipher_states status);
-extern void dect_dlc_mac_enc_eks_indicate(struct dect_cluster *cl, u32 mcei,
-					  enum dect_cipher_states status);
+extern void dect_mac_enc_eks_cfm(struct dect_cluster *cl, u32 mcei,
+				 enum dect_cipher_states status);
+extern void dect_mac_enc_eks_ind(struct dect_cluster *cl, u32 mcei,
+				 enum dect_cipher_states status);
 
-extern void dect_dlc_mac_dis_request(struct dect_mac_conn *mc);
-extern int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
-				     enum dect_release_reasons reason);
+extern void dect_dlc_mac_dis_req(struct dect_mac_conn *mc);
+extern int dect_mac_dis_ind(struct dect_cluster *cl, u32 mcei,
+			    enum dect_release_reasons reason);
 
 extern void dect_cplane_notify_state_change(struct dect_mac_conn *mc);
-extern void dect_cplane_mac_dis_indicate(const struct dect_mac_conn *mc,
-					 enum dect_release_reasons reason);
-extern void dect_cplane_mac_enc_eks_indicate(const struct dect_mac_conn *mc,
-					     enum dect_cipher_states status);
+extern void dect_cplane_mac_dis_ind(const struct dect_mac_conn *mc,
+				    enum dect_release_reasons reason);
+extern void dect_cplane_mac_enc_eks_ind(const struct dect_mac_conn *mc,
+					enum dect_cipher_states status);
 
 extern void dect_cplane_rcv(struct dect_mac_conn *mc,
 			    enum dect_data_channels chan,
@@ -449,14 +449,13 @@ extern void dect_uplane_rcv(struct dect_mac_conn *mc,
 extern struct sk_buff *dect_uplane_dtr(struct dect_mac_conn *mc,
 				       enum dect_data_channels chan);
 
-extern void dect_dlc_mac_co_data_indicate(struct dect_cluster *cl, u32 mcei,
-					  enum dect_data_channels chan,
-					  struct sk_buff *skb);
-extern struct sk_buff *dect_dlc_mac_co_dtr_indicate(struct dect_cluster *cl, u32 mcei,
-						    enum dect_data_channels chan);
+extern void dect_mac_co_data_ind(struct dect_cluster *cl, u32 mcei,
+				 enum dect_data_channels chan,
+				 struct sk_buff *skb);
+extern struct sk_buff *dect_mac_co_dtr_ind(struct dect_cluster *cl, u32 mcei,
+					   enum dect_data_channels chan);
 
 extern void dect_bsap_rcv(const struct dect_cluster *cl, struct sk_buff *skb);
-extern void dect_dlc_mac_page_indicate(struct dect_cluster *cl,
-				       struct sk_buff *skb);
+extern void dect_mac_page_ind(struct dect_cluster *cl, struct sk_buff *skb);
 
 #endif /* _NET_DECT_DLC_H */

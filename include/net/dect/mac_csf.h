@@ -473,26 +473,25 @@ struct dect_csf_ops {
 			   const struct dect_si *);
 	int	(*enable)(const struct dect_cell_handle *);
 
-	void	(*page_request)(const struct dect_cell_handle *,
-				struct sk_buff *);
+	void	(*page_req)(const struct dect_cell_handle *, struct sk_buff *);
 
-	int	(*tbc_initiate)(const struct dect_cell_handle *,
-				const struct dect_mbc_id *,
-				const struct dect_channel_desc *);
-	int	(*tbc_confirm)(const struct dect_cell_handle *,
-			       const struct dect_mbc_id *);
-	void	(*tbc_release)(const struct dect_cell_handle *,
+	int	(*tbc_establish_req)(const struct dect_cell_handle *,
+				     const struct dect_mbc_id *,
+				     const struct dect_channel_desc *);
+	int	(*tbc_establish_res)(const struct dect_cell_handle *,
+				     const struct dect_mbc_id *);
+	void	(*tbc_dis_req)(const struct dect_cell_handle *,
 			       const struct dect_mbc_id *,
 			       enum dect_release_reasons);
-	int	(*tbc_enc_key_request)(const struct dect_cell_handle *,
-				       const struct dect_mbc_id *, u64 ck);
-	int	(*tbc_enc_eks_request)(const struct dect_cell_handle *,
-				       const struct dect_mbc_id *,
-				       enum dect_cipher_states status);
-	void	(*tbc_data_request)(const struct dect_cell_handle *,
-				    const struct dect_mbc_id *,
-				    enum dect_data_channels chan,
-				    struct sk_buff *);
+	int	(*tbc_enc_key_req)(const struct dect_cell_handle *,
+				   const struct dect_mbc_id *, u64 ck);
+	int	(*tbc_enc_eks_req)(const struct dect_cell_handle *,
+				   const struct dect_mbc_id *,
+				   enum dect_cipher_states status);
+	void	(*tbc_data_req)(const struct dect_cell_handle *,
+				const struct dect_mbc_id *,
+				enum dect_data_channels chan,
+				struct sk_buff *);
 
 };
 

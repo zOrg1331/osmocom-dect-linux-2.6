@@ -221,7 +221,7 @@ static int dect_bsap_sendmsg(struct kiocb *kiocb, struct sock *sk,
 		goto err2;
 	DECT_BMC_CB(skb)->long_page = long_page;
 	DECT_BMC_CB(skb)->fast_page = expedited;
-	dect_bmc_mac_page_request(cl, skb);
+	dect_bmc_mac_page_req(cl, skb);
 	return len;
 
 err2:

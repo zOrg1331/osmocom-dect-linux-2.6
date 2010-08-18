@@ -48,13 +48,13 @@ static void dect_scan_report(const struct dect_cluster_handle *clh,
 	dect_llme_scan_result_notify(cl, res);
 }
 
-static void dect_mac_info_indicate(const struct dect_cluster_handle *clh,
-				   const struct dect_idi *idi,
-				   const struct dect_si *si)
+static void dect_mac_info_ind(const struct dect_cluster_handle *clh,
+			      const struct dect_idi *idi,
+			      const struct dect_si *si)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
 
-	pr_debug("cl %p: mac info indicate rpn %u\n", cl, idi->rpn);
+	pr_debug("cl %p: MAC_INFO-ind: rpn: %u\n", cl, idi->rpn);
 	cl->si	= *si;
 	cl->rpn	= idi->rpn;
 
@@ -66,12 +66,12 @@ static void dect_mac_info_indicate(const struct dect_cluster_handle *clh,
  */
 
 /**
- * dect_bmc_mac_page_request - queue one segment of B_S channel data
+ * dect_bmc_mac_page_req - queue one segment of B_S channel data
  *
  * @cl:		DECT cluster
  * @skb:	SDU
  */
-void dect_bmc_mac_page_request(struct dect_cluster *cl, struct sk_buff *skb)
+void dect_bmc_mac_page_req(struct dect_cluster *cl, struct sk_buff *skb)
 {
 	const struct dect_cell_handle *ch, *prev = NULL;
 	struct sk_buff *clone;
@@ -82,20 +82,20 @@ void dect_bmc_mac_page_request(struct dect_cluster *cl, struct sk_buff *skb)
 		if (prev != NULL) {
 			clone = skb_clone(skb, GFP_ATOMIC);
 			if (clone != NULL)
-				prev->ops->page_request(prev, clone);
+				prev->ops->page_req(prev, clone);
 		}
 		prev = ch;
 	}
 	if (prev != NULL)
-		prev->ops->page_request(prev, skb);
+		prev->ops->page_req(prev, skb);
 }
 
-static void dect_bmc_page_indicate(const struct dect_cluster_handle *clh,
-				   struct sk_buff *skb)
+static void dect_bmc_page_ind(const struct dect_cluster_handle *clh,
+			      struct sk_buff *skb)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
 
-	return dect_dlc_mac_page_indicate(cl, skb);
+	return dect_mac_page_ind(cl, skb);
 }
 
 /*
@@ -146,9 +146,9 @@ static void dect_mbc_timeout(unsigned long data)
 
 	mbc_debug(mbc, "timeout\n");
 	reason = DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED;
-	mbc->ch->ops->tbc_release(mbc->ch, &mbc->id, reason);
+	mbc->ch->ops->tbc_dis_req(mbc->ch, &mbc->id, reason);
 	if (mbc->state != DECT_MBC_NONE)
-		dect_dlc_mac_dis_indicate(mbc->cl, mbc->id.mcei, reason);
+		dect_mac_dis_ind(mbc->cl, mbc->id.mcei, reason);
 	dect_mbc_release(mbc);
 }
 
@@ -180,7 +180,7 @@ static int dect_mbc_setup_tbc(struct dect_mbc *mbc)
 	chd.pkt   = DECT_PACKET_P32;
 	chd.b_fmt = DECT_B_UNPROTECTED;
 
-	err = ch->ops->tbc_initiate(ch, &mbc->id, &chd);
+	err = ch->ops->tbc_establish_req(ch, &mbc->id, &chd);
 	if (err < 0)
 		return err;
 
@@ -189,12 +189,12 @@ static int dect_mbc_setup_tbc(struct dect_mbc *mbc)
 }
 
 /**
- * dect_mbc_con_request - request a new MAC connection
+ * dect_mac_con_req - request a new MAC connection
  *
  * @cl:		DECT cluster
  * @id:		MBC identifier
  */
-int dect_mbc_con_request(struct dect_cluster *cl, const struct dect_mbc_id *id)
+int dect_mac_con_req(struct dect_cluster *cl, const struct dect_mbc_id *id)
 {
 	struct dect_cell_handle *ch;
 	struct dect_mbc *mbc;
@@ -211,6 +211,7 @@ int dect_mbc_con_request(struct dect_cluster *cl, const struct dect_mbc_id *id)
 		goto err1;
 	mbc->state = DECT_MBC_INITIATED;
 	mbc->ch = ch;
+	mbc_debug(mbc, "MAC_CON-req\n");
 
 	err = dect_mbc_setup_tbc(mbc);
 	if (err < 0)
@@ -224,7 +225,7 @@ err1:
 	return err;
 }
 
-void dect_mbc_dis_request(struct dect_cluster *cl, u32 mcei)
+void dect_mac_dis_req(struct dect_cluster *cl, u32 mcei)
 {
 	struct dect_mbc *mbc;
 
@@ -232,11 +233,13 @@ void dect_mbc_dis_request(struct dect_cluster *cl, u32 mcei)
 	if (mbc == NULL)
 		return;
 	mbc_debug(mbc, "MAC_DIS-req\n");
-	mbc->ch->ops->tbc_release(mbc->ch, &mbc->id, DECT_REASON_CONNECTION_RELEASE);
+	mbc->ch->ops->tbc_dis_req(mbc->ch, &mbc->id,
+				  DECT_REASON_CONNECTION_RELEASE);
 	dect_mbc_release(mbc);
 }
 
-static int dect_mbc_conn_indicate(const struct dect_cluster_handle *clh,
+/* TBC establishment indication from CSF */
+static int dect_tbc_establish_ind(const struct dect_cluster_handle *clh,
 				  const struct dect_cell_handle *ch,
 				  const struct dect_mbc_id *id)
 {
@@ -253,8 +256,9 @@ static int dect_mbc_conn_indicate(const struct dect_cluster_handle *clh,
 	if (mbc == NULL)
 		goto err1;
 	mbc->ch = ch;
+	mbc_debug(mbc, "TBC_ESTABLISH-ind\n");
 
-	err = ch->ops->tbc_confirm(ch, &mid);
+	err = ch->ops->tbc_establish_res(ch, &mid);
 	if (err < 0)
 		goto err2;
 
@@ -286,8 +290,8 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 		case DECT_MBC_INITIATED:
 			if (mbc->setup_cnt > DECT_MBC_SETUP_MAX_ATTEMPTS ||
 			    dect_mbc_setup_tbc(mbc) < 0) {
-				dect_dlc_mac_dis_indicate(cl, id->mcei,
-					       DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED);
+				dect_mac_dis_ind(cl, id->mcei,
+					DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED);
 				dect_mbc_release(mbc);
 			}
 			return 0;
@@ -298,12 +302,12 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 		switch (mbc->state) {
 		case DECT_MBC_NONE:
 			if (del_timer(&mbc->timer))
-				return dect_dlc_mac_conn_indicate(cl, id);
+				return dect_mac_con_ind(cl, id);
 			return 0;
 		case DECT_MBC_INITIATED:
 			if (del_timer(&mbc->timer))
-				return dect_dlc_mac_conn_confirm(cl, id->mcei,
-								 id->service);
+				return dect_mac_con_cfm(cl, id->mcei,
+							id->service);
 			return 0;
 		default:
 			return WARN_ON(-1);
@@ -315,19 +319,20 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 		}
 		return 0;
 	case DECT_TBC_CIPHER_ENABLED:
-		dect_dlc_mac_enc_eks_indicate(cl, id->mcei, DECT_CIPHER_ENABLED);
+		dect_mac_enc_eks_ind(cl, id->mcei, DECT_CIPHER_ENABLED);
 		return 0;
 	case DECT_TBC_CIPHER_DISABLED:
-		dect_dlc_mac_enc_eks_indicate(cl, id->mcei, DECT_CIPHER_DISABLED);
+		dect_mac_enc_eks_ind(cl, id->mcei, DECT_CIPHER_DISABLED);
 		return 0;
 	default:
 		return WARN_ON(-1);
 	}
 }
 
-static void dect_mbc_dis_indicate(const struct dect_cluster_handle *clh,
-				  const struct dect_mbc_id *id,
-				  enum dect_release_reasons reason)
+/* TBC release indication from CSF */
+static void dect_tbc_dis_ind(const struct dect_cluster_handle *clh,
+			     const struct dect_mbc_id *id,
+			     enum dect_release_reasons reason)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
@@ -335,12 +340,13 @@ static void dect_mbc_dis_indicate(const struct dect_cluster_handle *clh,
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
 	if (mbc == NULL)
 		return;
-	mbc_debug(mbc, "MAC_DIS-ind: reason: %u\n", reason);
-	dect_dlc_mac_dis_indicate(cl, id->mcei, reason);
+	mbc_debug(mbc, "TBC_DIS-ind: reason: %u\n", reason);
+	dect_mac_dis_ind(cl, id->mcei, reason);
 	dect_mbc_release(mbc);
 }
 
-int dect_mbc_enc_key_request(const struct dect_cluster *cl, u32 mcei, u64 ck)
+/* Set Encryption key request from DLC */
+int dect_mac_enc_key_req(const struct dect_cluster *cl, u32 mcei, u64 ck)
 {
 	struct dect_mbc *mbc;
 
@@ -348,11 +354,12 @@ int dect_mbc_enc_key_request(const struct dect_cluster *cl, u32 mcei, u64 ck)
 	if (mbc == NULL)
 		return -ENOENT;
 	mbc_debug(mbc, "MAC_ENC_KEY-req: key: %016llx\n", (unsigned long long)ck);
-	return mbc->ch->ops->tbc_enc_key_request(mbc->ch, &mbc->id, ck);
+	return mbc->ch->ops->tbc_enc_key_req(mbc->ch, &mbc->id, ck);
 }
 
-int dect_mbc_enc_eks_request(const struct dect_cluster *cl, u32 mcei,
-			     enum dect_cipher_states status)
+/* Change encryption status requst from DLC */
+int dect_mac_enc_eks_req(const struct dect_cluster *cl, u32 mcei,
+			 enum dect_cipher_states status)
 {
 	struct dect_mbc *mbc;
 
@@ -360,13 +367,13 @@ int dect_mbc_enc_eks_request(const struct dect_cluster *cl, u32 mcei,
 	if (mbc == NULL)
 		return -ENOENT;
 	mbc_debug(mbc, "MAC_ENC_EKS-req: status: %d\n", status);
-	return mbc->ch->ops->tbc_enc_eks_request(mbc->ch, &mbc->id, status);
+	return mbc->ch->ops->tbc_enc_eks_req(mbc->ch, &mbc->id, status);
 }
 
-static void dect_mbc_data_indicate(const struct dect_cluster_handle *clh,
-				   const struct dect_mbc_id *id,
-				   enum dect_data_channels chan,
-				   struct sk_buff *skb)
+static void dect_tbc_data_ind(const struct dect_cluster_handle *clh,
+			      const struct dect_mbc_id *id,
+			      enum dect_data_channels chan,
+			      struct sk_buff *skb)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
@@ -374,6 +381,7 @@ static void dect_mbc_data_indicate(const struct dect_cluster_handle *clh,
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
 	if (mbc == NULL)
 		goto err;
+	mbc_debug(mbc, "TBC_DATA-ind: chan: %u len: %u\n", chan, skb->len);
 
 	switch (chan) {
 	case DECT_MC_C_S:
@@ -386,15 +394,15 @@ static void dect_mbc_data_indicate(const struct dect_cluster_handle *clh,
 		break;
 	}
 
-	return dect_dlc_mac_co_data_indicate(cl, mbc->id.mcei, chan, skb);
+	return dect_mac_co_data_ind(cl, mbc->id.mcei, chan, skb);
 
 err:
 	kfree_skb(skb);
 }
 
-static void dect_mbc_dtr_indicate(const struct dect_cluster_handle *clh,
-				  const struct dect_mbc_id *id,
-				  enum dect_data_channels chan)
+static void dect_tbc_dtr_ind(const struct dect_cluster_handle *clh,
+			     const struct dect_mbc_id *id,
+			     enum dect_data_channels chan)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
@@ -403,13 +411,13 @@ static void dect_mbc_dtr_indicate(const struct dect_cluster_handle *clh,
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
 	if (mbc == NULL)
 		return;
-	mbc_debug(mbc, "MAC_CO_DTR-ind: chan: %u\n", chan);
+	mbc_debug(mbc, "TBC_DTR-ind: chan: %u\n", chan);
 
 	switch (chan) {
 	case DECT_MC_C_S:
 		if (mbc->cs_tx_skb == NULL) {
 			/* Queue a new segment for transmission */
-			skb = dect_dlc_mac_co_dtr_indicate(cl, mbc->id.mcei, chan);
+			skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, chan);
 			if (skb == NULL)
 				return;
 			DECT_CS_CB(skb)->seq = mbc->cs_tx_seq;
@@ -420,12 +428,12 @@ static void dect_mbc_dtr_indicate(const struct dect_cluster_handle *clh,
 		skb = skb_clone(mbc->cs_tx_skb, GFP_ATOMIC);
 		break;
 	default:
-		skb = dect_dlc_mac_co_dtr_indicate(cl, mbc->id.mcei, chan);
+		skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, chan);
 		break;
 	}
 
 	if (skb != NULL)
-		mbc->ch->ops->tbc_data_request(mbc->ch, &mbc->id, chan, skb);
+		mbc->ch->ops->tbc_data_req(mbc->ch, &mbc->id, chan, skb);
 }
 
 static void dect_cluster_unbind_cell(struct dect_cluster_handle *clh,
@@ -484,13 +492,13 @@ static const struct dect_ccf_ops dect_ccf_ops = {
 	.bind			= dect_cluster_bind_cell,
 	.unbind			= dect_cluster_unbind_cell,
 	.scan_report		= dect_scan_report,
-	.mac_info_indicate	= dect_mac_info_indicate,
-	.mbc_conn_indicate	= dect_mbc_conn_indicate,
+	.mac_info_ind		= dect_mac_info_ind,
+	.tbc_establish_ind	= dect_tbc_establish_ind,
 	.mbc_conn_notify	= dect_mbc_conn_notify,
-	.mbc_dis_indicate	= dect_mbc_dis_indicate,
-	.mbc_data_indicate	= dect_mbc_data_indicate,
-	.mbc_dtr_indicate	= dect_mbc_dtr_indicate,
-	.bmc_page_indicate	= dect_bmc_page_indicate,
+	.tbc_dis_ind		= dect_tbc_dis_ind,
+	.tbc_data_ind		= dect_tbc_data_ind,
+	.tbc_dtr_ind		= dect_tbc_dtr_ind,
+	.bmc_page_ind		= dect_bmc_page_ind,
 };
 
 int dect_cluster_preload(struct dect_cluster *cl, const struct dect_ari *pari,
@@ -574,7 +582,7 @@ void dect_cluster_shutdown(struct dect_cluster *cl)
 	struct dect_mbc *mbc, *mbc_next;
 
 	list_for_each_entry_safe(mbc, mbc_next, &cl->mbcs, list) {
-		dect_dlc_mac_dis_indicate(cl, mbc->id.mcei, DECT_REASON_UNKNOWN);
+		dect_mac_dis_ind(cl, mbc->id.mcei, DECT_REASON_UNKNOWN);
 		dect_mbc_release(mbc);
 	}
 

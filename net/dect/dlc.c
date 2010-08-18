@@ -80,7 +80,8 @@ void dect_dlc_mac_conn_unbind(struct dect_mac_conn *mc)
 
 	if (mc->state == DECT_MAC_CONN_OPEN ||
 	    mc->state == DECT_MAC_CONN_OPEN_PENDING)
-		dect_mbc_dis_request(mc->cl, mc->mcei);
+		dect_mac_dis_req(mc->cl, mc->mcei);
+
 	dect_dlc_mac_conn_destroy(mc);
 }
 EXPORT_SYMBOL_GPL(dect_dlc_mac_conn_unbind);
@@ -128,29 +129,29 @@ int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc)
 	};
 	int err;
 
-	err = dect_mbc_con_request(mc->cl, &mid);
+	err = dect_mac_con_req(mc->cl, &mid);
 	if (err < 0)
 		return err;
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_OPEN_PENDING);
 	return 0;
 }
 
-int dect_dlc_mac_conn_confirm(struct dect_cluster *cl, u32 mcei,
-			      enum dect_mac_service_types service)
+int dect_mac_con_cfm(struct dect_cluster *cl, u32 mcei,
+		     enum dect_mac_service_types service)
 {
 	struct dect_mac_conn *mc;
 
 	mc = dect_mac_conn_get_by_mcei(cl, mcei);
 	if (WARN_ON(mc == NULL))
 		return -ENOENT;
-
 	mc->service = service;
+
+	mc_debug(mc, "MAC_CON-cfm\n");
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_OPEN);
 	return 0;
 }
 
-int dect_dlc_mac_conn_indicate(struct dect_cluster *cl,
-			       const struct dect_mbc_id *id)
+int dect_mac_con_ind(struct dect_cluster *cl, const struct dect_mbc_id *id)
 {
 	struct dect_mac_conn *mc;
 	struct dect_mci mci = {
@@ -163,24 +164,27 @@ int dect_dlc_mac_conn_indicate(struct dect_cluster *cl,
 	if (mc == NULL)
 		return -ENOMEM;
 	mc->service = id->service;
+
+	mc_debug(mc, "MAC_CON-ind\n");
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_OPEN);
 	return 0;
 }
 
-int dect_dlc_mac_conn_enc_key_request(struct dect_mac_conn *mc, u64 ck)
+int dect_dlc_mac_conn_enc_key_req(struct dect_mac_conn *mc, u64 ck)
 {
 	mc->ck = ck;
-	return dect_mbc_enc_key_request(mc->cl, mc->mcei, ck);
+	return dect_mac_enc_key_req(mc->cl, mc->mcei, ck);
 }
 
-int dect_dlc_mac_conn_enc_eks_request(struct dect_mac_conn *mc,
-				      enum dect_cipher_states status)
-{
-	return dect_mbc_enc_eks_request(mc->cl, mc->mcei, status);
-}
-
-void dect_dlc_mac_enc_eks_confirm(struct dect_cluster *cl, u32 mcei,
+int dect_dlc_mac_conn_enc_eks_req(struct dect_mac_conn *mc,
 				  enum dect_cipher_states status)
+{
+	return dect_mac_enc_eks_req(mc->cl, mc->mcei, status);
+}
+
+/* Encryption status change confirmation from CCF */
+void dect_mac_enc_eks_cfm(struct dect_cluster *cl, u32 mcei,
+			  enum dect_cipher_states status)
 
 {
 	struct dect_mac_conn *mc;
@@ -188,11 +192,12 @@ void dect_dlc_mac_enc_eks_confirm(struct dect_cluster *cl, u32 mcei,
 	mc = dect_mac_conn_get_by_mcei(cl, mcei);
 	if (WARN_ON(mc == NULL))
 		return;
-	//dect_cplane_mac_enc_eks_indicate(mc, status);
+	//dect_cplane_mac_enc_eks_ind(mc, status);
 }
 
-void dect_dlc_mac_enc_eks_indicate(struct dect_cluster *cl, u32 mcei,
-				   enum dect_cipher_states status)
+/* Encryption status change indication from CCF */
+void dect_mac_enc_eks_ind(struct dect_cluster *cl, u32 mcei,
+			  enum dect_cipher_states status)
 
 {
 	struct dect_mac_conn *mc;
@@ -201,11 +206,12 @@ void dect_dlc_mac_enc_eks_indicate(struct dect_cluster *cl, u32 mcei,
 	if (WARN_ON(mc == NULL))
 		return;
 	mc_debug(mc, "MAC_ENC_EKS-ind: status: %u\n", status);
-	dect_cplane_mac_enc_eks_indicate(mc, status);
+	dect_cplane_mac_enc_eks_ind(mc, status);
 }
 
-int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
-			      enum dect_release_reasons reason)
+/* Disconnection indication from CCF */
+int dect_mac_dis_ind(struct dect_cluster *cl, u32 mcei,
+		     enum dect_release_reasons reason)
 {
 	struct dect_mac_conn *mc;
 
@@ -219,13 +225,14 @@ int dect_dlc_mac_dis_indicate(struct dect_cluster *cl, u32 mcei,
 	if (mc->use == 0)
 		dect_dlc_mac_conn_destroy(mc);
 	else
-		dect_cplane_mac_dis_indicate(mc, reason);
+		dect_cplane_mac_dis_ind(mc, reason);
 	return 0;
 }
 
-void dect_dlc_mac_co_data_indicate(struct dect_cluster *cl, u32 mcei,
-				   enum dect_data_channels chan,
-				   struct sk_buff *skb)
+/* Data indication from CCF */
+void dect_mac_co_data_ind(struct dect_cluster *cl, u32 mcei,
+			  enum dect_data_channels chan,
+			  struct sk_buff *skb)
 {
 	struct dect_mac_conn *mc;
 
@@ -248,8 +255,9 @@ err:
 	kfree_skb(skb);
 }
 
-struct sk_buff *dect_dlc_mac_co_dtr_indicate(struct dect_cluster *cl, u32 mcei,
-					     enum dect_data_channels chan)
+/* Data-ready indication from CCF */
+struct sk_buff *dect_mac_co_dtr_ind(struct dect_cluster *cl, u32 mcei,
+				    enum dect_data_channels chan)
 {
 	struct dect_mac_conn *mc;
 

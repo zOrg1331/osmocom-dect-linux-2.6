@@ -3509,7 +3509,7 @@ void dect_mac_irc_rcv(struct dect_transceiver *trx, struct sk_buff *skb)
 		if (dect_parse_tail(skb) == DECT_TI_QT) {
 			dect_bc_update_si(&irc->si, &tm);
 			if (dect_bc_si_cycle_complete(&irc->idi, &irc->si) &&
-			    irc->si.mask & (1 << DECT_TM_TYPE_MFN))
+			    tm.type == DECT_TM_TYPE_MFN)
 				irc->notify(cell, trx, DECT_SCAN_COMPLETE);
 		}
 		break;
@@ -3532,6 +3532,7 @@ void dect_mac_irc_tick(struct dect_transceiver *trx)
 		dect_set_carrier(trx, DECT_SCAN_SLOT, irc->rx_scn);
 		break;
 	case DECT_TRANSCEIVER_LOCK_PENDING:
+		irc->si.ssi.pscn = dect_next_carrier(0x3ff, irc->si.ssi.pscn);
 		if (--irc->timeout == 0)
 			irc->notify(cell, trx, DECT_SCAN_TIMEOUT);
 		break;
@@ -3783,6 +3784,8 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 		cell->fmid = dect_build_fmid(&cell->idi);
 		memcpy(&cell->si, si, sizeof(cell->si));
 
+		/* Q-channel information is broadcast in frame 8 */
+		dect_timer_synchronize_framenum(cell, DECT_Q_CHANNEL_FRAME);
 		dect_timer_synchronize_mfn(cell, si->mfn.num);
 
 		/* Lock framing based on slot position and create DBC */

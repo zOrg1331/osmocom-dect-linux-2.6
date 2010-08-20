@@ -51,7 +51,7 @@ static void __dect_raw_rcv(struct sk_buff *skb)
 			/* Release the transceiver reference, it is only valid
 			 * in IRQ and softirq context.
 			 */
-			DECT_TRX_CB(skb)->trx = NULL;
+			DECT_TRX_CB(skb2)->trx = NULL;
 			if (dect_sock_queue_rcv_skb(sk, skb2) < 0)
 				kfree_skb(skb2);
 		}

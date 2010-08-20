@@ -3468,7 +3468,6 @@ static void dect_dmb_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	struct dect_dmb *dmb = bearer->dmb;
 	struct dect_tail_msg tm;
 
-	dect_raw_rcv(skb);
 	if (dect_parse_tail_msg(&tm, skb) < 0)
 		goto err;
 
@@ -3538,7 +3537,6 @@ static void dect_dmb_rcv_request(struct dect_cell *cell,
 
 	if (tm->cctl.fmid != cell->fmid)
 		goto err1;
-	dect_raw_rcv(skb);
 
 	switch (tm->cctl.cmd) {
 	case DECT_CCTRL_ACCESS_REQ:

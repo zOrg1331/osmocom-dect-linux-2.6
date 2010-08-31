@@ -4487,12 +4487,25 @@ static void dect_cell_state_process(struct dect_cell *cell)
 	}
 }
 
+static void dect_cluster_time_ind(struct dect_cell *cell,
+				  enum dect_timer_bases base,
+				  u8 slot)
+{
+	struct dect_cluster_handle *clh = cell->handle.clh;
+
+	clh->ops->time_ind(clh, base,
+			   dect_mfn(cell, base),
+			   dect_framenum(cell, base),
+			   slot);
+}
+
 void dect_mac_rx_tick(struct dect_transceiver_group *grp, u8 slot)
 {
 	struct dect_cell *cell = container_of(grp, struct dect_cell, trg);
 
 	dect_run_timers(cell, DECT_TIMER_RX);
 	dect_timer_base_update(cell, DECT_TIMER_RX, slot);
+	dect_cluster_time_ind(cell, DECT_TIMER_RX, slot);
 }
 
 void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
@@ -4503,6 +4516,7 @@ void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 	u8 scn;
 
 	/* TX timers run at the beginning of a slot, update the time first */
+	dect_cluster_time_ind(cell, DECT_TIMER_TX, slot);
 	dect_timer_base_update(cell, DECT_TIMER_TX, slot);
 	dect_run_timers(cell, DECT_TIMER_TX);
 

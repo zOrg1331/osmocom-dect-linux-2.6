@@ -40,6 +40,70 @@ dect_cluster_get_cell_by_rpn(struct dect_cluster *cl, u8 rpn)
 	return NULL;
 }
 
+/*
+ * MAC CCF layer timers
+ */
+
+static u8 dect_slotnum(const struct dect_cluster *cl, enum dect_timer_bases b)
+{
+	return __dect_slotnum(&cl->timer_base[b]);
+}
+
+static u8 dect_framenum(const struct dect_cluster *cl, enum dect_timer_bases b)
+{
+	return __dect_framenum(&cl->timer_base[b]);
+}
+
+static u32 dect_mfn(const struct dect_cluster *cl, enum dect_timer_bases b)
+{
+	return __dect_mfn(&cl->timer_base[b]);
+}
+
+static void dect_run_timers(struct dect_cluster *cl, enum dect_timer_bases b)
+{
+	__dect_run_timers(cl->name, &cl->timer_base[b]);
+}
+
+static void dect_timer_base_update(struct dect_cluster *cl,
+				   enum dect_timer_bases base,
+				   u32 mfn, u8 framenum, u8 slot)
+{
+	cl->timer_base[base].mfn      = mfn;
+	cl->timer_base[base].framenum = framenum;
+	cl->timer_base[base].slot     = slot;
+}
+
+static void dect_timer_add(struct dect_cluster *cl, struct dect_timer *timer,
+			   enum dect_timer_bases b, u32 frame, u8 slot)
+{
+	timer->cluster = cl;
+	__dect_timer_add(cl->name, &cl->timer_base[b], timer, frame, slot);
+}
+
+static void dect_timer_setup(struct dect_timer *timer,
+			     void (*func)(struct dect_cluster *, void *),
+			     void *data)
+{
+	dect_timer_init(timer);
+	timer->cb.cluster = func;
+	timer->data       = data;
+}
+
+static void dect_ccf_time_ind(struct dect_cluster_handle *clh,
+			      enum dect_timer_bases base,
+			      u32 mfn, u8 framenum, u8 slot)
+{
+	struct dect_cluster *cl = dect_cluster(clh);
+
+	if (base == DECT_TIMER_TX) {
+		dect_timer_base_update(cl, base, mfn, framenum, slot);
+		dect_run_timers(cl, base);
+	} else {
+		dect_run_timers(cl, base);
+		dect_timer_base_update(cl, base, mfn, framenum, slot);
+	}
+}
+
 static void dect_scan_report(const struct dect_cluster_handle *clh,
 			     const struct dect_scan_result *res)
 {
@@ -491,6 +555,7 @@ static int dect_cluster_bind_cell(struct dect_cluster_handle *clh,
 static const struct dect_ccf_ops dect_ccf_ops = {
 	.bind			= dect_cluster_bind_cell,
 	.unbind			= dect_cluster_unbind_cell,
+	.time_ind		= dect_ccf_time_ind,
 	.scan_report		= dect_scan_report,
 	.mac_info_ind		= dect_mac_info_ind,
 	.tbc_establish_ind	= dect_tbc_establish_ind,
@@ -565,6 +630,9 @@ void dect_cluster_init(struct dect_cluster *cl)
 	INIT_LIST_HEAD(&cl->mbcs);
 	INIT_LIST_HEAD(&cl->cells);
 	INIT_LIST_HEAD(&cl->mac_connections);
+	dect_timer_base_init(cl->timer_base, DECT_TIMER_TX);
+	dect_timer_base_init(cl->timer_base, DECT_TIMER_RX);
+
 	if (cl->mode == DECT_MODE_FP)
 		dect_fp_init_si(cl);
 

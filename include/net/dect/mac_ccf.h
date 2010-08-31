@@ -127,6 +127,9 @@ struct dect_ccf_ops {
 	void	(*unbind)(struct dect_cluster_handle *,
 			  struct dect_cell_handle *);
 
+	void	(*time_ind)(struct dect_cluster_handle *,
+			    enum dect_timer_bases, u32, u8, u8);
+
 	void	(*scan_report)(const struct dect_cluster_handle *,
 			       const struct dect_scan_result *);
 

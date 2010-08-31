@@ -191,6 +191,8 @@ struct dect_cluster {
 
 	u32				mcei_rover;
 	struct list_head		mac_connections;
+
+	struct dect_timer_base		timer_base[DECT_TIMER_BASE_MAX + 1];
 };
 
 extern void dect_cluster_init(struct dect_cluster *cl);

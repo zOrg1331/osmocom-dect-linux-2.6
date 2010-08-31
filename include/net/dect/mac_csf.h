@@ -579,29 +579,13 @@ struct dect_cell {
 #define DECT_CELL_A_RCV_TIMEOUT		(5 * HZ)	/* T207: 5 seconds */
 #define DECT_CELL_NT_RCV_TIMEOUT	(20 * HZ)	/* T208: 20 seconds */
 
-static inline u8 dect_normal_transmit_base(const struct dect_cell *cell)
-{
-	return cell->mode == DECT_MODE_FP ? 0 : DECT_HALF_FRAME_SIZE;
-}
-
-static inline u8 dect_normal_receive_base(const struct dect_cell *cell)
-{
-	return cell->mode == DECT_MODE_FP ? DECT_HALF_FRAME_SIZE : 0;
-}
-
-static inline u8 dect_normal_receive_end(const struct dect_cell *cell)
-{
-	return cell->mode == DECT_MODE_FP ? DECT_FRAME_SIZE - 1 :
-					    DECT_HALF_FRAME_SIZE - 1;
-}
-
 #define dect_foreach_transmit_slot(slot, end, cell) \
-	for ((slot) = dect_normal_transmit_base(cell), \
+	for ((slot) = dect_normal_transmit_base((cell)->mode), \
 	     (end) = (slot) + DECT_HALF_FRAME_SIZE; \
 	     (slot) < (end); (slot)++)
 
 #define dect_foreach_receive_slot(slot, end, cell) \
-	for ((slot) = dect_normal_receive_base(cell), \
+	for ((slot) = dect_normal_receive_base((cell)->mode), \
 	     (end) = (slot) + DECT_HALF_FRAME_SIZE; \
 	     (slot) < (end); (slot)++)
 

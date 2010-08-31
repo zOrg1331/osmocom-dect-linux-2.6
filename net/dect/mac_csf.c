@@ -486,7 +486,7 @@ retry:
 				continue;
 
 			chd->carrier = e->carrier;
-			chd->slot = dect_normal_transmit_base(cell) + e->slot;
+			chd->slot = dect_normal_transmit_base(cell->mode) + e->slot;
 			if (quick && dect_channel_delay(cell, chd) > 3)
 				continue;
 
@@ -526,7 +526,7 @@ retry:
 		dect_chl_schedule_update(cell, chl->pkt);
 
 	chd->carrier = sel->carrier;
-	chd->slot = dect_normal_transmit_base(cell) + sel->slot;
+	chd->slot = dect_normal_transmit_base(cell->mode) + sel->slot;
 	chl_debug(cell, chl, "select channel: carrier %u slot %u RSSI %u\n",
 		  chd->carrier,	chd->slot, sel->rssi);
 
@@ -2408,7 +2408,7 @@ static void dect_tbc_normal_rx_timer(struct dect_cell *cell, void *data)
 	tbc->rxb->q = 0;
 
 	dect_timer_add(cell, &tbc->normal_rx_timer, DECT_TIMER_RX, 1,
-		       dect_normal_receive_end(cell));
+		       dect_normal_receive_end(cell->mode));
 }
 
 static void dect_tbc_rx_timer(struct dect_cell *cell, void *data)
@@ -2457,7 +2457,7 @@ static void dect_tbc_normal_tx_timer(struct dect_cell *cell, void *data)
 		clh->ops->tbc_dtr_ind(clh, &tbc->id, DECT_MC_I_N);
 
 	dect_timer_add(cell, &tbc->normal_tx_timer, DECT_TIMER_TX, 1,
-		       dect_normal_transmit_base(cell));
+		       dect_normal_transmit_base(cell->mode));
 }
 
 static void dect_tbc_tx_timer(struct dect_cell *cell, void *data)
@@ -2481,9 +2481,9 @@ static int dect_tbc_establish(struct dect_cell *cell, struct dect_tbc *tbc)
 		return -1;
 
 	dect_timer_add(cell, &tbc->normal_rx_timer, DECT_TIMER_RX, 0,
-		       dect_normal_receive_end(cell));
+		       dect_normal_receive_end(cell->mode));
 	dect_timer_add(cell, &tbc->normal_tx_timer, DECT_TIMER_TX, 0,
-		       dect_normal_transmit_base(cell));
+		       dect_normal_transmit_base(cell->mode));
 
 	if (tbc->id.service == DECT_SERVICE_IN_MIN_DELAY) {
 		dect_bearer_timer_add(cell, tbc->txb, &tbc->rx_timer, 0);

@@ -142,6 +142,22 @@ static inline u8 dect_slot_distance(u8 s1, u8 s2)
 #define dect_foreach_slot(slot) \
 	for ((slot) = 0; (slot) < DECT_FRAME_SIZE; (slot)++)
 
+static inline u8 dect_normal_transmit_base(enum dect_cluster_modes mode)
+{
+	return mode == DECT_MODE_FP ? 0 : DECT_HALF_FRAME_SIZE;
+}
+
+static inline u8 dect_normal_receive_base(enum dect_cluster_modes mode)
+{
+	return mode == DECT_MODE_FP ? DECT_HALF_FRAME_SIZE : 0;
+}
+
+static inline u8 dect_normal_receive_end(enum dect_cluster_modes mode)
+{
+	return mode == DECT_MODE_FP ? DECT_FRAME_SIZE - 1 :
+				      DECT_HALF_FRAME_SIZE - 1;
+}
+
 /**
  * enum dect_slot_types - DECT slot types
  *

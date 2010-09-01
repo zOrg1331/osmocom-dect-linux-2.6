@@ -308,8 +308,11 @@ static void dect_chl_update(struct dect_cell *cell,
 	struct dect_channel_list_entry *e;
 	u8 slot, bin;
 
-	if (rssi > dect_dbm_to_rssi(DECT_CHANNEL_LIST_MAX_DBM))
+	if (rssi > dect_dbm_to_rssi(DECT_CHANNEL_LIST_MAX_DBM)) {
+		chl_debug(cell, chl, "carrier %u slot %u: too much noise: RSSI %u\n",
+			  chd->carrier, chd->slot, rssi);
 		return;
+	}
 
 	slot = chd->slot < 12 ? chd->slot : chd->slot - 12;
 	chl_debug(cell, chl, "update carrier %u slot %u pos %u RSSI %u\n",
@@ -596,7 +599,7 @@ static int dect_parse_identities_information(struct dect_tail_msg *tm, u64 t)
 
 	ari_len = dect_parse_ari(&idi->pari, t << DECT_RFPI_ARI_SHIFT);
 	if (ari_len == 0)
-		return -1;
+		pr_debug("ARI corrupt ");
 	rpn_len = BITS_PER_BYTE * DECT_NT_ID_RFPI_LEN - 1 - ari_len;
 
 	idi->e   = (t & DECT_RFPI_E_FLAG);
@@ -960,6 +963,8 @@ static int dect_parse_paging_info(struct dect_tail_msg *tm, u64 t)
 	case DECT_PT_IT_ACTIVE_CARRIERS:
 		return dect_parse_active_carriers(tm, t);
 	default:
+		pr_debug("unknown MAC page info %llx\n",
+			 (unsigned long long)t & DECT_PT_INFO_TYPE_MASK);
 		return -1;
 	}
 }
@@ -1097,7 +1102,8 @@ static int dect_parse_basic_cctrl(struct dect_tail_msg *tm, u64 t)
 	case DECT_CCTRL_RELEASE:
 		return dect_parse_cctrl_release(cctl, t);
 	default:
-		pr_debug("unknown cctrl command: %llx\n", cctl->cmd);
+		pr_debug("unknown cctrl command: %llx\n",
+			 (unsigned long long)cctl->cmd);
 		return -1;
 	}
 }
@@ -3815,7 +3821,8 @@ static void dect_irc_tx_frame_timer(struct dect_cell *cell, void *data)
 	if (cell->chl_next != NULL) {
 		dect_chl_scan_channel_desc(&chd, cell->chl_next);
 		dect_foreach_receive_slot(chd.slot, end, cell) {
-			if (trx->slots[chd.slot].state != DECT_SLOT_SCANNING)
+			if (trx->slots[chd.slot].state != DECT_SLOT_IDLE &&
+			    trx->slots[chd.slot].state != DECT_SLOT_SCANNING)
 				continue;
 			dect_scan_bearer_enable(trx, &chd);
 		}
@@ -3827,12 +3834,24 @@ static void dect_irc_tx_frame_timer(struct dect_cell *cell, void *data)
 			dect_scan_bearer_enable(trx, &chd);
 		}
 	} else if (cell->chl == NULL) {
+		/* Switch back primary, secondary and tertiary scan to proper
+		 * packet format and disable scan on remaining transceivers
+		 * after the channel list update is complete.
+		 */
 		dect_scan_channel_desc(&chd);
 		dect_foreach_receive_slot(chd.slot, end, cell) {
 			if (trx->slots[chd.slot].state != DECT_SLOT_SCANNING)
 				continue;
-			dect_scan_bearer_enable(trx, &chd);
+
+			if (trx->index < 3)
+				dect_scan_bearer_enable(trx, &chd);
+			else
+				dect_scan_bearer_disable(trx, &chd);
 		}
+
+		/* In monitor mode, transmit slots keep scanning for FP setup
+		 * attempts.
+		 */
 		if (!(cell->flags & DECT_CELL_MONITOR)) {
 			dect_foreach_transmit_slot(chd.slot, end, cell) {
 				if (trx->slots[chd.slot].state != DECT_SLOT_SCANNING)
@@ -3871,7 +3890,11 @@ static void dect_irc_enable(struct dect_cell *cell, struct dect_irc *irc)
 	u8 end, scn_off, scn;
 
 	if (trx->index < 3) {
-		scn_off = trx->index * DECT_IRC_SCN_OFF;
+		/* Primary, secondary and tertiary scan: the secondary scan lags
+		 * behind the primary scan by 6 TDMA frames, the tertiary scan
+		 * by 3 TDMA frames.
+		 */
+		scn_off = 2 * DECT_IRC_SCN_OFF - trx->index * DECT_IRC_SCN_OFF;
 		scn = dect_carrier_sub(cell->si.ssi.rfcars,
 				       cell->si.ssi.pscn, scn_off);
 		irc->rx_scn = scn;
@@ -3894,6 +3917,26 @@ static void dect_irc_enable(struct dect_cell *cell, struct dect_irc *irc)
 				dect_scan_bearer_enable(trx, &chd);
 			}
 		}
+	} else if (trx->index < 10) {
+		/* Additional transceivers don't scan for setup attempts,
+		 * however they each cover a different carrier in order to
+		 * speed up channel list construction.
+		 */
+		static const u8 scn_off_tbl[10] = {
+			[3]	= 8,
+			[4]	= 1,
+			[5]	= 4,
+			[6]	= 9,
+			[7]	= 2,
+			[8]	= 5,
+			[9]	= 7,
+		};
+
+		scn_off = scn_off_tbl[trx->index];
+		scn = dect_carrier_sub(cell->si.ssi.rfcars,
+				       cell->si.ssi.pscn, scn_off);
+		irc->rx_scn = scn;
+		irc->tx_scn = scn;
 	}
 
 	/* Start frame timers */
@@ -4366,11 +4409,8 @@ void dect_mac_rcv(struct dect_transceiver *trx,
 	if (ts->bearer != NULL &&
 	    ts->bearer->mode == DECT_BEARER_RX)
 		ts->bearer->ops->rcv(cell, ts->bearer, skb);
-	else {
-		if (ts->bearer == NULL && net_ratelimit())
-			pr_debug("packet without bearer slot %u\n", ts->chd.slot);
+	else
 		kfree_skb(skb);
-	}
 }
 
 void dect_mac_report_rssi(struct dect_transceiver *trx,

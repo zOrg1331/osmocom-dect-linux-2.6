@@ -4379,10 +4379,12 @@ static void dect_mac_xmit_frame(struct dect_transceiver *trx,
 	if (skb == NULL)
 		return;
 
-	tx_debug(cell, "%s: TX slot %u carrier %u PSCN %u Q1: %d Q2: %d\n",
+	tx_debug(cell, "%s: TX slot %u carrier %u PSCN %u Q1: %d Q2: %d%s \n",
 		 trx->name, ts->chd.slot, ts->chd.carrier, cell->si.ssi.pscn,
 		 skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG ? 1 : 0,
-		 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG ? 1 : 0);
+		 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG ? 1 : 0,
+		 DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_A_CRC_OK ?
+		 "" : " A-CRC error");
 
 	switch (cell->mode) {
 	case DECT_MODE_FP:

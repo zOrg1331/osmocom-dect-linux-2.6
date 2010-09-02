@@ -583,6 +583,14 @@ retry:
 	return 0;
 }
 
+static struct dect_dbc *dect_dbc_get(const struct dect_cell *cell)
+{
+	if (list_empty(&cell->dbcs))
+		return NULL;
+	return list_first_entry(&cell->dbcs, struct dect_dbc, list);
+}
+
+
 /*
  * Tail message parsing/construction
  */
@@ -1816,7 +1824,7 @@ static void dect_page_add_mac_info(struct dect_cell *cell, struct dect_bc *bc,
 		t = dect_build_blind_full_slots(&tm.bfs);
 		break;
 	case DECT_TM_TYPE_BD:
-		dbc = list_first_entry(&cell->dbcs, struct dect_dbc, list);
+		dbc = dect_dbc_get(cell);
 		if (dbc == NULL)
 			goto out;
 		tm.bd.bt = DECT_PT_IT_DUMMY_OR_CL_BEARER_POSITION;
@@ -3988,6 +3996,7 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 	struct dect_irc *irc = trx->irc;
 	struct dect_si *si = &irc->si;
 	struct dect_channel_desc chd;
+	struct dect_dbc *dbc;
 
 	switch (status) {
 	case DECT_SCAN_FAIL:
@@ -4022,6 +4031,13 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 
 		clh->ops->mac_info_ind(clh, &cell->idi, &cell->si);
 	} else {
+		/* secondary transceiver */
+		dbc = dect_dbc_get(cell);
+		if (dbc == NULL ||
+		    dbc->bearer->chd.slot != chd.slot ||
+		    dbc->bearer->chd.carrier != chd.carrier)
+			return dect_restart_scan(cell, trx);
+
 		dect_transceiver_lock(trx, chd.slot);
 
 		/* Lock to the primary dummy bearer to keep the radio synchronized */

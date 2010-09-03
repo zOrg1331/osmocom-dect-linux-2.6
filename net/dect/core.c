@@ -6,6 +6,10 @@
  * published by the Free Software Foundation.
  */
 
+#ifdef CONFIG_DECT_DEBUG
+#define DEBUG
+#endif
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -26,6 +30,80 @@ void dect_unlock(void)
 {
 	mutex_unlock(&dect_cfg_mutex);
 }
+
+/*
+ * MAC layer timers
+ */
+
+#if 1
+#define timer_debug(name, base, fmt, args...) \
+	pr_debug("%s: %s %u.%.2u.%.2u: " fmt, name, \
+		 (base)->base == DECT_TIMER_TX ? "TX" : "RX", \
+		 base->mfn, base->framenum, base->slot, ## args)
+#else
+#define timer_debug(base, fmt, args...)
+#endif
+
+void __dect_run_timers(const char *name, struct dect_timer_base *base)
+{
+	struct dect_timer *t;
+
+	while (!list_empty(&base->timers)) {
+		t = list_first_entry(&base->timers, struct dect_timer, list);
+
+		if (dect_mfn_after(t->mfn, base->mfn) ||
+		    (t->mfn == base->mfn && t->frame > base->framenum) ||
+		    (t->mfn == base->mfn && t->frame == base->framenum &&
+		     t->slot > base->slot))
+			break;
+
+		timer_debug(name, base, "timer %p: %u.%u.%u\n",
+			    t, t->mfn, t->frame, t->slot);
+		list_del_init(&t->list);
+		t->cb.cb(t->obj, t->data);
+	}
+}
+EXPORT_SYMBOL_GPL(__dect_run_timers);
+
+/**
+ * dect_timer_add - (re)schedule a timer
+ *
+ * Frame numbers are relative to the current time, slot positions are absolute.
+ * A timer scheduled for (1, 2) will expire in slot 2 in the next frame.
+ *
+ * A frame number of zero will expire at the next occurence of the slot, which
+ * can be within the same frame in case the slot is not already in the past, or
+ * in the next frame in case it is.
+ */
+void __dect_timer_add(const char *name, struct dect_timer_base *base,
+		      struct dect_timer *timer, u32 frame, u8 slot)
+{
+	struct dect_timer *t;
+	u32 mfn;
+
+	if (frame == 0 && slot < base->slot)
+		frame++;
+	frame += base->framenum;
+	mfn = dect_mfn_add(base->mfn, frame / DECT_FRAMES_PER_MULTIFRAME);
+	frame %= DECT_FRAMES_PER_MULTIFRAME;
+
+	timer_debug(name, base, "timer %p: schedule for %u.%u.%u\n",
+		    timer, mfn, frame, slot);
+	if (!list_empty(&timer->list))
+		list_del(&timer->list);
+	list_for_each_entry(t, &base->timers, list) {
+		if (dect_mfn_after(t->mfn, mfn) ||
+		    (t->mfn == mfn && t->frame > frame) ||
+		    (t->mfn == mfn && t->frame == frame && t->slot > slot))
+			break;
+	}
+
+	timer->mfn   = mfn;
+	timer->frame = frame;
+	timer->slot  = slot;
+	list_add_tail(&timer->list, &t->list);
+}
+EXPORT_SYMBOL_GPL(__dect_timer_add);
 
 struct sk_buff *skb_append_frag(struct sk_buff *head, struct sk_buff *skb)
 {

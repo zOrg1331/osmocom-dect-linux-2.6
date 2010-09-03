@@ -40,6 +40,109 @@ static inline bool dect_mfn_after(u32 mfn1, u32 mfn2)
 	return dect_mfn_before(mfn2, mfn1);
 }
 
+#include <linux/list.h>
+
+/**
+ * enum dect_timer_bases - timer bases for DECT timers
+ *
+ * @DECT_TIMER_RX:	receive time base
+ * @DECT_TIMER_TX:	send time base
+ */
+enum dect_timer_bases {
+	DECT_TIMER_RX,
+	DECT_TIMER_TX,
+	__DECT_TIMER_BASE_MAX
+};
+#define DECT_TIMER_BASE_MAX	(__DECT_TIMER_BASE_MAX - 1)
+
+/**
+ * struct dect_timer_base - timer base
+ *
+ * @timers:		list of active timers
+ * @slot:		slot position
+ * @framenum:		frame number
+ * @mfn:		multiframe number
+ */
+struct dect_timer_base {
+	struct list_head	timers;
+	u8			base;
+	u8			slot;
+	u8			framenum;
+	u32			mfn;
+};
+
+static inline void dect_timer_base_init(struct dect_timer_base base[],
+					enum dect_timer_bases b)
+{
+	INIT_LIST_HEAD(&base[b].timers);
+	base->base = b;
+}
+
+static inline u8 __dect_slotnum(const struct dect_timer_base *base)
+{
+	return base->slot;
+}
+
+static inline u8 __dect_framenum(const struct dect_timer_base *base)
+{
+	return base->framenum;
+}
+
+static inline u32 __dect_mfn(const struct dect_timer_base *base)
+{
+	return base->mfn;
+}
+
+extern void __dect_run_timers(const char *name, struct dect_timer_base *base);
+
+/**
+ * struct dect_timer - DECT TDMA frame timer
+ *
+ * @list:		timer list node
+ * @base:		timer base
+ * @mfn:		expiration time: multiframe number
+ * @frame:		expiration time: frame number
+ * @slot:		expiration time: slot number
+ * @func:		timer function
+ * @data:		timer data
+ */
+struct dect_cell;
+struct dect_cluster;
+
+struct dect_timer {
+	struct list_head		list;
+
+	enum dect_timer_bases		base;
+	u32				mfn;
+	u8				frame;
+	u8				slot;
+
+	union {
+		void			(*cell)(struct dect_cell *, void *);
+		void			(*cluster)(struct dect_cluster *, void *);
+		void			(*cb)(void *, void *);
+	} cb;
+	union {
+		struct dect_cell	*cell;
+		struct dect_cluster	*cluster;
+		void			*obj;
+	};
+	void				*data;
+};
+
+static inline void dect_timer_init(struct dect_timer *timer)
+{
+	INIT_LIST_HEAD(&timer->list);
+}
+
+static inline void dect_timer_del(struct dect_timer *timer)
+{
+	list_del_init(&timer->list);
+}
+
+extern void __dect_timer_add(const char *name, struct dect_timer_base *base,
+			     struct dect_timer *timer, u32 frame, u8 slot);
+
 #include <linux/dect.h>
 #include <net/dect/identities.h>
 #include <net/dect/mac_ccf.h>

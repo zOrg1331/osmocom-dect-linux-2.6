@@ -9,58 +9,6 @@
 
 #include <net/dect/mac.h>
 #include <net/dect/transceiver.h>
-
-/**
- * enum dect_timer_bases - timer bases for DECT timers
- *
- * @DECT_TIMER_RX:	receive time base
- * @DECT_TIMER_TX:	send time base
- */
-enum dect_timer_bases {
-	DECT_TIMER_RX,
-	DECT_TIMER_TX,
-	__DECT_TIMER_BASE_MAX
-};
-#define DECT_TIMER_BASE_MAX	(__DECT_TIMER_BASE_MAX - 1)
-
-/**
- * struct dect_timer_base - timer base
- *
- * @timers:		list of active timers
- * @slot:		slot position
- * @framenum:		frame number
- * @mfn:		multiframe number
- */
-struct dect_timer_base {
-	struct list_head	timers;
-	u8			slot;
-	u8			framenum;
-	u32			mfn;
-};
-
-/**
- * struct dect_timer - DECT TDMA frame timer
- *
- * @list:		timer list node
- * @base:		timer base
- * @mfn:		expiration time: multiframe number
- * @frame:		expiration time: frame number
- * @slot:		expiration time: slot number
- * @func:		timer function
- * @data:		timer data
- */
-struct dect_timer {
-	struct list_head	list;
-
-	enum dect_timer_bases	base;
-	u32			mfn;
-	u8			frame;
-	u8			slot;
-
-	void			(*func)(struct dect_cell *, void *);
-	void			*data;
-};
-
 #define DECT_CHANNEL_LIST_DBM_RES	6
 #define DECT_CHANNEL_LIST_BINS		(DECT_RSSI_DBM_RANGE / DECT_CHANNEL_LIST_DBM_RES)
 

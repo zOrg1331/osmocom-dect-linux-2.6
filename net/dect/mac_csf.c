@@ -49,7 +49,7 @@ static struct dect_cell *dect_cell(const struct dect_cell_handle *ch)
 }
 
 /*
- * MAC layer timers
+ * MAC CSF layer timers
  */
 
 #if 0
@@ -61,17 +61,17 @@ static struct dect_cell *dect_cell(const struct dect_cell_handle *ch)
 
 static u8 dect_slotnum(const struct dect_cell *cell, enum dect_timer_bases b)
 {
-	return cell->timer_base[b].slot;
+	return __dect_slotnum(&cell->timer_base[b]);
 }
 
 static u8 dect_framenum(const struct dect_cell *cell, enum dect_timer_bases b)
 {
-	return cell->timer_base[b].framenum;
+	return __dect_framenum(&cell->timer_base[b]);
 }
 
 static u32 dect_mfn(const struct dect_cell *cell, enum dect_timer_bases b)
 {
-	return cell->timer_base[b].mfn;
+	return __dect_mfn(&cell->timer_base[b]);
 }
 
 /* Return whether the TX time is in the next frame relative to the RX time */
@@ -107,23 +107,7 @@ static void dect_timer_synchronize_mfn(struct dect_cell *cell, u32 mfn)
 
 static void dect_run_timers(struct dect_cell *cell, enum dect_timer_bases b)
 {
-	struct dect_timer_base *base = &cell->timer_base[b];
-	struct dect_timer *t;
-
-	while (!list_empty(&base->timers)) {
-		t = list_first_entry(&base->timers, struct dect_timer, list);
-
-		if (dect_mfn_after(t->mfn, base->mfn) ||
-		    (t->mfn == base->mfn && t->frame > base->framenum) ||
-		    (t->mfn == base->mfn && t->frame == base->framenum &&
-		     t->slot > base->slot))
-			break;
-
-		timer_debug(cell, b, "timer %p: %u.%u.%u\n",
-			    t, t->mfn, t->frame, t->slot);
-		list_del_init(&t->list);
-		t->func(cell, t->data);
-	}
+	__dect_run_timers(cell->name, &cell->timer_base[b]);
 }
 
 static void dect_timer_base_update(struct dect_cell *cell,
@@ -137,6 +121,7 @@ static void dect_timer_base_update(struct dect_cell *cell,
 		if (base->framenum == 0)
 			base->mfn = dect_next_mfn(base->mfn);
 	}
+	timer_debug(cell, base, "update time base\n");
 }
 
 /**
@@ -152,50 +137,17 @@ static void dect_timer_base_update(struct dect_cell *cell,
 static void dect_timer_add(struct dect_cell *cell, struct dect_timer *timer,
 			   enum dect_timer_bases base, u32 frame, u8 slot)
 {
-	struct dect_timer_base *b = &cell->timer_base[base];
-	struct dect_timer *t;
-	u32 mfn;
-
-	if (frame == 0 && slot < b->slot)
-		frame++;
-	frame += b->framenum;
-	mfn = dect_mfn_add(b->mfn, frame / DECT_FRAMES_PER_MULTIFRAME);
-	frame %= DECT_FRAMES_PER_MULTIFRAME;
-
-	timer_debug(cell, base, "timer %p: schedule for %u.%u.%u\n",
-		    timer, mfn, frame, slot);
-	if (!list_empty(&timer->list))
-		list_del(&timer->list);
-	list_for_each_entry(t, &b->timers, list) {
-		if (dect_mfn_after(t->mfn, mfn) ||
-		    (t->mfn == mfn && t->frame > frame) ||
-		    (t->mfn == mfn && t->frame == frame && t->slot > slot))
-			break;
-	}
-
-	timer->mfn   = mfn;
-	timer->frame = frame;
-	timer->slot  = slot;
-	list_add_tail(&timer->list, &t->list);
+	timer->cell = cell;
+	__dect_timer_add(cell->name, &cell->timer_base[base], timer, frame, slot);
 }
 
-static void dect_timer_del(struct dect_timer *timer)
-{
-	list_del_init(&timer->list);
-}
-
-static void dect_timer_init(struct dect_timer *t)
-{
-	INIT_LIST_HEAD(&t->list);
-}
-
-static void dect_timer_setup(struct dect_timer *t,
+static void dect_timer_setup(struct dect_timer *timer,
 			     void (*func)(struct dect_cell *, void *),
 			     void *data)
 {
-	dect_timer_init(t);
-	t->func = func;
-	t->data = data;
+	dect_timer_init(timer);
+	timer->cb.cell = func;
+	timer->data    = data;
 }
 
 /*
@@ -4288,7 +4240,7 @@ static struct sk_buff *dect_raw_tx_peek(struct dect_cell *cell)
 
 	if ((!cb->mfn || cb->mfn == base->mfn) &&
 	    (!cb->frame || cb->frame == base->framenum) &&
-	    cb->slot == base->slot)
+	    cb->slot == dect_slotnum(cell, DECT_TIMER_TX))
 		return skb;
 
 	return NULL;
@@ -4763,8 +4715,8 @@ void dect_cell_init(struct dect_cell *cell)
 	INIT_LIST_HEAD(&cell->dmbs);
 	INIT_LIST_HEAD(&cell->chl_pending);
 	INIT_LIST_HEAD(&cell->chanlists);
-	INIT_LIST_HEAD(&cell->timer_base[DECT_TIMER_RX].timers);
-	INIT_LIST_HEAD(&cell->timer_base[DECT_TIMER_TX].timers);
+	dect_timer_base_init(cell->timer_base, DECT_TIMER_TX);
+	dect_timer_base_init(cell->timer_base, DECT_TIMER_RX);
 	skb_queue_head_init(&cell->raw_tx_queue);
 	dect_cell_bmc_init(cell);
 	cell->blind_full_slots = (1 << DECT_HALF_FRAME_SIZE) - 1;

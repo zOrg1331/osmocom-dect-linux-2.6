@@ -1718,6 +1718,13 @@ static void dect_cell_bmc_disable(struct dect_cell *cell)
  * Broadcast Control
  */
 
+static void dect_cell_mac_info_ind(struct dect_cell *cell)
+{
+	const struct dect_cluster_handle *clh = cell->handle.clh;
+
+	clh->ops->mac_info_ind(clh, &cell->idi, &cell->si);
+}
+
 static u32 dect_build_page_rfpi(const struct dect_cell *cell)
 {
 	return (dect_build_rfpi(&cell->idi) >> 24) & ((1 << 20) - 1);
@@ -2099,7 +2106,6 @@ static bool dect_bc_si_cycle_complete(struct dect_idi *idi,
 static void dect_bc_rcv(struct dect_cell *cell, struct dect_bc *bc,
 			struct sk_buff *skb, const struct dect_tail_msg *tm)
 {
-	const struct dect_cluster_handle *clh = cell->handle.clh;
 	enum dect_tail_identifications ti;
 	bool notify;
 
@@ -2115,7 +2121,7 @@ static void dect_bc_rcv(struct dect_cell *cell, struct dect_bc *bc,
 
 		notify = dect_bc_update_si(&cell->si, tm);
 		if (dect_bc_si_cycle_complete(&cell->idi, &cell->si) && notify)
-			clh->ops->mac_info_ind(clh, &cell->idi, &cell->si);
+			dect_cell_mac_info_ind(cell);
 	} else if (ti == DECT_TI_PT) {
 		if (tm->page.length == DECT_PT_ZERO_PAGE &&
 		    tm->page.rfpi != dect_build_page_rfpi(cell))
@@ -4507,6 +4513,11 @@ static void dect_pp_state_process(struct dect_cell *cell)
 
 			dect_irc_disable(cell, trx->irc);
 			dect_transceiver_unlock(trx);
+
+			/* Clear system information */
+			memset(&cell->si, 0, sizeof(cell->si));
+			dect_cell_mac_info_ind(cell);
+
 			dect_attempt_lock(cell, trx);
 		}
 	}

@@ -991,9 +991,6 @@ int sc1442x_init_device(struct coa_device *dev)
 		sc1442x_init_slot(dev, slot);
 
 	if (dev->type == COA_TYPE_PCI) {
-		/* Clear pening interrupts */
-		sc1442x_writeb(dev, SC14424_RESET_INT_PENDING_1, 0xff);
-		sc1442x_writeb(dev, SC14424_RESET_INT_PENDING_2, 0xff);
 		/* Enable DIP interrupt */
 		sc1442x_writeb(dev, SC14424_INT_PRIORITY_1, 0x70);
 		/* Enable SPI for LED control */
@@ -1008,6 +1005,9 @@ void sc1442x_shutdown_device(struct coa_device *dev)
 	sc1442x_stop_dip(dev);
 
 	if (dev->type == COA_TYPE_PCI) {
+		/* Clear pening interrupts */
+		sc1442x_writeb(dev, SC14424_RESET_INT_PENDING_1, 0xff);
+		sc1442x_writeb(dev, SC14424_RESET_INT_PENDING_2, 0xff);
 		/* Reset LED */
 		sc1442x_writeb(dev, SC14424_P1_RESET_OUTPUT_DATA, 0x40);
 	}

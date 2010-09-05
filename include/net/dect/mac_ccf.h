@@ -80,9 +80,25 @@ struct dect_mbc {
 	struct timer_list		timer;
 	const struct dect_cell_handle	*ch;
 	u8				setup_cnt;
+	u8				slot;
 
+	/* Normal transmit/receive timers */
+	struct dect_timer		normal_rx_timer;
+	struct dect_timer		normal_tx_timer;
+
+	/* Slot transmit/receive timers */
+	struct dect_timer		slot_rx_timer;
+	struct dect_timer		slot_tx_timer;
+
+	/* I channel */
+	struct sk_buff			*b_rx_skb;
+
+	/* C_S channel */
 	u8				cs_rx_seq;
 	u8				cs_tx_seq;
+	bool				cs_tx_ok;
+	bool				cs_rx_ok;
+	struct sk_buff			*cs_rx_skb;
 	struct sk_buff			*cs_tx_skb;
 };
 
@@ -115,7 +131,6 @@ extern int dect_cluster_scan(struct dect_cluster *cl,
  * @mbc_conn_indicate:		indicate a new TBC connection
  * @mbc_conn_notify:		notify MBC of TBC events
  * @mbc_data_indicate:		indicate new data to MBC
- * @mbc_dtr_indicate:		indicate data transmit ready to MBC
  * @bmc_page_indicate:		indicate reception of a page message to the BMC
  */
 struct dect_cluster_handle;
@@ -150,9 +165,6 @@ struct dect_ccf_ops {
 				const struct dect_mbc_id *,
 				enum dect_data_channels chan,
 				struct sk_buff *);
-	void	(*tbc_dtr_ind)(const struct dect_cluster_handle *,
-			       const struct dect_mbc_id *,
-			       enum dect_data_channels chan);
 
 	void	(*bmc_page_ind)(const struct dect_cluster_handle *,
 				struct sk_buff *);

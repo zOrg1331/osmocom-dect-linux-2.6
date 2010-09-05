@@ -194,11 +194,172 @@ u32 dect_mbc_alloc_mcei(struct dect_cluster *cl)
 	}
 }
 
+static bool dect_ct_tail_allowed(const struct dect_cluster *cl, u8 framenum)
+{
+	if (cl->mode == DECT_MODE_FP)
+		return (framenum & 0x1) == 0x1;
+	else
+		return (framenum & 0x1) == 0x0;
+}
+
+/*
+ * MBC normal receive half frame timer:
+ *
+ * Deliver received data segments to the DLC at half frame boundaries.
+ * Data is delivered for the following channels:
+ *
+ * - C_S after an ARQ window
+ * - I_N normal delay
+ *
+ * Additionally in half frames that end an ARQ window, acknowledgment
+ * of C_S segment reception of the preceeding transmit half frame is
+ * verified.
+ */
+static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
+{
+	struct dect_mbc *mbc = data;
+	struct sk_buff *skb;
+
+	mbc_debug(mbc, "Normal RX timer\n");
+
+	if (mbc->cs_rx_skb != NULL) {
+		skb = mbc->cs_rx_skb;
+		mbc->cs_rx_skb = NULL;
+		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_C_S, skb);
+	}
+
+	if (mbc->cs_tx_ok && mbc->cs_rx_ok) {
+		kfree_skb(mbc->cs_tx_skb);
+		mbc->cs_tx_skb = NULL;
+	}
+	mbc->cs_rx_ok = false;
+
+	if (mbc->b_rx_skb != NULL) {
+		skb = mbc->b_rx_skb;
+		mbc->b_rx_skb = NULL;
+		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_I_N, skb);
+	}
+
+	dect_timer_add(cl, &mbc->normal_rx_timer, DECT_TIMER_RX,
+		       1, dect_normal_receive_base(cl->mode));
+}
+
+/*
+ * MBC slot based receive timer:
+ *
+ * Deliver received I_N minimal delay B-field segments to the DLC.
+ */
+static void dect_mbc_slot_rx_timer(struct dect_cluster *cl, void *data)
+{
+	struct dect_mbc *mbc = data;
+	struct sk_buff *skb;
+
+	mbc_debug(mbc, "Slot RX timer\n");
+
+	if (mbc->b_rx_skb != NULL) {
+		skb = mbc->b_rx_skb;
+		mbc->b_rx_skb = NULL;
+		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_I_N, skb);
+	}
+
+	dect_timer_add(cl, &mbc->slot_rx_timer, DECT_TIMER_RX, 1, mbc->slot);
+}
+
+/*
+ * MBC normal transmit half frame timer:
+ *
+ * Request data from the DLC for the next frame. Data is requested for the
+ * following channels:
+ *
+ * - C_S before an ARQ window starts
+ * - I_N normal delay
+ */
+static void dect_mbc_normal_tx_timer(struct dect_cluster *cl, void *data)
+{
+	struct dect_mbc *mbc = data;
+	const struct dect_cell_handle *ch = mbc->ch;
+	struct sk_buff *skb;
+
+	mbc_debug(mbc, "Normal TX timer\n");
+
+	if (dect_ct_tail_allowed(cl, dect_framenum(cl, DECT_TIMER_TX))) {
+		if (mbc->cs_tx_skb == NULL) {
+			skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_C_S);
+			if (skb != NULL) {
+				DECT_CS_CB(skb)->seq = mbc->cs_tx_seq;
+				mbc->cs_tx_seq = !mbc->cs_tx_seq;
+				mbc->cs_tx_skb = skb;
+			}
+		}
+
+		if (mbc->cs_tx_skb != NULL &&
+		    (skb = skb_clone(mbc->cs_tx_skb, GFP_ATOMIC)) != NULL) {
+			ch->ops->tbc_data_req(ch, &mbc->id, DECT_MC_C_S, skb);
+			mbc->cs_tx_ok = true;
+		}
+	}
+
+	if (1 || mbc->id.service != DECT_SERVICE_IN_MIN_DELAY) {
+		skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
+		if (skb != NULL)
+			ch->ops->tbc_data_req(ch, &mbc->id, DECT_MC_I_N, skb);
+	}
+
+	dect_timer_add(cl, &mbc->normal_tx_timer, DECT_TIMER_TX,
+		       1, dect_normal_transmit_base(cl->mode));
+}
+
+/*
+ * MBC slot based transmit timer:
+ *
+ * Request data from the DLC for the I_N minimal delay channel.
+ */
+static void dect_mbc_slot_tx_timer(struct dect_cluster *cl, void *data)
+{
+	struct dect_mbc *mbc = data;
+	const struct dect_cell_handle *ch = mbc->ch;
+	struct sk_buff *skb;
+
+	mbc_debug(mbc, "Slot TX timer\n");
+
+	skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
+	if (skb != NULL)
+		ch->ops->tbc_data_req(ch, &mbc->id, DECT_MC_I_N, skb);
+
+	dect_timer_add(cl, &mbc->slot_tx_timer, DECT_TIMER_TX, 1, mbc->slot);
+}
+
+static int dect_mbc_complete_setup(struct dect_cluster *cl, struct dect_mbc *mbc)
+{
+	if (!del_timer(&mbc->timer))
+		return 0;
+
+	dect_timer_add(cl, &mbc->normal_rx_timer, DECT_TIMER_RX,
+		       0, dect_normal_receive_base(cl->mode));
+	dect_timer_add(cl, &mbc->normal_tx_timer, DECT_TIMER_TX,
+		       0, dect_normal_transmit_base(cl->mode));
+
+	if (0 && mbc->id.service == DECT_SERVICE_IN_MIN_DELAY) {
+		dect_timer_add(cl, &mbc->normal_rx_timer, DECT_TIMER_RX,
+			       0, mbc->slot);
+		dect_timer_add(cl, &mbc->normal_tx_timer, DECT_TIMER_TX,
+			       0, mbc->slot);
+	}
+	return 1;
+}
+
 static void dect_mbc_release(struct dect_mbc *mbc)
 {
 	mbc_debug(mbc, "release\n");
 	del_timer(&mbc->timer);
 	list_del(&mbc->list);
+
+	dect_timer_del(&mbc->normal_rx_timer);
+	dect_timer_del(&mbc->normal_tx_timer);
+	dect_timer_del(&mbc->slot_rx_timer);
+	dect_timer_del(&mbc->slot_tx_timer);
+
+	kfree_skb(mbc->cs_rx_skb);
 	kfree_skb(mbc->cs_tx_skb);
 	kfree(mbc);
 }
@@ -224,10 +385,17 @@ static struct dect_mbc *dect_mbc_init(struct dect_cluster *cl,
 	mbc = kzalloc(sizeof(*mbc), GFP_ATOMIC);
 	if (mbc == NULL)
 		return NULL;
-	mbc->cl = cl;
-	memcpy(&mbc->id, id, sizeof(mbc->id));
+	mbc->cl    = cl;
+	mbc->id    = *id;
 	mbc->state = DECT_MBC_NONE;
+
+	dect_timer_setup(&mbc->normal_rx_timer, dect_mbc_normal_rx_timer, mbc);
+	dect_timer_setup(&mbc->normal_tx_timer, dect_mbc_normal_tx_timer, mbc);
+	dect_timer_setup(&mbc->slot_rx_timer, dect_mbc_slot_rx_timer, mbc);
+	dect_timer_setup(&mbc->slot_tx_timer, dect_mbc_slot_tx_timer, mbc);
+
 	mbc->cs_tx_seq = 1;
+	mbc->cs_rx_seq = 1;
 
 	setup_timer(&mbc->timer, dect_mbc_timeout, (unsigned long)mbc);
 	list_add_tail(&mbc->list, &cl->mbcs);
@@ -365,22 +533,18 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 	case DECT_TBC_SETUP_COMPLETE:
 		switch (mbc->state) {
 		case DECT_MBC_NONE:
-			if (del_timer(&mbc->timer))
-				return dect_mac_con_ind(cl, id);
-			return 0;
+			if (!dect_mbc_complete_setup(cl, mbc))
+				return 0;
+			return dect_mac_con_ind(cl, id);
 		case DECT_MBC_INITIATED:
-			if (del_timer(&mbc->timer))
-				return dect_mac_con_cfm(cl, id->mcei,
-							id->service);
-			return 0;
+			if (!dect_mbc_complete_setup(cl, mbc))
+				return 0;
+			return dect_mac_con_cfm(cl, id->mcei, id->service);
 		default:
 			return WARN_ON(-1);
 		}
 	case DECT_TBC_ACK_RECEIVED:
-		if (mbc->cs_tx_skb != NULL) {
-			kfree_skb(mbc->cs_tx_skb);
-			mbc->cs_tx_skb = NULL;
-		}
+		mbc->cs_rx_ok = true;
 		return 0;
 	case DECT_TBC_CIPHER_ENABLED:
 		dect_mac_enc_eks_ind(cl, id->mcei, DECT_CIPHER_ENABLED);
@@ -439,7 +603,7 @@ static void dect_tbc_data_ind(const struct dect_cluster_handle *clh,
 			      enum dect_data_channels chan,
 			      struct sk_buff *skb)
 {
-	struct dect_cluster *cl = dect_cluster(clh);
+	const struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
 
 	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
@@ -450,54 +614,19 @@ static void dect_tbc_data_ind(const struct dect_cluster_handle *clh,
 	switch (chan) {
 	case DECT_MC_C_S:
 		/* Drop duplicate segments */
-		if (DECT_CS_CB(skb)->seq == mbc->cs_rx_seq)
+		if (DECT_CS_CB(skb)->seq != mbc->cs_rx_seq)
 			goto err;
 		mbc->cs_rx_seq = !mbc->cs_rx_seq;
-		break;
+		mbc->cs_rx_skb = skb;
+		return;
+	case DECT_MC_I_N:
+		mbc->b_rx_skb = skb;
+		return;
 	default:
 		break;
 	}
-
-	return dect_mac_co_data_ind(cl, mbc->id.mcei, chan, skb);
-
 err:
 	kfree_skb(skb);
-}
-
-static void dect_tbc_dtr_ind(const struct dect_cluster_handle *clh,
-			     const struct dect_mbc_id *id,
-			     enum dect_data_channels chan)
-{
-	struct dect_cluster *cl = dect_cluster(clh);
-	struct dect_mbc *mbc;
-	struct sk_buff *skb;
-
-	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
-	if (mbc == NULL)
-		return;
-	mbc_debug(mbc, "TBC_DTR-ind: chan: %u\n", chan);
-
-	switch (chan) {
-	case DECT_MC_C_S:
-		if (mbc->cs_tx_skb == NULL) {
-			/* Queue a new segment for transmission */
-			skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, chan);
-			if (skb == NULL)
-				return;
-			DECT_CS_CB(skb)->seq = mbc->cs_tx_seq;
-			mbc->cs_tx_seq = !mbc->cs_tx_seq;
-			mbc->cs_tx_skb = skb;
-		}
-
-		skb = skb_clone(mbc->cs_tx_skb, GFP_ATOMIC);
-		break;
-	default:
-		skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, chan);
-		break;
-	}
-
-	if (skb != NULL)
-		mbc->ch->ops->tbc_data_req(mbc->ch, &mbc->id, chan, skb);
 }
 
 static void dect_cluster_unbind_cell(struct dect_cluster_handle *clh,
@@ -562,7 +691,6 @@ static const struct dect_ccf_ops dect_ccf_ops = {
 	.mbc_conn_notify	= dect_mbc_conn_notify,
 	.tbc_dis_ind		= dect_tbc_dis_ind,
 	.tbc_data_ind		= dect_tbc_data_ind,
-	.tbc_dtr_ind		= dect_tbc_dtr_ind,
 	.bmc_page_ind		= dect_bmc_page_ind,
 };
 

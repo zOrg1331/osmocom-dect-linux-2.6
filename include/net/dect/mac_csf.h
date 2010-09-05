@@ -318,12 +318,6 @@ struct dect_tbc {
 	struct dect_timer		release_timer;
 	enum dect_release_reasons	release_reason;
 
-	/* Normal transmit/receive half-frame based and slot based timers */
-	struct dect_timer		normal_rx_timer;
-	struct dect_timer		normal_tx_timer;
-	struct dect_timer		rx_timer;
-	struct dect_timer		tx_timer;
-
 	/* Encryption */
 	u64				ck;
 	struct dect_timer		enc_timer;
@@ -331,11 +325,10 @@ struct dect_tbc {
 	u8				enc_msg_cnt;
 
 	/* C_S channel */
-	struct sk_buff			*c_rx_skb;
 	struct sk_buff			*c_tx_skb;
 	bool				c_tx_ok;
 
-	struct sk_buff			*b_rx_skb;
+	/* I channel */
 	struct sk_buff			*b_tx_skb;
 
 	struct dect_bc			bc;

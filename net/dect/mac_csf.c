@@ -2293,10 +2293,6 @@ static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 	dect_timer_del(&tbc->wd_timer);
 	dect_timer_del(&tbc->wait_timer);
 	dect_timer_del(&tbc->release_timer);
-	dect_timer_del(&tbc->normal_rx_timer);
-	dect_timer_del(&tbc->normal_tx_timer);
-	dect_timer_del(&tbc->rx_timer);
-	dect_timer_del(&tbc->tx_timer);
 	dect_timer_del(&tbc->enc_timer);
 	dect_bc_release(&tbc->bc);
 
@@ -2307,7 +2303,6 @@ static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 	dect_bearer_release(cell, tbc->rxb);
 
 	list_del(&tbc->list);
-	kfree_skb(tbc->c_rx_skb);
 	kfree_skb(tbc->c_tx_skb);
 	kfree(tbc);
 }
@@ -2354,124 +2349,6 @@ static void dect_tbc_dis_req(const struct dect_cell_handle *ch,
 	dect_tbc_begin_release(cell, tbc, reason);
 }
 
-static bool dect_ct_tail_allowed(const struct dect_cell *cell, u8 framenum)
-{
-	if (cell->mode == DECT_MODE_FP)
-		return (framenum & 0x1) == 0x1;
-	else
-		return (framenum & 0x1) == 0x0;
-}
-
-/**
- * TBC normal receive half frame timer:
- *
- * Deliver received data segments to the DLC at half frame boundaries.
- * Data is delivered for the following channels:
- *
- * - C_S after an ARQ window
- * - I_N normal delay
- *
- * Additionally, in half frames that end an ARQ window, acknowledgment of
- * C_S segment reception of the preceeding ransmit half frame is verified.
- */
-static void dect_tbc_normal_rx_timer(struct dect_cell *cell, void *data)
-{
-	const struct dect_cluster_handle *clh = cell->handle.clh;
-	struct dect_tbc *tbc = data;
-	struct sk_buff *skb;
-
-	tbc_debug(tbc, "Normal RX timer\n");
-
-	if (tbc->c_rx_skb != NULL) {
-		skb = tbc->c_rx_skb;
-		tbc->c_rx_skb = NULL;
-		clh->ops->tbc_data_ind(clh, &tbc->id, DECT_MC_C_S, skb);
-	}
-
-	if (tbc->b_rx_skb != NULL) {
-		skb = tbc->b_rx_skb;
-		tbc->b_rx_skb = NULL;
-		clh->ops->tbc_data_ind(clh, &tbc->id, DECT_MC_I_N, skb);
-	}
-
-	if (dect_ct_tail_allowed(cell, dect_framenum(cell, DECT_TIMER_RX)) &&
-	    tbc->c_tx_ok) {
-		if (tbc->rxb->q) {
-			tbc_debug(tbc, "ARQ acknowledgement\n");
-			dect_tbc_event(tbc, DECT_TBC_ACK_RECEIVED);
-		} else
-			tbc_debug(tbc, "C-channel data lost\n");
-
-		tbc->c_tx_ok = false;
-	}
-
-	tbc->rxb->q = 0;
-
-	dect_timer_add(cell, &tbc->normal_rx_timer, DECT_TIMER_RX, 1,
-		       dect_normal_receive_end(cell->mode));
-}
-
-static void dect_tbc_rx_timer(struct dect_cell *cell, void *data)
-{
-	const struct dect_cluster_handle *clh = cell->handle.clh;
-	struct dect_tbc *tbc = data;
-	struct sk_buff *skb;
-
-	tbc_debug(tbc, "RX timer\n");
-
-	if (tbc->b_rx_skb != NULL) {
-		skb = tbc->b_rx_skb;
-		tbc->b_rx_skb = NULL;
-		clh->ops->tbc_data_ind(clh, &tbc->id, DECT_MC_I_N, skb);
-	}
-
-	dect_bearer_timer_add(cell, tbc->rxb, &tbc->rx_timer, 1);
-}
-
-/**
- * TBC normal transmit half frame timer:
- *
- * Request data from the DLC for the next frame. Data is requested for the
- * following channels:
- *
- * - C_S before an ARQ window starts
- * - I_N normal delay
- */
-static void dect_tbc_normal_tx_timer(struct dect_cell *cell, void *data)
-{
-	const struct dect_cluster_handle *clh = cell->handle.clh;
-	struct dect_tbc *tbc = data;
-
-	tbc_debug(tbc, "Normal TX timer\n");
-
-	if (dect_ct_tail_allowed(cell, dect_framenum(cell, DECT_TIMER_TX))) {
-		if (tbc->c_tx_skb != NULL) {
-			kfree_skb(tbc->c_tx_skb);
-			tbc->c_tx_skb = NULL;
-			tbc->c_tx_ok = false;
-		}
-		clh->ops->tbc_dtr_ind(clh, &tbc->id, DECT_MC_C_S);
-	}
-
-	if (tbc->id.service != DECT_SERVICE_IN_MIN_DELAY)
-		clh->ops->tbc_dtr_ind(clh, &tbc->id, DECT_MC_I_N);
-
-	dect_timer_add(cell, &tbc->normal_tx_timer, DECT_TIMER_TX, 1,
-		       dect_normal_transmit_base(cell->mode));
-}
-
-static void dect_tbc_tx_timer(struct dect_cell *cell, void *data)
-{
-	const struct dect_cluster_handle *clh = cell->handle.clh;
-	struct dect_tbc *tbc = data;
-
-	tbc_debug(tbc, "TX timer\n");
-
-	clh->ops->tbc_dtr_ind(clh, &tbc->id, DECT_MC_I_N);
-
-	dect_bearer_timer_add(cell, tbc->txb, &tbc->tx_timer, 1);
-}
-
 static int dect_tbc_establish(struct dect_cell *cell, struct dect_tbc *tbc)
 {
 	tbc_debug(tbc, "established\n");
@@ -2480,15 +2357,6 @@ static int dect_tbc_establish(struct dect_cell *cell, struct dect_tbc *tbc)
 	if (dect_tbc_event(tbc, DECT_TBC_SETUP_COMPLETE) < 0)
 		return -1;
 
-	dect_timer_add(cell, &tbc->normal_rx_timer, DECT_TIMER_RX, 0,
-		       dect_normal_receive_end(cell->mode));
-	dect_timer_add(cell, &tbc->normal_tx_timer, DECT_TIMER_TX, 0,
-		       dect_normal_transmit_base(cell->mode));
-
-	if (tbc->id.service == DECT_SERVICE_IN_MIN_DELAY) {
-		dect_bearer_timer_add(cell, tbc->txb, &tbc->rx_timer, 0);
-		dect_bearer_timer_add(cell, tbc->txb, &tbc->tx_timer, 0);
-	}
 	return 0;
 }
 
@@ -2800,6 +2668,8 @@ static void dect_tbc_queue_cs_data(struct dect_cell *cell, struct dect_tbc *tbc,
 				   struct sk_buff *skb,
 				   const struct dect_tail_msg *tm)
 {
+	const struct dect_cluster_handle *clh = cell->handle.clh;
+
 	skb = skb_clone(skb, GFP_ATOMIC);
 	if (skb == NULL)
 		return;
@@ -2807,14 +2677,16 @@ static void dect_tbc_queue_cs_data(struct dect_cell *cell, struct dect_tbc *tbc,
 	skb_trim(skb, DECT_C_S_SDU_SIZE);
 
 	DECT_CS_CB(skb)->seq = tm->ctd.seq;
-	tbc->c_rx_skb = skb;
+	clh->ops->tbc_data_ind(clh, &tbc->id, DECT_MC_C_S, skb);
 }
 
 static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 			 struct sk_buff *skb)
 {
+	const struct dect_cluster_handle *clh = cell->handle.clh;
 	struct dect_tbc *tbc = bearer->tbc;
 	struct dect_tail_msg _tm, *tm = &_tm;
+	bool q2;
 
 	/* Verify A-field checksum. Sucessful reception of the A-field is
 	 * indicated by transmitting the Q2 bit in the reverse direction.
@@ -2824,7 +2696,14 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	else
 		goto rcv_b_field;
 
-	tbc->rxb->q = skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG;
+	q2 = skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG;
+	if (tbc->c_tx_ok) {
+		if (q2) {
+			tbc_debug(tbc, "ARQ acknowledgement\n");
+			dect_tbc_event(tbc, DECT_TBC_ACK_RECEIVED);
+		} else
+			tbc_debug(tbc, "C-channel data lost\n");
+	}
 
 	if (dect_parse_tail_msg(tm, skb) < 0)
 		goto err;
@@ -2866,7 +2745,7 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 rcv_b_field:
 	skb_pull(skb, DECT_A_FIELD_SIZE);
 	skb_trim(skb, DECT_B_FIELD_SIZE);
-	tbc->b_rx_skb = skb;
+	clh->ops->tbc_data_ind(clh, &tbc->id, DECT_MC_I_N, skb);
 	return;
 
 err:
@@ -3017,12 +2896,6 @@ static struct dect_tbc *dect_tbc_init(struct dect_cell *cell,
 	dect_timer_init(&tbc->wait_timer);
 	dect_timer_setup(&tbc->wd_timer, dect_tbc_watchdog_timer, tbc);
 	dect_timer_setup(&tbc->release_timer, dect_tbc_release_timer, tbc);
-
-	dect_timer_setup(&tbc->normal_rx_timer, dect_tbc_normal_rx_timer, tbc);
-	dect_timer_setup(&tbc->normal_tx_timer, dect_tbc_normal_tx_timer, tbc);
-	dect_timer_setup(&tbc->rx_timer, dect_tbc_rx_timer, tbc);
-	dect_timer_setup(&tbc->tx_timer, dect_tbc_tx_timer, tbc);
-
 	dect_timer_setup(&tbc->enc_timer, dect_tbc_enc_timer, tbc);
 
 	tbc->rxb = dect_bearer_init(cell, &dect_tbc_ops, DECT_DUPLEX_BEARER,
@@ -4084,6 +3957,7 @@ static struct sk_buff *dect_pt_t_mux(struct dect_cell *cell,
 		break;
 	case DECT_TRAFFIC_BEARER:
 		tbc = bearer->tbc;
+		tbc->c_tx_ok = false;
 		break;
 	}
 
@@ -4143,6 +4017,7 @@ static struct sk_buff *dect_rfp_t_mux(struct dect_cell *cell,
 		break;
 	case DECT_TRAFFIC_BEARER:
 		tbc = bearer->tbc;
+		tbc->c_tx_ok = false;
 		bc = &bearer->tbc->bc;
 		break;
 	case DECT_CL_BEARER:
@@ -4334,12 +4209,10 @@ static void dect_mac_xmit_frame(struct dect_transceiver *trx,
 	if (skb == NULL)
 		return;
 
-	tx_debug(cell, "%s: TX slot %u carrier %u PSCN %u Q1: %d Q2: %d%s \n",
+	tx_debug(cell, "%s: TX slot %u carrier %u PSCN %u Q1: %d Q2: %d\n",
 		 trx->name, ts->chd.slot, ts->chd.carrier, cell->si.ssi.pscn,
 		 skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG ? 1 : 0,
-		 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG ? 1 : 0,
-		 DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_A_CRC_OK ?
-		 "" : " A-CRC error");
+		 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG ? 1 : 0);
 
 	switch (cell->mode) {
 	case DECT_MODE_FP:
@@ -4367,12 +4240,14 @@ void dect_mac_rcv(struct dect_transceiver *trx,
 {
 	struct dect_cell *cell = trx->cell;
 
-	rx_debug(cell, "%s: Q1: %d Q2: %d A/B: %02x ",
+	rx_debug(cell, "%s: Q1: %d Q2: %d A/B: %02x%s ",
 		 trx->name,
 		 skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG ? 1 : 0,
 		 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG ? 1 : 0,
 		 skb->data[DECT_HDR_TA_OFF] &
-		 (DECT_HDR_TA_MASK | DECT_HDR_BA_MASK));
+		 (DECT_HDR_TA_MASK | DECT_HDR_BA_MASK),
+		 DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_A_CRC_OK ?
+		 "" : " A-CRC error");
 
 	DECT_TRX_CB(skb)->frame = dect_framenum(cell, DECT_TIMER_RX);
 	DECT_TRX_CB(skb)->mfn	= dect_mfn(cell, DECT_TIMER_RX);

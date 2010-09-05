@@ -533,32 +533,6 @@ static void dect_ccp_parse_tbc_data_ind(const struct dect_cell_handle *ch,
 	clh->ops->tbc_data_ind(clh, &id, chan, skb);
 }
 
-static void dect_ccp_send_tbc_dtr_ind(const struct dect_cluster_handle *clh,
-				      const struct dect_mbc_id *id,
-				      enum dect_data_channels chan)
-{
-	struct sk_buff *skb;
-
-	skb = dect_ccp_msg_alloc(sizeof(struct dect_ccp_mbc_msg));
-	if (skb == NULL)
-		return;
-	dect_ccp_build_mbc_msg(skb, id, chan);
-
-	dect_ccp_send_to_cluster(clh, skb, DECT_CCP_TBC_DTR_IND);
-}
-
-static void dect_ccp_parse_tbc_dtr_ind(const struct dect_cell_handle *ch,
-				       struct sk_buff *skb)
-{
-	const struct dect_cluster_handle *clh = ch->clh;
-	struct dect_mbc_id id;
-	u8 chan;
-
-	if (!dect_ccp_parse_mbc_msg(&id, &chan, skb))
-		return;
-	clh->ops->tbc_dtr_ind(clh, &id, chan);
-}
-
 static void dect_ccp_send_tbc_dis_ind(const struct dect_cluster_handle *clh,
 				      const struct dect_mbc_id *id,
 				      enum dect_release_reasons reason)
@@ -607,8 +581,6 @@ static void dect_ccp_rcv_cell_msg(void *handle, u32 portref,
 		return dect_ccp_parse_mbc_conn_notify(ch, skb);
 	case DECT_CCP_TBC_DATA_IND:
 		return dect_ccp_parse_tbc_data_ind(ch, skb);
-	case DECT_CCP_TBC_DTR_IND:
-		return dect_ccp_parse_tbc_dtr_ind(ch, skb);
 	case DECT_CCP_TBC_DIS_IND:
 		return dect_ccp_parse_tbc_dis_ind(ch, skb);
 	}
@@ -886,7 +858,6 @@ static const struct dect_ccf_ops dect_ccp_ccf_ops = {
 	.mbc_conn_notify	= dect_ccp_send_mbc_conn_notify,
 	.tbc_dis_ind		= dect_ccp_send_tbc_dis_ind,
 	.tbc_data_ind		= dect_ccp_send_tbc_data_ind,
-	.tbc_dtr_ind		= dect_ccp_send_tbc_dtr_ind,
 	.bmc_page_ind		= dect_ccp_send_bmc_page_ind,
 };
 

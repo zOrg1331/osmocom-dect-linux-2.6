@@ -258,15 +258,11 @@ enum dect_tbc_enc_state {
 /**
  * enum dect_tbc_event - DECT Traffic Bearer events
  *
- * @DECT_TBC_SETUP_FAILED:	Bearer setup failed
- * @DECT_TBC_SETUP_COMPLETE:	Bearer setup complete
  * @DECT_TBC_ACK_RECEIVED:	Acknowledgement for C_S data received
  * @DECT_TBC_CIPHER_ENABLED:	Ciphering enabled
  * @DECT_TBC_CIPHER_DISABLED:	Ciphering disabled
  */
 enum dect_tbc_event {
-	DECT_TBC_SETUP_FAILED,
-	DECT_TBC_SETUP_COMPLETE,
 	DECT_TBC_ACK_RECEIVED,
 	DECT_TBC_CIPHER_ENABLED,
 	DECT_TBC_CIPHER_DISABLED,
@@ -275,10 +271,9 @@ enum dect_tbc_event {
 /**
  * struct dect_tbc - DECT Traffic Bearer Control
  *
- * @list:		device TBC list node
+ * @list:		Cell TBC list node
  * @cell:		DECT cell
- * @id:			ID of associated MBC
- * @lbn:		logical bearer number
+ * @id:			Traffic Bearer ID
  * @txb:		TX bearer
  * @rxb:		RX bearer
  * @state:		Bearer establishment state
@@ -304,9 +299,10 @@ enum dect_tbc_event {
 struct dect_tbc {
 	struct list_head		list;
 	struct dect_cell		*cell;
-
-	struct dect_mbc_id		id;
-	u8				lbn;
+	struct dect_tbc_id		id;
+	enum dect_mac_connection_types	type;
+	enum dect_mac_service_types	service;
+	bool				handover;
 
 	struct dect_bearer		*txb;
 	struct dect_bearer		*rxb;
@@ -325,8 +321,8 @@ struct dect_tbc {
 	u8				enc_msg_cnt;
 
 	/* C_S channel */
-	struct sk_buff			*c_tx_skb;
-	bool				c_tx_ok;
+	struct sk_buff			*cs_tx_skb;
+	bool				cs_tx_ok;
 
 	/* I channel */
 	struct sk_buff			*b_tx_skb;
@@ -439,20 +435,23 @@ struct dect_csf_ops {
 	void	(*page_req)(const struct dect_cell_handle *, struct sk_buff *);
 
 	int	(*tbc_establish_req)(const struct dect_cell_handle *,
-				     const struct dect_mbc_id *,
-				     const struct dect_channel_desc *);
+				     const struct dect_tbc_id *,
+				     const struct dect_channel_desc *,
+				     enum dect_mac_service_types, bool);
 	int	(*tbc_establish_res)(const struct dect_cell_handle *,
-				     const struct dect_mbc_id *);
+				     const struct dect_tbc_id *);
 	void	(*tbc_dis_req)(const struct dect_cell_handle *,
-			       const struct dect_mbc_id *,
+			       const struct dect_tbc_id *,
 			       enum dect_release_reasons);
 	int	(*tbc_enc_key_req)(const struct dect_cell_handle *,
-				   const struct dect_mbc_id *, u64 ck);
+				   const struct dect_tbc_id *, u64 ck);
 	int	(*tbc_enc_eks_req)(const struct dect_cell_handle *,
-				   const struct dect_mbc_id *,
+				   const struct dect_tbc_id *,
 				   enum dect_cipher_states status);
+	int	(*tbc_enc_req)(const struct dect_cell_handle *,
+			       const struct dect_tbc_id *, u64 ck);
 	void	(*tbc_data_req)(const struct dect_cell_handle *,
-				const struct dect_mbc_id *,
+				const struct dect_tbc_id *,
 				enum dect_data_channels chan,
 				struct sk_buff *);
 
@@ -548,6 +547,7 @@ struct dect_cell {
 	struct dect_cbc			cbc;
 	struct list_head		dbcs;
 
+	u32				tbei_rover;
 	struct list_head		tbcs;
 	unsigned int			tbc_num_est;
 	struct dect_channel_desc	tbc_last_chd;

@@ -158,6 +158,12 @@ static inline u8 dect_normal_receive_end(enum dect_cluster_modes mode)
 				      DECT_HALF_FRAME_SIZE - 1;
 }
 
+static inline u8 dect_tdd_slot(u8 slot)
+{
+	return slot < DECT_HALF_FRAME_SIZE ? slot + DECT_HALF_FRAME_SIZE :
+					     slot - DECT_HALF_FRAME_SIZE;
+}
+
 /**
  * enum dect_slot_types - DECT slot types
  *

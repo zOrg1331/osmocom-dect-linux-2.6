@@ -417,7 +417,8 @@ extern int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc);
 extern int dect_mac_con_cfm(struct dect_cluster *cl, u32 mcei,
 			    enum dect_mac_service_types service);
 extern int dect_mac_con_ind(struct dect_cluster *cl,
-			    const struct dect_mbc_id *id);
+			    const struct dect_mbc_id *id,
+			    enum dect_mac_service_types service);
 
 extern int dect_dlc_mac_conn_enc_key_req(struct dect_mac_conn *mc, u64 key);
 extern int dect_dlc_mac_conn_enc_eks_req(struct dect_mac_conn *mc,

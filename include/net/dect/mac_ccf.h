@@ -53,6 +53,40 @@ enum dect_mbc_state {
 	DECT_MBC_NONE,
 	DECT_MBC_INITIATED,
 	DECT_MBC_ESTABLISHED,
+	DECT_MBC_RELEASED,
+};
+
+/**
+ * struct dect_tb - DECT Traffic Bearer
+ *
+ * @list:		MBC traffic bearer list node
+ * @mbc:		MBC controlling the traffic bearer
+ * @ch:			Cell handling the traffic bearer
+ * @id:			Traffic Bearer Controller ID
+ * @handover_timer:	Handover timer
+ * @rx_slot:		Receive slot
+ * @tx_slot:		Transmit slot
+ * @slot_rx_timer:	Receive slot timer
+ * @slot_tx_timer:	Transmit slot timer
+ * @b_rx_skb:		B-Field receive skb
+ */
+struct dect_tb {
+	struct list_head		list;
+	struct dect_mbc			*mbc;
+	const struct dect_cell_handle	*ch;
+	struct dect_tbc_id		id;
+
+	struct dect_timer		handover_timer;
+	bool				handover;
+
+	/* Slot transmit/receive timers */
+	u8				rx_slot;
+	u8				tx_slot;
+	struct dect_timer		slot_rx_timer;
+	struct dect_timer		slot_tx_timer;
+
+	/* I channel data */
+	struct sk_buff			*b_rx_skb;
 };
 
 /**
@@ -60,38 +94,46 @@ enum dect_mbc_state {
  *
  * @list:		Cluster connection list node
  * @cl:			Cluster the MBC is contained in
+ * @refcnt:		Reference count
  * @type:		connection type
  * @id:			MBC identity
  * @state:		MBC state
  * @timer:		Connection setup timer (T200)
- * @ch:			Cell handling associated traffic bearer
  * @setup_cnt:		number of setup attempts (N200)
+ * @tbs:		List of traffic bearers
+ * @normal_rx_timer:	Normal receive half frame timer
+ * @onrmal_tx_timer:	Normal transmit half frame timer
+ * @ck:			Cipher key
+ * @cipher_state:	Ciphering state
  * @cs_rx_seq:		C_S receive sequence number
  * @cs_tx_seq:		C_S transmit sequence number
+ * @cs_tx_ok:		C_S segment transmit OK
+ * @cs_rx_ok:		C_S segment reception OK
+ * @cs_tx_skb:		C_S segment queued for transmission
+ * @cs_tx_skb:		C_S segment queued for delivery to DLC
  */
 struct dect_mbc {
 	struct list_head		list;
 	struct dect_cluster		*cl;
+	unsigned int			refcnt;
 
 	enum dect_mac_connection_types	type;
 	struct dect_mbc_id		id;
 	enum dect_mbc_state		state;
+	enum dect_mac_service_types	service;
 
 	struct timer_list		timer;
-	const struct dect_cell_handle	*ch;
 	u8				setup_cnt;
-	u8				slot;
+
+	struct list_head		tbs;
 
 	/* Normal transmit/receive timers */
 	struct dect_timer		normal_rx_timer;
 	struct dect_timer		normal_tx_timer;
 
-	/* Slot transmit/receive timers */
-	struct dect_timer		slot_rx_timer;
-	struct dect_timer		slot_tx_timer;
-
-	/* I channel */
-	struct sk_buff			*b_rx_skb;
+	/* Encryption */
+	u64				ck;
+	enum dect_cipher_states		cipher_state;
 
 	/* C_S channel */
 	u8				cs_rx_seq;
@@ -102,8 +144,9 @@ struct dect_mbc {
 	struct sk_buff			*cs_tx_skb;
 };
 
-#define DECT_MBC_SETUP_TIMEOUT		(5 * HZ)	/* seconds */
-#define DECT_MBC_SETUP_MAX_ATTEMPTS	10
+#define DECT_MBC_SETUP_TIMEOUT		(5 * HZ)	/* T200: 5 seconds */
+#define DECT_MBC_SETUP_MAX_ATTEMPTS	10		/* N200: 10 attempts */
+#define DECT_MBC_TB_HANDOVER_TIMEOUT	16		/* T203: 16 frames */
 
 extern u32 dect_mbc_alloc_mcei(struct dect_cluster *cl);
 extern int dect_mac_con_req(struct dect_cluster *cl,
@@ -154,15 +197,18 @@ struct dect_ccf_ops {
 
 	int	(*tbc_establish_ind)(const struct dect_cluster_handle *,
 				     const struct dect_cell_handle *,
-				     const struct dect_mbc_id *);
+				     const struct dect_tbc_id *,
+				     enum dect_mac_service_types, bool);
+	int	(*tbc_establish_cfm)(const struct dect_cluster_handle *,
+				     const struct dect_tbc_id *, bool, u8);
 	void	(*tbc_dis_ind)(const struct dect_cluster_handle *,
-			       const struct dect_mbc_id *,
+			       const struct dect_tbc_id *,
 			       enum dect_release_reasons);
-	int	(*mbc_conn_notify)(const struct dect_cluster_handle *,
-				   const struct dect_mbc_id *,
-				   enum dect_tbc_event);
+	int	(*tbc_event_ind)(const struct dect_cluster_handle *,
+				 const struct dect_tbc_id *,
+				 enum dect_tbc_event);
 	void	(*tbc_data_ind)(const struct dect_cluster_handle *,
-				const struct dect_mbc_id *,
+				const struct dect_tbc_id *,
 				enum dect_data_channels chan,
 				struct sk_buff *);
 

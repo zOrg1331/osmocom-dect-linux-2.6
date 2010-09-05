@@ -22,7 +22,7 @@
 #include <net/dect/dect.h>
 
 #define mc_debug(mc, fmt, args...) \
-	pr_debug("MC (MCEI: %u %s): " fmt, \
+	pr_debug("MC (MCEI %u/%s): " fmt, \
 		 (mc)->mcei, dect_mc_states[(mc)->state], ## args)
 
 static const char * const dect_mc_states[] = {
@@ -125,7 +125,6 @@ int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc)
 		.pmid		= mc->mci.pmid,
 		.type		= DECT_MAC_CONN_BASIC,
 		.ecn		= mc->mci.lcn,
-		.service	= mc->service,
 	};
 	int err;
 
@@ -151,7 +150,8 @@ int dect_mac_con_cfm(struct dect_cluster *cl, u32 mcei,
 	return 0;
 }
 
-int dect_mac_con_ind(struct dect_cluster *cl, const struct dect_mbc_id *id)
+int dect_mac_con_ind(struct dect_cluster *cl, const struct dect_mbc_id *id,
+		     enum dect_mac_service_types service)
 {
 	struct dect_mac_conn *mc;
 	struct dect_mci mci = {
@@ -163,7 +163,7 @@ int dect_mac_con_ind(struct dect_cluster *cl, const struct dect_mbc_id *id)
 	mc = dect_mac_conn_init(cl, &mci, id);
 	if (mc == NULL)
 		return -ENOMEM;
-	mc->service = id->service;
+	mc->service = service;
 
 	mc_debug(mc, "MAC_CON-ind\n");
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_OPEN);

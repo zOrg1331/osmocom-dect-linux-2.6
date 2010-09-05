@@ -782,6 +782,7 @@ static struct sk_buff *dect_lc_reassemble(struct dect_lc *lc,
 
 		flen = channel_sdu_size[chan];
 		lc->rx_len = roundup(len, flen);
+		lc_debug(lc, "new SDU: len: %u flen: %u\n", len, flen);
 	}
 
 	lc->rx_head = skb_append_frag(lc->rx_head, skb);
@@ -800,7 +801,7 @@ static struct sk_buff *dect_lc_reassemble(struct dect_lc *lc,
 		/* Trim checksum and filling */
 		dect_fa_parse_len(&fl, skb);
 		skb_trim(skb, fl.len + DECT_FA_HDR_SIZE);
-		lc_debug(lc, "reassembled SDU len %u\n", skb->len);
+		lc_debug(lc, "reassembled SDU: len: %u\n", skb->len);
 	}
 
 	return skb;

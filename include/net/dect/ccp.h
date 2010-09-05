@@ -27,7 +27,8 @@ enum dect_ccp_primitives {
 	DECT_CCP_TBC_ENC_EKS_REQ,
 	/* CSF -> CCF */
 	DECT_CCP_TBC_ESTABLISH_IND,
-	DECT_CCP_MBC_CONN_NOTIFY,
+	DECT_CCP_TBC_ESTABLISH_CFM,
+	DECT_CCP_TBC_EVENT_IND,
 	DECT_CCP_TBC_DATA_IND,
 	DECT_CCP_TBC_DIS_IND,
 };
@@ -65,8 +66,8 @@ struct dect_ccp_page_msg {
 	u8		long_page;
 } __attribute__((packed));
 
-struct dect_ccp_mbc_msg {
-	__be32		mcei;
+struct dect_ccp_tbc_msg {
+	__be32		tbei;
 	__be32		pmid;
 	__be64		ari;
 	u8		ecn;

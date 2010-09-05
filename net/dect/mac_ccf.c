@@ -167,7 +167,65 @@ static void dect_bmc_page_ind(const struct dect_cluster_handle *clh,
  */
 
 #define mbc_debug(mbc, fmt, args...) \
-	pr_debug("MBC (MCEI %u): " fmt, (mbc)->id.mcei, ## args);
+	pr_debug("MBC (MCEI %u/%s): " fmt, \
+		 (mbc)->id.mcei, dect_mbc_states[(mbc)->state], ## args);
+
+static const char * const dect_mbc_states[] = {
+	[DECT_MBC_NONE]		= "NONE",
+	[DECT_MBC_INITIATED]	= "INITIATED",
+	[DECT_MBC_ESTABLISHED]	= "ESTABLISHED",
+	[DECT_MBC_RELEASED]	= "RELEASED",
+};
+
+static void dect_mbc_hold(struct dect_mbc *mbc)
+{
+	mbc->refcnt++;
+}
+
+static void dect_mbc_put(struct dect_mbc *mbc)
+{
+	if (--mbc->refcnt > 0)
+		return;
+	kfree(mbc);
+}
+
+static struct dect_tb *dect_mbc_tb_get_by_lbn(const struct dect_mbc *mbc,
+					      const struct dect_tbc_id *id)
+{
+	struct dect_tb *tb;
+
+	list_for_each_entry(tb, &mbc->tbs, list) {
+		if (tb->id.lbn == id->lbn)
+			return tb;
+	}
+	return NULL;
+}
+
+static struct dect_tb *dect_mbc_tb_get_by_tbei(const struct dect_mbc *mbc,
+					       const struct dect_tbc_id *id)
+{
+	struct dect_tb *tb;
+
+	list_for_each_entry(tb, &mbc->tbs, list) {
+		if (tb->id.tbei == id->tbei)
+			return tb;
+	}
+	return NULL;
+}
+
+static struct dect_mbc *dect_mbc_get_by_tbc_id(const struct dect_cluster *cl,
+					       const struct dect_tbc_id *id)
+{
+	struct dect_mbc *mbc;
+
+	list_for_each_entry(mbc, &cl->mbcs, list) {
+		if (!memcmp(&mbc->id.ari, &id->ari, sizeof(id->ari)) &&
+		    !memcmp(&mbc->id.pmid, &id->pmid, sizeof(id->pmid)) &&
+		    mbc->id.ecn == id->ecn)
+			return mbc;
+	}
+	return NULL;
+}
 
 static struct dect_mbc *dect_mbc_get_by_mcei(const struct dect_cluster *cl, u32 mcei)
 {
@@ -218,14 +276,21 @@ static bool dect_ct_tail_allowed(const struct dect_cluster *cl, u8 framenum)
 static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
 {
 	struct dect_mbc *mbc = data;
+	struct dect_tb *tb;
 	struct sk_buff *skb;
 
 	mbc_debug(mbc, "Normal RX timer\n");
+	dect_mbc_hold(mbc);
 
 	if (mbc->cs_rx_skb != NULL) {
 		skb = mbc->cs_rx_skb;
 		mbc->cs_rx_skb = NULL;
 		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_C_S, skb);
+
+		/* C-channel reception might trigger release of the MBC in case
+		 * it acknowledges the last outstanding LAPC I-frame. */
+		if (mbc->state == DECT_MBC_RELEASED)
+			goto out;
 	}
 
 	if (mbc->cs_tx_ok && mbc->cs_rx_ok) {
@@ -234,14 +299,18 @@ static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
 	}
 	mbc->cs_rx_ok = false;
 
-	if (mbc->b_rx_skb != NULL) {
-		skb = mbc->b_rx_skb;
-		mbc->b_rx_skb = NULL;
+	list_for_each_entry(tb, &mbc->tbs, list) {
+		if (tb->b_rx_skb == NULL)
+			continue;
+		skb = tb->b_rx_skb;
+		tb->b_rx_skb = NULL;
 		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_I_N, skb);
 	}
 
 	dect_timer_add(cl, &mbc->normal_rx_timer, DECT_TIMER_RX,
 		       1, dect_normal_receive_base(cl->mode));
+out:
+	dect_mbc_put(mbc);
 }
 
 /*
@@ -251,18 +320,20 @@ static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
  */
 static void dect_mbc_slot_rx_timer(struct dect_cluster *cl, void *data)
 {
-	struct dect_mbc *mbc = data;
+	struct dect_tb *tb = data;
+	struct dect_mbc *mbc = tb->mbc;
 	struct sk_buff *skb;
 
-	mbc_debug(mbc, "Slot RX timer\n");
+	mbc_debug(mbc, "Slot RX timer: TBEI: %u LBN: %u slot: %u\n",
+		  tb->id.tbei, tb->id.lbn, tb->rx_slot);
 
-	if (mbc->b_rx_skb != NULL) {
-		skb = mbc->b_rx_skb;
-		mbc->b_rx_skb = NULL;
+	if (tb->b_rx_skb != NULL) {
+		skb = tb->b_rx_skb;
+		tb->b_rx_skb = NULL;
 		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_I_N, skb);
 	}
 
-	dect_timer_add(cl, &mbc->slot_rx_timer, DECT_TIMER_RX, 1, mbc->slot);
+	dect_timer_add(cl, &tb->slot_rx_timer, DECT_TIMER_RX, 1, tb->rx_slot);
 }
 
 /*
@@ -276,8 +347,9 @@ static void dect_mbc_slot_rx_timer(struct dect_cluster *cl, void *data)
  */
 static void dect_mbc_normal_tx_timer(struct dect_cluster *cl, void *data)
 {
+	const struct dect_cell_handle *ch;
 	struct dect_mbc *mbc = data;
-	const struct dect_cell_handle *ch = mbc->ch;
+	struct dect_tb *tb;
 	struct sk_buff *skb;
 
 	mbc_debug(mbc, "Normal TX timer\n");
@@ -292,17 +364,25 @@ static void dect_mbc_normal_tx_timer(struct dect_cluster *cl, void *data)
 			}
 		}
 
-		if (mbc->cs_tx_skb != NULL &&
-		    (skb = skb_clone(mbc->cs_tx_skb, GFP_ATOMIC)) != NULL) {
-			ch->ops->tbc_data_req(ch, &mbc->id, DECT_MC_C_S, skb);
-			mbc->cs_tx_ok = true;
+		if (mbc->cs_tx_skb != NULL) {
+			list_for_each_entry(tb, &mbc->tbs, list) {
+				skb = skb_clone(mbc->cs_tx_skb, GFP_ATOMIC);
+				if (skb == NULL)
+					continue;
+				ch = tb->ch;
+				ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_C_S, skb);
+				mbc->cs_tx_ok = true;
+			}
 		}
 	}
 
-	if (1 || mbc->id.service != DECT_SERVICE_IN_MIN_DELAY) {
-		skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
-		if (skb != NULL)
-			ch->ops->tbc_data_req(ch, &mbc->id, DECT_MC_I_N, skb);
+	if (mbc->service != DECT_SERVICE_IN_MIN_DELAY) {
+		list_for_each_entry(tb, &mbc->tbs, list) {
+			ch = tb->ch;
+			skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
+			if (skb != NULL)
+				ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_I_N, skb);
+		}
 	}
 
 	dect_timer_add(cl, &mbc->normal_tx_timer, DECT_TIMER_TX,
@@ -316,17 +396,19 @@ static void dect_mbc_normal_tx_timer(struct dect_cluster *cl, void *data)
  */
 static void dect_mbc_slot_tx_timer(struct dect_cluster *cl, void *data)
 {
-	struct dect_mbc *mbc = data;
-	const struct dect_cell_handle *ch = mbc->ch;
+	struct dect_tb *tb = data;
+	struct dect_mbc *mbc = tb->mbc;
+	const struct dect_cell_handle *ch = tb->ch;
 	struct sk_buff *skb;
 
-	mbc_debug(mbc, "Slot TX timer\n");
+	mbc_debug(mbc, "Slot TX timer: TBEI: %u LBN: %u slot: %u\n",
+		  tb->id.tbei, tb->id.lbn, tb->tx_slot);
 
 	skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
 	if (skb != NULL)
-		ch->ops->tbc_data_req(ch, &mbc->id, DECT_MC_I_N, skb);
+		ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_I_N, skb);
 
-	dect_timer_add(cl, &mbc->slot_tx_timer, DECT_TIMER_TX, 1, mbc->slot);
+	dect_timer_add(cl, &tb->slot_tx_timer, DECT_TIMER_TX, 1, tb->tx_slot);
 }
 
 static int dect_mbc_complete_setup(struct dect_cluster *cl, struct dect_mbc *mbc)
@@ -338,42 +420,121 @@ static int dect_mbc_complete_setup(struct dect_cluster *cl, struct dect_mbc *mbc
 		       0, dect_normal_receive_base(cl->mode));
 	dect_timer_add(cl, &mbc->normal_tx_timer, DECT_TIMER_TX,
 		       0, dect_normal_transmit_base(cl->mode));
+	mbc->state = DECT_MBC_ESTABLISHED;
 
-	if (0 && mbc->id.service == DECT_SERVICE_IN_MIN_DELAY) {
-		dect_timer_add(cl, &mbc->normal_rx_timer, DECT_TIMER_RX,
-			       0, mbc->slot);
-		dect_timer_add(cl, &mbc->normal_tx_timer, DECT_TIMER_TX,
-			       0, mbc->slot);
-	}
 	return 1;
+}
+
+static void dect_mbc_tb_release(struct dect_tb *tb);
+
+static void dect_mbc_tb_handover_timer(struct dect_cluster *cl, void *data)
+{
+	struct dect_tb *tb = data, *tb1, *i;
+	struct dect_mbc *mbc = tb->mbc;
+
+	mbc_debug(mbc, "Handover timer: TBEI: %u LBN: %u\n",
+		  tb->id.tbei, tb->id.lbn);
+
+	tb1 = NULL;
+	list_for_each_entry(i, &mbc->tbs, list) {
+		if (i->id.lbn == tb->id.lbn) {
+			tb1 = i;
+			break;
+		}
+	}
+	if (tb1 == NULL)
+		return;
+
+	tb1->ch->ops->tbc_dis_req(tb1->ch, &tb1->id,
+				  DECT_REASON_BEARER_HANDOVER_COMPLETED);
+	list_del(&tb1->list);
+	dect_mbc_tb_release(tb1);
+}
+
+static void dect_mbc_tb_complete_setup(struct dect_cluster *cl, struct dect_tb *tb)
+{
+	if (cl->mode == DECT_MODE_FP && tb->handover)
+		dect_timer_add(cl, &tb->handover_timer, DECT_TIMER_RX,
+			       DECT_MBC_TB_HANDOVER_TIMEOUT, tb->rx_slot);
+
+	if (tb->mbc->service == DECT_SERVICE_IN_MIN_DELAY) {
+		dect_timer_add(cl, &tb->slot_rx_timer, DECT_TIMER_RX,
+			       0, tb->rx_slot);
+		dect_timer_add(cl, &tb->slot_tx_timer, DECT_TIMER_TX,
+			       0, tb->tx_slot);
+	}
+}
+
+static void dect_mbc_tb_release(struct dect_tb *tb)
+{
+	dect_timer_del(&tb->handover_timer);
+	dect_timer_del(&tb->slot_rx_timer);
+	dect_timer_del(&tb->slot_tx_timer);
+	kfree(tb);
+}
+
+static struct dect_tb *dect_mbc_tb_init(struct dect_mbc *mbc,
+					const struct dect_cell_handle *ch, u8 lbn)
+{
+	struct dect_tb *tb;
+
+	tb = kzalloc(sizeof(*tb), GFP_ATOMIC);
+	if (tb == NULL)
+		return NULL;
+
+	tb->mbc      = mbc;
+	tb->ch       = ch;
+	tb->id.ari   = mbc->id.ari;
+	tb->id.pmid  = mbc->id.pmid;
+	tb->id.ecn   = 0;
+	tb->id.lbn   = lbn;
+	tb->id.tbei  = 0;
+	tb->handover = false;
+	tb->rx_slot  = 0;
+	tb->tx_slot  = 0;
+
+	dect_timer_setup(&tb->handover_timer, dect_mbc_tb_handover_timer, tb);
+	dect_timer_setup(&tb->slot_rx_timer, dect_mbc_slot_rx_timer, tb);
+	dect_timer_setup(&tb->slot_tx_timer, dect_mbc_slot_tx_timer, tb);
+
+	return tb;
 }
 
 static void dect_mbc_release(struct dect_mbc *mbc)
 {
+	struct dect_tb *tb, *next;
+
 	mbc_debug(mbc, "release\n");
+	mbc->state = DECT_MBC_RELEASED;
 	del_timer(&mbc->timer);
 	list_del(&mbc->list);
 
 	dect_timer_del(&mbc->normal_rx_timer);
 	dect_timer_del(&mbc->normal_tx_timer);
-	dect_timer_del(&mbc->slot_rx_timer);
-	dect_timer_del(&mbc->slot_tx_timer);
+
+	list_for_each_entry_safe(tb, next, &mbc->tbs, list)
+		dect_mbc_tb_release(tb);
 
 	kfree_skb(mbc->cs_rx_skb);
 	kfree_skb(mbc->cs_tx_skb);
-	kfree(mbc);
+	dect_mbc_put(mbc);
 }
 
 static void dect_mbc_timeout(unsigned long data)
 {
 	struct dect_mbc *mbc = (struct dect_mbc *)data;
+	struct dect_tb *tb;
 	enum dect_release_reasons reason;
 
 	mbc_debug(mbc, "timeout\n");
 	reason = DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED;
-	mbc->ch->ops->tbc_dis_req(mbc->ch, &mbc->id, reason);
+
+	list_for_each_entry(tb, &mbc->tbs, list)
+		tb->ch->ops->tbc_dis_req(tb->ch, &tb->id, reason);
+
 	if (mbc->state != DECT_MBC_NONE)
 		dect_mac_dis_ind(mbc->cl, mbc->id.mcei, reason);
+
 	dect_mbc_release(mbc);
 }
 
@@ -385,14 +546,14 @@ static struct dect_mbc *dect_mbc_init(struct dect_cluster *cl,
 	mbc = kzalloc(sizeof(*mbc), GFP_ATOMIC);
 	if (mbc == NULL)
 		return NULL;
-	mbc->cl    = cl;
-	mbc->id    = *id;
-	mbc->state = DECT_MBC_NONE;
+	mbc->refcnt = 1;
+	mbc->cl     = cl;
+	mbc->id     = *id;
+	mbc->state  = DECT_MBC_NONE;
 
+	INIT_LIST_HEAD(&mbc->tbs);
 	dect_timer_setup(&mbc->normal_rx_timer, dect_mbc_normal_rx_timer, mbc);
 	dect_timer_setup(&mbc->normal_tx_timer, dect_mbc_normal_tx_timer, mbc);
-	dect_timer_setup(&mbc->slot_rx_timer, dect_mbc_slot_rx_timer, mbc);
-	dect_timer_setup(&mbc->slot_tx_timer, dect_mbc_slot_tx_timer, mbc);
 
 	mbc->cs_tx_seq = 1;
 	mbc->cs_rx_seq = 1;
@@ -402,9 +563,9 @@ static struct dect_mbc *dect_mbc_init(struct dect_cluster *cl,
 	return mbc;
 }
 
-static int dect_mbc_setup_tbc(struct dect_mbc *mbc)
+static int dect_mbc_tb_setup(struct dect_mbc *mbc, struct dect_tb *tb)
 {
-	const struct dect_cell_handle *ch = mbc->ch;
+	const struct dect_cell_handle *ch = tb->ch;
 	struct dect_channel_desc chd;
 	int err;
 
@@ -412,7 +573,8 @@ static int dect_mbc_setup_tbc(struct dect_mbc *mbc)
 	chd.pkt   = DECT_PACKET_P32;
 	chd.b_fmt = DECT_B_UNPROTECTED;
 
-	err = ch->ops->tbc_establish_req(ch, &mbc->id, &chd);
+	err = ch->ops->tbc_establish_req(ch, &tb->id, &chd,
+					 DECT_SERVICE_IN_MIN_DELAY, false);
 	if (err < 0)
 		return err;
 
@@ -430,6 +592,7 @@ int dect_mac_con_req(struct dect_cluster *cl, const struct dect_mbc_id *id)
 {
 	struct dect_cell_handle *ch;
 	struct dect_mbc *mbc;
+	struct dect_tb *tb;
 	int err;
 
 	err = -EHOSTUNREACH;
@@ -442,15 +605,22 @@ int dect_mac_con_req(struct dect_cluster *cl, const struct dect_mbc_id *id)
 	if (mbc == NULL)
 		goto err1;
 	mbc->state = DECT_MBC_INITIATED;
-	mbc->ch = ch;
 	mbc_debug(mbc, "MAC_CON-req\n");
 
-	err = dect_mbc_setup_tbc(mbc);
-	if (err < 0)
+	tb = dect_mbc_tb_init(mbc, ch, 0xf);
+	if (tb == NULL)
 		goto err2;
 
+	err = dect_mbc_tb_setup(mbc, tb);
+	if (err < 0)
+		goto err3;
+
+	list_add_tail(&tb->list, &mbc->tbs);
 	mod_timer(&mbc->timer, jiffies + DECT_MBC_SETUP_TIMEOUT);
 	return 0;
+
+err3:
+	dect_mbc_tb_release(tb);
 err2:
 	dect_mbc_release(mbc);
 err1:
@@ -459,98 +629,200 @@ err1:
 
 void dect_mac_dis_req(struct dect_cluster *cl, u32 mcei)
 {
+	const struct dect_cell_handle *ch;
 	struct dect_mbc *mbc;
+	struct dect_tb *tb;
 
 	mbc = dect_mbc_get_by_mcei(cl, mcei);
 	if (mbc == NULL)
 		return;
 	mbc_debug(mbc, "MAC_DIS-req\n");
-	mbc->ch->ops->tbc_dis_req(mbc->ch, &mbc->id,
-				  DECT_REASON_CONNECTION_RELEASE);
+
+	list_for_each_entry(tb, &mbc->tbs, list) {
+		ch = tb->ch;
+		ch->ops->tbc_dis_req(ch, &tb->id, DECT_REASON_CONNECTION_RELEASE);
+	}
+
 	dect_mbc_release(mbc);
 }
 
 /* TBC establishment indication from CSF */
 static int dect_tbc_establish_ind(const struct dect_cluster_handle *clh,
 				  const struct dect_cell_handle *ch,
-				  const struct dect_mbc_id *id)
+				  const struct dect_tbc_id *id,
+				  enum dect_mac_service_types service,
+				  bool handover)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc_id mid;
 	struct dect_mbc *mbc;
+	struct dect_tb *tb;
+	unsigned int cnt;
 	int err;
 
-	memcpy(&mid, id, sizeof(mid));
-	mid.mcei = dect_mbc_alloc_mcei(cl);
+	mbc = dect_mbc_get_by_tbc_id(cl, id);
+	if (mbc == NULL) {
+		if (handover)
+			return -ENOENT;
+
+		mid.mcei = dect_mbc_alloc_mcei(cl);
+		mid.type = 0;
+		mid.ari  = id->ari;
+		mid.pmid = id->pmid;
+		mid.ecn  = id->ecn;
+
+		err = -ENOMEM;
+		mbc = dect_mbc_init(cl, &mid);
+		if (mbc == NULL)
+			goto err1;
+		mbc->service = service;
+	} else {
+		if (!handover)
+			return -EEXIST;
+
+		cnt = 0;
+		list_for_each_entry(tb, &mbc->tbs, list) {
+			if (tb->id.lbn == id->lbn)
+				cnt++;
+		}
+		if (cnt > 1)
+			return -EEXIST;
+
+		if (mbc->cipher_state == DECT_CIPHER_ENABLED) {
+			err = ch->ops->tbc_enc_req(ch, id, mbc->ck);
+			if (err < 0)
+				return err;
+		}
+	}
+
+	mbc_debug(mbc, "TBC_ESTABLISH-ind: TBEI: %u LBN: %u H/O: %u\n",
+		  id->tbei, id->lbn, handover);
 
 	err = -ENOMEM;
-	mbc = dect_mbc_init(cl, &mid);
-	if (mbc == NULL)
-		goto err1;
-	mbc->ch = ch;
-	mbc_debug(mbc, "TBC_ESTABLISH-ind\n");
-
-	err = ch->ops->tbc_establish_res(ch, &mid);
-	if (err < 0)
+	tb = dect_mbc_tb_init(mbc, ch, id->lbn);
+	if (tb == NULL)
 		goto err2;
+	tb->handover = handover;
 
-	mod_timer(&mbc->timer, jiffies + DECT_MBC_SETUP_TIMEOUT);
+	err = ch->ops->tbc_establish_res(ch, id);
+	if (err < 0)
+		goto err3;
+
+	list_add_tail(&tb->list, &mbc->tbs);
+	if (!handover)
+		mod_timer(&mbc->timer, jiffies + DECT_MBC_SETUP_TIMEOUT);
 	return 0;
+
+err3:
+	dect_mbc_tb_release(tb);
 err2:
 	dect_mbc_release(mbc);
 err1:
 	return err;
 }
 
-static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
-				const struct dect_mbc_id *id,
-				enum dect_tbc_event event)
+static int dect_tbc_establish_cfm(const struct dect_cluster_handle *clh,
+				  const struct dect_tbc_id *id, bool success,
+				  u8 rx_slot)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
+	struct dect_tb *tb, *i;
 
-	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
+	mbc = dect_mbc_get_by_tbc_id(cl, id);
 	if (mbc == NULL)
 		return -ENOENT;
-	mbc_debug(mbc, "notify event: %u\n", event);
 
-	switch (event) {
-	case DECT_TBC_SETUP_FAILED:
+	mbc_debug(mbc, "TBC_ESTABLISH-cfm: TBEI: %u LBN: %u success: %d\n",
+		  id->tbei, id->lbn, success);
+
+	tb = NULL;
+	list_for_each_entry(i, &mbc->tbs, list) {
+		if (i->id.lbn  == id->lbn &&
+		    i->id.tbei == 0) {
+			tb = i;
+			break;
+		}
+	}
+	if (tb == NULL)
+		return -ENOENT;
+
+	if (success) {
+		tb->id.tbei = id->tbei;
+		tb->rx_slot = rx_slot;
+		tb->tx_slot = dect_tdd_slot(rx_slot);
+
 		switch (mbc->state) {
 		case DECT_MBC_NONE:
+			if (!dect_mbc_complete_setup(cl, mbc))
+				return 0;
+			dect_mbc_tb_complete_setup(cl, tb);
+
+			return dect_mac_con_ind(cl, &mbc->id, mbc->service);
+		case DECT_MBC_INITIATED:
+			if (!dect_mbc_complete_setup(cl, mbc))
+				return 0;
+			dect_mbc_tb_complete_setup(cl, tb);
+
+			return dect_mac_con_cfm(cl, mbc->id.mcei, mbc->service);
+		case DECT_MBC_ESTABLISHED:
+			dect_mbc_tb_complete_setup(cl, tb);
+			return 0;
+		default:
+			return WARN_ON(-1);
+		}
+	} else {
+		switch (mbc->state) {
+		case DECT_MBC_NONE:
+			dect_mbc_release(mbc);
 			return 0;
 		case DECT_MBC_INITIATED:
 			if (mbc->setup_cnt > DECT_MBC_SETUP_MAX_ATTEMPTS ||
-			    dect_mbc_setup_tbc(mbc) < 0) {
-				dect_mac_dis_ind(cl, id->mcei,
+			    dect_mbc_tb_setup(mbc, tb) < 0) {
+				dect_mac_dis_ind(cl, mbc->id.mcei,
 					DECT_REASON_BEARER_SETUP_OR_HANDOVER_FAILED);
 				dect_mbc_release(mbc);
 			}
 			return 0;
+		case DECT_MBC_ESTABLISHED:
+			list_del(&tb->list);
+			dect_mbc_tb_release(tb);
+			return 0;
 		default:
 			return WARN_ON(-1);
 		}
-	case DECT_TBC_SETUP_COMPLETE:
-		switch (mbc->state) {
-		case DECT_MBC_NONE:
-			if (!dect_mbc_complete_setup(cl, mbc))
-				return 0;
-			return dect_mac_con_ind(cl, id);
-		case DECT_MBC_INITIATED:
-			if (!dect_mbc_complete_setup(cl, mbc))
-				return 0;
-			return dect_mac_con_cfm(cl, id->mcei, id->service);
-		default:
-			return WARN_ON(-1);
-		}
+	}
+}
+
+static int dect_tbc_event_ind(const struct dect_cluster_handle *clh,
+			      const struct dect_tbc_id *id,
+			      enum dect_tbc_event event)
+{
+	struct dect_cluster *cl = dect_cluster(clh);
+	struct dect_mbc *mbc;
+	struct dect_tb *tb;
+
+	mbc = dect_mbc_get_by_tbc_id(cl, id);
+	if (mbc == NULL)
+		return -ENOENT;
+	mbc_debug(mbc, "TBC_EVENT-ind: TBEI: %u LBN: %u event: %u\n",
+		  id->tbei, id->lbn, event);
+
+	tb = dect_mbc_tb_get_by_tbei(mbc, id);
+	if (tb == NULL)
+		return -ENOENT;
+
+	switch (event) {
 	case DECT_TBC_ACK_RECEIVED:
 		mbc->cs_rx_ok = true;
 		return 0;
 	case DECT_TBC_CIPHER_ENABLED:
-		dect_mac_enc_eks_ind(cl, id->mcei, DECT_CIPHER_ENABLED);
+		mbc->cipher_state = DECT_TBC_CIPHER_ENABLED;
+		dect_mac_enc_eks_ind(cl, mbc->id.mcei, DECT_CIPHER_ENABLED);
 		return 0;
 	case DECT_TBC_CIPHER_DISABLED:
-		dect_mac_enc_eks_ind(cl, id->mcei, DECT_CIPHER_DISABLED);
+		mbc->cipher_state = DECT_TBC_CIPHER_DISABLED;
+		dect_mac_enc_eks_ind(cl, mbc->id.mcei, DECT_CIPHER_DISABLED);
 		return 0;
 	default:
 		return WARN_ON(-1);
@@ -559,17 +831,29 @@ static int dect_mbc_conn_notify(const struct dect_cluster_handle *clh,
 
 /* TBC release indication from CSF */
 static void dect_tbc_dis_ind(const struct dect_cluster_handle *clh,
-			     const struct dect_mbc_id *id,
+			     const struct dect_tbc_id *id,
 			     enum dect_release_reasons reason)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
+	struct dect_tb *tb;
 
-	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
+	mbc = dect_mbc_get_by_tbc_id(cl, id);
 	if (mbc == NULL)
 		return;
-	mbc_debug(mbc, "TBC_DIS-ind: reason: %u\n", reason);
-	dect_mac_dis_ind(cl, id->mcei, reason);
+	mbc_debug(mbc, "TBC_DIS-ind: TBEI: %u LBN: %u reason: %u\n",
+		  id->tbei, id->lbn, reason);
+
+	tb = dect_mbc_tb_get_by_tbei(mbc, id);
+	if (tb == NULL)
+		return;
+
+	list_del(&tb->list);
+	dect_mbc_tb_release(tb);
+	if (!list_empty(&mbc->tbs))
+		return;
+
+	dect_mac_dis_ind(cl, mbc->id.mcei, reason);
 	dect_mbc_release(mbc);
 }
 
@@ -577,12 +861,22 @@ static void dect_tbc_dis_ind(const struct dect_cluster_handle *clh,
 int dect_mac_enc_key_req(const struct dect_cluster *cl, u32 mcei, u64 ck)
 {
 	struct dect_mbc *mbc;
+	struct dect_tb *tb;
+	int err;
 
 	mbc = dect_mbc_get_by_mcei(cl, mcei);
 	if (mbc == NULL)
 		return -ENOENT;
 	mbc_debug(mbc, "MAC_ENC_KEY-req: key: %016llx\n", (unsigned long long)ck);
-	return mbc->ch->ops->tbc_enc_key_req(mbc->ch, &mbc->id, ck);
+
+	mbc->ck = ck;
+	list_for_each_entry(tb, &mbc->tbs, list) {
+		err = tb->ch->ops->tbc_enc_key_req(tb->ch, &tb->id, ck);
+		if (err < 0)
+			return err;
+	}
+
+	return 0;
 }
 
 /* Change encryption status requst from DLC */
@@ -590,37 +884,55 @@ int dect_mac_enc_eks_req(const struct dect_cluster *cl, u32 mcei,
 			 enum dect_cipher_states status)
 {
 	struct dect_mbc *mbc;
+	struct dect_tb *tb;
+	int err;
 
 	mbc = dect_mbc_get_by_mcei(cl, mcei);
 	if (mbc == NULL)
 		return -ENOENT;
 	mbc_debug(mbc, "MAC_ENC_EKS-req: status: %d\n", status);
-	return mbc->ch->ops->tbc_enc_eks_req(mbc->ch, &mbc->id, status);
+
+	if (mbc->cipher_state == status)
+		return 0;
+
+	list_for_each_entry(tb, &mbc->tbs, list) {
+		err = tb->ch->ops->tbc_enc_eks_req(tb->ch, &tb->id, status);
+		if (err < 0)
+			return err;
+	}
+	return 0;
 }
 
 static void dect_tbc_data_ind(const struct dect_cluster_handle *clh,
-			      const struct dect_mbc_id *id,
+			      const struct dect_tbc_id *id,
 			      enum dect_data_channels chan,
 			      struct sk_buff *skb)
 {
 	const struct dect_cluster *cl = dect_cluster(clh);
 	struct dect_mbc *mbc;
+	struct dect_tb *tb;
 
-	mbc = dect_mbc_get_by_mcei(cl, id->mcei);
+	mbc = dect_mbc_get_by_tbc_id(cl, id);
 	if (mbc == NULL)
 		goto err;
-	mbc_debug(mbc, "TBC_DATA-ind: chan: %u len: %u\n", chan, skb->len);
+	mbc_debug(mbc, "TBC_DATA-ind: TBEI: %u LBN: %u chan: %u len: %u\n",
+		  id->tbei, id->lbn, chan, skb->len);
 
 	switch (chan) {
 	case DECT_MC_C_S:
 		/* Drop duplicate segments */
 		if (DECT_CS_CB(skb)->seq != mbc->cs_rx_seq)
 			goto err;
+		if (mbc->cs_rx_skb != NULL)
+			goto err;
 		mbc->cs_rx_seq = !mbc->cs_rx_seq;
 		mbc->cs_rx_skb = skb;
 		return;
 	case DECT_MC_I_N:
-		mbc->b_rx_skb = skb;
+		tb = dect_mbc_tb_get_by_tbei(mbc, id);
+		if (tb == NULL)
+			goto err;
+		tb->b_rx_skb = skb;
 		return;
 	default:
 		break;
@@ -688,7 +1000,8 @@ static const struct dect_ccf_ops dect_ccf_ops = {
 	.scan_report		= dect_scan_report,
 	.mac_info_ind		= dect_mac_info_ind,
 	.tbc_establish_ind	= dect_tbc_establish_ind,
-	.mbc_conn_notify	= dect_mbc_conn_notify,
+	.tbc_establish_cfm	= dect_tbc_establish_cfm,
+	.tbc_event_ind		= dect_tbc_event_ind,
 	.tbc_dis_ind		= dect_tbc_dis_ind,
 	.tbc_data_ind		= dect_tbc_data_ind,
 	.bmc_page_ind		= dect_bmc_page_ind,

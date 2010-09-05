@@ -827,6 +827,23 @@ enum dect_mac_connection_types {
 };
 
 /**
+ * struct dect_tbc_id
+ *
+ * @ari:		FT identifier
+ * @pmid:		Portable MAC identity
+ * @lbn:		Logical Bearer Number
+ * @enc:		Exchanged connection number
+ * @tbei:		Traffic Bearer Endpoint Identifier
+ */
+struct dect_tbc_id {
+	struct dect_ari			ari;
+	struct dect_pmid		pmid;
+	u8				lbn;
+	u8				ecn;
+	u32				tbei;
+};
+
+/**
  * struct dect_mbc_id
  *
  * @mcei:		MAC Connection Endpoint Identifier
@@ -842,7 +859,6 @@ struct dect_mbc_id {
 	struct dect_ari			ari;
 	struct dect_pmid		pmid;
 	u8				ecn;
-	enum dect_mac_service_types	service;
 };
 
 #endif /* _NET_DECT_MAC_H */

@@ -3897,23 +3897,40 @@ static void dect_irc_rx_frame_timer(struct dect_cell *cell, void *data)
 	dect_timer_add(cell, &irc->rx_frame_timer, DECT_TIMER_RX, 1, 23);
 }
 
+/* Primary, secondary and tertiary scan: the secondary scan lags behind the
+ * primary scan by 6 TDMA frames, the tertiary scan by 3 TDMA frames.
+ *
+ * Additional transceivers don't scan for setup attempts, however they each
+ * cover a different carrier in order to speed up channel list construction.
+ */
+static const u8 scn_off_tbl[10] = {
+	[0]	= 0,
+	[1]	= 6,
+	[2]	= 3,
+	[3]	= 8,
+	[4]	= 1,
+	[5]	= 4,
+	[6]	= 9,
+	[7]	= 2,
+	[8]	= 5,
+	[9]	= 7,
+};
+
 static void dect_irc_enable(struct dect_cell *cell, struct dect_irc *irc)
 {
 	struct dect_transceiver *trx = irc->trx;
 	struct dect_channel_desc chd;
 	u8 end, scn_off, scn;
 
-	if (trx->index < 3) {
-		/* Primary, secondary and tertiary scan: the secondary scan lags
-		 * behind the primary scan by 6 TDMA frames, the tertiary scan
-		 * by 3 TDMA frames.
-		 */
-		scn_off = 2 * DECT_IRC_SCN_OFF - trx->index * DECT_IRC_SCN_OFF;
-		scn = dect_carrier_sub(cell->si.ssi.rfcars,
-				       cell->si.ssi.pscn, scn_off);
-		irc->rx_scn = scn;
-		irc->tx_scn = scn;
+	if (trx->index >= 10)
+		return;
 
+	scn_off = scn_off_tbl[trx->index];
+	scn = dect_carrier_sub(cell->si.ssi.rfcars, cell->si.ssi.pscn, scn_off);
+	irc->rx_scn = scn;
+	irc->tx_scn = scn;
+
+	if (trx->index < 3) {
 		/* Set all idle slots to scanning */
 		dect_scan_channel_desc(&chd);
 		dect_foreach_receive_slot(chd.slot, end, cell) {
@@ -3931,26 +3948,6 @@ static void dect_irc_enable(struct dect_cell *cell, struct dect_irc *irc)
 				dect_scan_bearer_enable(trx, &chd);
 			}
 		}
-	} else if (trx->index < 10) {
-		/* Additional transceivers don't scan for setup attempts,
-		 * however they each cover a different carrier in order to
-		 * speed up channel list construction.
-		 */
-		static const u8 scn_off_tbl[10] = {
-			[3]	= 8,
-			[4]	= 1,
-			[5]	= 4,
-			[6]	= 9,
-			[7]	= 2,
-			[8]	= 5,
-			[9]	= 7,
-		};
-
-		scn_off = scn_off_tbl[trx->index];
-		scn = dect_carrier_sub(cell->si.ssi.rfcars,
-				       cell->si.ssi.pscn, scn_off);
-		irc->rx_scn = scn;
-		irc->tx_scn = scn;
 	}
 
 	/* Start frame timers */

@@ -605,6 +605,18 @@ void dect_lc_destroy(struct dect_lc *lc)
 	kfree(lc);
 }
 
+static void dect_lc_put(struct dect_lc *lc)
+{
+	if (--lc->use > 0)
+		return;
+	dect_lc_destroy(lc);
+}
+
+static void dect_lc_hold(struct dect_lc *lc)
+{
+	lc->use++;
+}
+
 void dect_lc_unbind(struct dect_lc *lc, struct dect_lapc *lapc)
 {
 	lc_debug(lc, "unbind LLN: %u use: %u\n", lapc->dli.lln, lc->use);
@@ -612,10 +624,7 @@ void dect_lc_unbind(struct dect_lc *lc, struct dect_lapc *lapc)
 		return;
 
 	lc->lapcs[lapc->dli.lln] = NULL;
-	if (--lc->use > 0)
-		return;
-
-	dect_lc_destroy(lc);
+	dect_lc_put(lc);
 }
 
 void dect_lc_bind(struct dect_lc *lc, struct dect_lapc *lapc)
@@ -623,7 +632,7 @@ void dect_lc_bind(struct dect_lc *lc, struct dect_lapc *lapc)
 	lc_debug(lc, "bind LLN: %u use: %u\n", lapc->dli.lln, lc->use);
 
 	lc->lapcs[lapc->dli.lln] = lapc;
-	lc->use++;
+	dect_lc_hold(lc);
 }
 
 struct dect_lc *dect_lc_init(struct dect_mac_conn *mc, gfp_t gfp)
@@ -916,11 +925,6 @@ void dect_cplane_mac_dis_ind(const struct dect_mac_conn *mc,
 	if (lc == NULL)
 		return;
 
-	/* When no lapcs are bound, destroy immediately since destruction won't
-	 * be triggered by unbinding */
-	if (lc->use == 0)
-		return dect_lc_destroy(lc);
-
 	switch (reason) {
 	case DECT_REASON_BEARER_RELEASE:
 		err = 0;
@@ -936,6 +940,7 @@ void dect_cplane_mac_dis_ind(const struct dect_mac_conn *mc,
 		break;
 	}
 
+	dect_lc_hold(lc);
 	for (i = 0; i < ARRAY_SIZE(lc->lapcs); i++) {
 		if (lc->lapcs[i] == NULL)
 			continue;
@@ -943,6 +948,7 @@ void dect_cplane_mac_dis_ind(const struct dect_mac_conn *mc,
 		dect_lapc_error_report(lc->lapcs[i], err);
 		dect_lapc_destroy(lc->lapcs[i]);
 	}
+	dect_lc_put(lc);
 }
 
 void dect_cplane_mac_enc_eks_ind(const struct dect_mac_conn *mc,

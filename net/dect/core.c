@@ -122,6 +122,32 @@ struct sk_buff *skb_append_frag(struct sk_buff *head, struct sk_buff *skb)
 	head->truesize += skb->truesize;
 	return head;
 }
+EXPORT_SYMBOL_GPL(skb_append_frag);
+
+unsigned int skb_queue_pull(struct sk_buff_head *list, unsigned int len)
+{
+	unsigned int pulled = 0;
+	unsigned long flags;
+	struct sk_buff *skb;
+
+	spin_lock_irqsave(&list->lock, flags);
+	while (len > pulled) {
+		skb = skb_peek(list);
+		if (skb == NULL)
+			break;
+		if (skb->len <= len) {
+			__skb_unlink(skb, list);
+			pulled += skb->len;
+			kfree_skb(skb);
+		} else {
+			__skb_pull(skb, len);
+			pulled += len;
+		}
+	}
+	spin_unlock_irqrestore(&list->lock, flags);
+	return pulled;
+}
+EXPORT_SYMBOL_GPL(skb_queue_pull);
 
 static int __init dect_module_init(void)
 {

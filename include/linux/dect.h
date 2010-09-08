@@ -109,4 +109,15 @@ struct sockaddr_dect_lu {
 			dect_lcn:3;
 };
 
+/* LU1 SAP */
+
+#define DECT_LU1_QUEUE_STATS	0
+
+struct dect_lu1_queue_stats {
+	__u32		rx_bytes;
+	__u32		rx_underflow;
+	__u32		tx_bytes;
+	__u32		tx_underflow;
+};
+
 #endif /* _LINUX_DECT_H */

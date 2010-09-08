@@ -312,5 +312,6 @@ extern int dect_netlink_module_init(void);
 extern void dect_netlink_module_exit(void);
 
 extern struct sk_buff *skb_append_frag(struct sk_buff *head, struct sk_buff *skb);
+extern unsigned int skb_queue_pull(struct sk_buff_head *list, unsigned int len);
 
 #endif /* _NET_DECT_DECT_H */

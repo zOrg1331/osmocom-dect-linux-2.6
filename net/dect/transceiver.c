@@ -287,7 +287,6 @@ again:
 	 * it starts reporting events in the current window.
 	 *
 	 * FIXME: driver should ignore frames with missed interrupts completely
-	 * FIXME2: off by one window if receiver is not first
 	 */
 	if (seqno_before(trx->seqno + trx->ops->eventrate, grp->seqno)) {
 		if (event->slotpos != grp->slot_low) {
@@ -295,7 +294,11 @@ again:
 			__skb_queue_purge(&event->rx_queue);
 			goto out;
 		}
+
 		trx->seqno = grp->seqno;
+		if (grp->slot_high != grp->slot_low)
+			trx->seqno -= trx->ops->eventrate;
+
 		trx_debug(trx, "synchronized to seqno %u\n", trx->seqno);
 	}
 

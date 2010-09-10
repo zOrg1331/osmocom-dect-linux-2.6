@@ -190,7 +190,7 @@ enum dect_bearer_qctrl_state {
 struct dect_dbc {
 	struct list_head		list;
 	struct dect_cell		*cell;
-	struct dect_bearer		*bearer;
+	struct dect_bearer		bearer;
 	struct dect_timer		qctrl_timer;
 	enum dect_bearer_qctrl_state	qctrl;
 	struct dect_bc			bc;
@@ -206,8 +206,8 @@ struct dect_dbc {
  */
 struct dect_cbc {
 	struct dect_cell		*cell;
-	struct dect_bearer		*dl_bearer;
-	struct dect_bearer		*ul_bearer;
+	struct dect_bearer		dl_bearer;
+	struct dect_bearer		ul_bearer;
 	struct dect_bc			bc;
 };
 
@@ -304,8 +304,8 @@ struct dect_tbc {
 	enum dect_mac_service_types	service;
 	bool				handover;
 
-	struct dect_bearer		*txb;
-	struct dect_bearer		*rxb;
+	struct dect_bearer		txb;
+	struct dect_bearer		rxb;
 
 	enum dect_tbc_state		state;
 	struct dect_timer		wait_timer;
@@ -350,8 +350,8 @@ struct dect_dmb {
 	struct list_head		list;
 	struct dect_cell		*cell;
 
-	struct dect_bearer		*rxb1;
-	struct dect_bearer		*rxb2;
+	struct dect_bearer		rxb1;
+	struct dect_bearer		rxb2;
 	struct dect_bc			bc;
 };
 

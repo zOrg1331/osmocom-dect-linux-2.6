@@ -1309,6 +1309,7 @@ static void dect_bearer_enable(struct dect_bearer *bearer)
 static void dect_bearer_disable(struct dect_bearer *bearer)
 {
 	dect_set_channel_mode(bearer->trx, &bearer->chd, DECT_SLOT_IDLE);
+	bearer->trx->slots[bearer->chd.slot].bearer = NULL;
 }
 
 static void dect_bearer_timer_add(struct dect_cell *cell,
@@ -1347,25 +1348,16 @@ static void dect_bearer_release(struct dect_cell *cell,
 	dect_disable_cipher(trx, bearer->chd.slot);
 	if (trx->index < 3)
 		dect_scan_bearer_enable(trx, &bearer->chd);
-
-	kfree(bearer);
 }
 
-static struct dect_bearer *dect_bearer_init(struct dect_cell *cell,
-					    const struct dect_bearer_ops *ops,
-					    enum dect_bearer_types type,
-					    struct dect_transceiver *trx,
-					    const struct dect_channel_desc *chd,
-					    enum dect_bearer_modes mode,
-					    void *data)
+static void dect_bearer_init(struct dect_cell *cell, struct dect_bearer *bearer,
+			     const struct dect_bearer_ops *ops,
+			     enum dect_bearer_types type,
+			     struct dect_transceiver *trx,
+			     const struct dect_channel_desc *chd,
+			     enum dect_bearer_modes mode, void *data)
 {
-	struct dect_bearer *bearer;
-
 	pr_debug("init bearer on slot %u carrier %u\n", chd->slot, chd->carrier);
-	bearer = kzalloc(sizeof(*bearer), GFP_ATOMIC);
-	if (bearer == NULL)
-		goto err1;
-
 	bearer->type  = type;
 	bearer->ops   = ops;
 	bearer->trx   = trx;
@@ -1378,10 +1370,6 @@ static struct dect_bearer *dect_bearer_init(struct dect_cell *cell,
 
 	trx->slots[chd->slot].bearer = bearer;
 	dect_set_channel_mode(bearer->trx, &bearer->chd, DECT_SLOT_IDLE);
-	return bearer;
-
-err1:
-	return NULL;
 }
 
 /*
@@ -1788,9 +1776,9 @@ static void dect_page_add_mac_info(struct dect_cell *cell, struct dect_bc *bc,
 		if (dbc == NULL)
 			goto out;
 		tm.bd.bt = DECT_PT_IT_DUMMY_OR_CL_BEARER_POSITION;
-		tm.bd.sn = dbc->bearer->chd.slot;
+		tm.bd.sn = dbc->bearer.chd.slot;
 		tm.bd.sp = 0;
-		tm.bd.cn = dbc->bearer->chd.carrier;
+		tm.bd.cn = dbc->bearer.chd.carrier;
 		t = dect_build_bearer_description(&tm.bd);
 		break;
 	case DECT_TM_TYPE_RFP_ID:
@@ -2160,6 +2148,11 @@ static u32 dect_tbc_alloc_tbei(struct dect_cell *cell)
 	}
 }
 
+static void dect_tbc_queue_mac_control(struct dect_tbc *tbc, struct sk_buff *skb)
+{
+	skb_queue_tail(&tbc->txb.m_tx_queue, skb);
+}
+
 static struct sk_buff *dect_tbc_build_cctrl(const struct dect_tbc *tbc,
 					    enum dect_cctrl_cmds cmd)
 {
@@ -2197,7 +2190,7 @@ static struct sk_buff *dect_tbc_build_encctrl(const struct dect_tbc *tbc,
 	return dect_build_tail_msg(skb, DECT_TM_TYPE_ENCCTRL, &ectl);
 }
 
-static int dect_tbc_send_confirm(const struct dect_tbc *tbc)
+static int dect_tbc_send_confirm(struct dect_tbc *tbc)
 {
 	struct sk_buff *skb;
 
@@ -2209,11 +2202,11 @@ static int dect_tbc_send_confirm(const struct dect_tbc *tbc)
 	/* The first response is permitted in any frame */
 	if (tbc->state == DECT_TBC_REQ_RCVD)
 		skb->priority = DECT_MT_HIGH_PRIORITY;
-	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+	dect_tbc_queue_mac_control(tbc, skb);
 	return 0;
 }
 
-static int dect_tbc_send_attributes_confirm(const struct dect_tbc *tbc)
+static int dect_tbc_send_attributes_confirm(struct dect_tbc *tbc)
 {
 	struct dect_cctrl cctl;
 	struct sk_buff *skb;
@@ -2241,11 +2234,11 @@ static int dect_tbc_send_attributes_confirm(const struct dect_tbc *tbc)
 	else
 		dect_build_tail_msg(skb, DECT_TM_TYPE_ACCTRL, &cctl);
 
-	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+	dect_tbc_queue_mac_control(tbc, skb);
 	return 0;
 }
 
-static int dect_tbc_send_release(const struct dect_tbc *tbc,
+static int dect_tbc_send_release(struct dect_tbc *tbc,
 				 enum dect_release_reasons reason)
 {
 	struct dect_cctrl cctl;
@@ -2267,7 +2260,7 @@ static int dect_tbc_send_release(const struct dect_tbc *tbc,
 
 	/* RELEASE messages may appear in any frame */
 	skb->priority = DECT_MT_HIGH_PRIORITY;
-	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+	dect_tbc_queue_mac_control(tbc, skb);
 	return 0;
 }
 
@@ -2280,7 +2273,7 @@ static void dect_tbc_state_change(struct dect_tbc *tbc, enum dect_tbc_state stat
 
 	if (tbc->state == DECT_TBC_ESTABLISHED) {
 		cell->tbc_num_est--;
-		cell->tbc_last_chd = tbc->rxb->chd;
+		cell->tbc_last_chd = tbc->rxb.chd;
 	} else if (state == DECT_TBC_ESTABLISHED)
 		cell->tbc_num_est++;
 
@@ -2299,7 +2292,7 @@ static int dect_tbc_establish_cfm(const struct dect_tbc *tbc, bool success)
 	const struct dect_cluster_handle *clh = tbc->cell->handle.clh;
 
 	return clh->ops->tbc_establish_cfm(clh, &tbc->id, success,
-					   tbc->rxb->chd.slot);
+					   tbc->rxb.chd.slot);
 }
 
 static void dect_tbc_release_notify(const struct dect_tbc *tbc,
@@ -2330,11 +2323,11 @@ static void dect_tbc_destroy(struct dect_cell *cell, struct dect_tbc *tbc)
 	dect_timer_del(&tbc->enc_timer);
 	dect_bc_release(&tbc->bc);
 
-	dect_channel_release(cell, tbc->txb->trx, &tbc->txb->chd);
-	dect_bearer_release(cell, tbc->txb);
+	dect_channel_release(cell, tbc->txb.trx, &tbc->txb.chd);
+	dect_bearer_release(cell, &tbc->txb);
 
-	dect_channel_release(cell, tbc->rxb->trx, &tbc->rxb->chd);
-	dect_bearer_release(cell, tbc->rxb);
+	dect_channel_release(cell, tbc->rxb.trx, &tbc->rxb.chd);
+	dect_bearer_release(cell, &tbc->rxb);
 
 	list_del(&tbc->list);
 	kfree_skb(tbc->cs_tx_skb);
@@ -2359,7 +2352,7 @@ static void dect_tbc_release_timer(struct dect_cell *cell, void *data)
 	}
 
 	dect_tbc_send_release(tbc, tbc->release_reason);
-	dect_bearer_timer_add(tbc->cell, tbc->txb, &tbc->release_timer,
+	dect_bearer_timer_add(tbc->cell, &tbc->txb, &tbc->release_timer,
 			      DECT_MT_FRAME_RATE);
 }
 
@@ -2430,7 +2423,7 @@ static void dect_tbc_watchdog_reschedule(struct dect_cell *cell,
 		timeout = DECT_MT_FRAME_RATE;
 
 	tbc_debug(tbc, "watchdog reschedule timeout: %u\n", timeout);
-	dect_bearer_timer_add(cell, tbc->rxb, &tbc->wd_timer, timeout);
+	dect_bearer_timer_add(cell, &tbc->rxb, &tbc->wd_timer, timeout);
 }
 
 static int dect_tbc_check_attributes(struct dect_cell *cell, struct dect_tbc *tbc,
@@ -2538,7 +2531,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 		m_skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_WAIT);
 		if (m_skb == NULL)
 			goto release;
-		skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
+		dect_tbc_queue_mac_control(tbc, m_skb);
 		break;
 
 	case DECT_TBC_REQ_SENT:
@@ -2555,7 +2548,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 			m_skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_WAIT);
 			if (m_skb == NULL)
 				goto release;
-			skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
+			dect_tbc_queue_mac_control(tbc, m_skb);
 
 			dect_tbc_state_change(tbc, DECT_TBC_WAIT_RCVD);
 		} else {
@@ -2563,7 +2556,7 @@ static int dect_tbc_state_process(struct dect_cell *cell, struct dect_tbc *tbc,
 			m_skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_WAIT);
 			if (m_skb == NULL)
 				goto release;
-			skb_queue_tail(&tbc->txb->m_tx_queue, m_skb);
+			dect_tbc_queue_mac_control(tbc, m_skb);
 
 			dect_tbc_state_change(tbc, DECT_TBC_OTHER_WAIT);
 		}
@@ -2615,12 +2608,12 @@ static void dect_tbc_enc_timer(struct dect_cell *cell, void *data)
 		return dect_tbc_begin_release(cell, tbc, DECT_REASON_BEARER_RELEASE);
 	}
 
-	dect_bearer_timer_add(cell, tbc->txb, &tbc->enc_timer, 2);
+	dect_bearer_timer_add(cell, &tbc->txb, &tbc->enc_timer, 2);
 
 	switch (tbc->enc_state) {
 	case DECT_TBC_ENC_START_REQ_RCVD:
 		tbc_debug(tbc, "TX encryption enabled\n");
-		dect_enable_cipher(tbc->txb->trx, tbc->txb->chd.slot, tbc->ck);
+		dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot, tbc->ck);
 		/* fall through */
 	case DECT_TBC_ENC_START_CFM_SENT:
 		tbc->enc_state = DECT_TBC_ENC_START_CFM_SENT;
@@ -2635,7 +2628,7 @@ static void dect_tbc_enc_timer(struct dect_cell *cell, void *data)
 
 	skb = dect_tbc_build_encctrl(tbc, cmd);
 	if (skb != NULL)
-		skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+		dect_tbc_queue_mac_control(tbc, skb);
 }
 
 static int dect_tbc_enc_state_process(struct dect_cell *cell,
@@ -2657,7 +2650,7 @@ static int dect_tbc_enc_state_process(struct dect_cell *cell,
 		tbc->enc_state = DECT_TBC_ENC_START_REQ_RCVD;
 		tbc->enc_msg_cnt = 0;
 
-		dect_bearer_timer_add(cell, tbc->txb, &tbc->enc_timer, 0);
+		dect_bearer_timer_add(cell, &tbc->txb, &tbc->enc_timer, 0);
 		break;
 	case DECT_ENCCTRL_START_CONFIRM:
 		if (tbc->enc_state == DECT_TBC_ENC_START_REQ_SENT) {
@@ -2666,13 +2659,13 @@ static int dect_tbc_enc_state_process(struct dect_cell *cell,
 
 			dect_timer_del(&tbc->enc_timer);
 			tbc_debug(tbc, "TX encryption enabled\n");
-			dect_enable_cipher(tbc->txb->trx, tbc->txb->chd.slot,
+			dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot,
 					   tbc->ck);
 		}
 		if (tbc->enc_state == DECT_TBC_ENC_START_CFM_RCVD) {
 			skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_START_GRANT);
 			if (skb != NULL)
-				skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+				dect_tbc_queue_mac_control(tbc, skb);
 		}
 		break;
 	case DECT_ENCCTRL_START_GRANT:
@@ -2682,7 +2675,7 @@ static int dect_tbc_enc_state_process(struct dect_cell *cell,
 
 		dect_timer_del(&tbc->enc_timer);
 		tbc_debug(tbc, "RX encryption enabled\n");
-		dect_enable_cipher(tbc->rxb->trx, tbc->rxb->chd.slot, tbc->ck);
+		dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
 		dect_tbc_event(tbc, DECT_TBC_CIPHER_ENABLED);
 		break;
 	case DECT_ENCCTRL_STOP_REQUEST:
@@ -2725,7 +2718,7 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	 * indicated by transmitting the Q2 bit in the reverse direction.
 	 */
 	if (DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_A_CRC_OK)
-		tbc->txb->q = DECT_HDR_Q2_FLAG;
+		tbc->txb.q = DECT_HDR_Q2_FLAG;
 	else
 		goto rcv_b_field;
 
@@ -2830,8 +2823,8 @@ static int dect_tbc_enc_req(const struct dect_cell_handle *ch,
 		  (unsigned long long)ck);
 
 	tbc->ck = ck;
-	dect_enable_cipher(tbc->rxb->trx, tbc->rxb->chd.slot, tbc->ck);
-	dect_enable_cipher(tbc->txb->trx, tbc->txb->chd.slot, tbc->ck);
+	dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
+	dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot, tbc->ck);
 	return 0;
 }
 
@@ -2850,14 +2843,14 @@ static int dect_tbc_enc_eks_req(const struct dect_cell_handle *ch,
 	tbc_debug(tbc, "TBC_ENC_EKS-req: status: %u\n", status);
 	skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_START_REQUEST);
 	if (skb != NULL)
-		skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+		dect_tbc_queue_mac_control(tbc, skb);
 
 	tbc->enc_state = DECT_TBC_ENC_START_REQ_SENT;
 	tbc->enc_msg_cnt = 0;
-	dect_bearer_timer_add(cell, tbc->txb, &tbc->enc_timer, 0);
+	dect_bearer_timer_add(cell, &tbc->txb, &tbc->enc_timer, 0);
 
 	tbc_debug(tbc, "RX encryption enabled\n");
-	dect_enable_cipher(tbc->rxb->trx, tbc->rxb->chd.slot, tbc->ck);
+	dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
 	return 0;
 }
 
@@ -2878,8 +2871,8 @@ static int dect_tbc_enc_key_req(const struct dect_cell_handle *ch,
 
 static void dect_tbc_enable(struct dect_cell *cell, struct dect_tbc *tbc)
 {
-	dect_bearer_enable(tbc->rxb);
-	dect_bearer_enable(tbc->txb);
+	dect_bearer_enable(&tbc->rxb);
+	dect_bearer_enable(&tbc->txb);
 	dect_bc_init(cell, &tbc->bc);
 }
 
@@ -2907,11 +2900,11 @@ static void dect_tbc_enable_timer(struct dect_cell *cell,
 		DECT_A_CB(skb)->id = DECT_TI_MT_PKT_0;
 
 	dect_tbc_enable(cell, tbc);
-	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+	dect_tbc_queue_mac_control(tbc, skb);
 	dect_tbc_state_change(tbc, DECT_TBC_REQ_SENT);
 
 	/* Start watchdog */
-	dect_bearer_timer_add(cell, tbc->rxb, &tbc->wd_timer, 1);
+	dect_bearer_timer_add(cell, &tbc->rxb, &tbc->wd_timer, 1);
 }
 
 static const struct dect_bearer_ops dect_tbc_ops = {
@@ -2940,7 +2933,7 @@ static struct dect_tbc *dect_tbc_init(struct dect_cell *cell,
 
 	tbc = kzalloc(sizeof(*tbc), GFP_ATOMIC);
 	if (tbc == NULL)
-		goto err1;
+		return NULL;
 
 	tbc->cell = cell;
 	tbc->id   = *id;
@@ -2951,25 +2944,13 @@ static struct dect_tbc *dect_tbc_init(struct dect_cell *cell,
 	dect_timer_setup(&tbc->release_timer, dect_tbc_release_timer, tbc);
 	dect_timer_setup(&tbc->enc_timer, dect_tbc_enc_timer, tbc);
 
-	tbc->rxb = dect_bearer_init(cell, &dect_tbc_ops, DECT_DUPLEX_BEARER,
-				    rtrx, rchd, DECT_BEARER_RX, tbc);
-	if (tbc->rxb == NULL)
-		goto err2;
-
-	tbc->txb = dect_bearer_init(cell, &dect_tbc_ops, DECT_DUPLEX_BEARER,
-				    ttrx, tchd, DECT_BEARER_TX, tbc);
-	if (tbc->txb == NULL)
-		goto err3;
+	dect_bearer_init(cell, &tbc->rxb, &dect_tbc_ops, DECT_DUPLEX_BEARER,
+			 rtrx, rchd, DECT_BEARER_RX, tbc);
+	dect_bearer_init(cell, &tbc->txb, &dect_tbc_ops, DECT_DUPLEX_BEARER,
+			 ttrx, tchd, DECT_BEARER_TX, tbc);
 
 	list_add_tail(&tbc->list, &cell->tbcs);
 	return tbc;
-
-err3:
-	dect_bearer_release(cell, tbc->rxb);
-err2:
-	kfree(tbc);
-err1:
-	return NULL;
 }
 
 static int dect_tbc_establish_req(const struct dect_cell_handle *ch,
@@ -3007,7 +2988,7 @@ static int dect_tbc_establish_req(const struct dect_cell_handle *ch,
 	tbc->id.tbei = dect_tbc_alloc_tbei(cell);
 	tbc->service = service;
 
-	dect_tx_bearer_schedule(cell, tbc->txb, rssi);
+	dect_tx_bearer_schedule(cell, &tbc->txb, rssi);
 	return 0;
 
 err3:
@@ -3058,7 +3039,7 @@ static void dect_tbc_wait_timer(struct dect_cell *cell, void *data)
 	/* The first response is permitted in any frame */
 	if (tbc->state == DECT_TBC_REQ_RCVD)
 		skb->priority = DECT_MT_HIGH_PRIORITY;
-	skb_queue_tail(&tbc->txb->m_tx_queue, skb);
+	dect_tbc_queue_mac_control(tbc, skb);
 
 	dect_tbc_state_change(tbc, DECT_TBC_RESPONSE_SENT);
 }
@@ -3141,11 +3122,11 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 	tbc_debug(tbc, "RCV ACCESS_REQUEST\n");
 
 	/* Set Q2 bit on first response */
-	tbc->txb->q = DECT_HDR_Q2_FLAG;
+	tbc->txb.q = DECT_HDR_Q2_FLAG;
 
 	/* Start the WAIT transmit timer */
 	dect_timer_setup(&tbc->wait_timer, dect_tbc_wait_timer, tbc);
-	dect_bearer_timer_add(cell, tbc->txb, &tbc->wait_timer, 1);
+	dect_bearer_timer_add(cell, &tbc->txb, &tbc->wait_timer, 1);
 
 	/* Start watchdog timer: until ESTABLISHED state, the remote side
 	 * must transmit a M-tail in every allowed frame. */
@@ -3226,7 +3207,7 @@ static struct dect_cbc *dect_cbc_init(struct dect_cell *cell,
 
 #define dbc_debug(dbc, fmt, args...) \
 	pr_debug("DBC slot %u carrier %u: " fmt, \
-		 (dbc)->bearer->chd.slot, (dbc)->bearer->chd.carrier, ## args)
+		 (dbc)->bearer.chd.slot, (dbc)->bearer.chd.carrier, ## args)
 
 static void dect_dbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 			 struct sk_buff *skb)
@@ -3260,7 +3241,7 @@ static void dect_dbc_report_rssi(struct dect_cell *cell,
 static void dect_dbc_quality_control_timer(struct dect_cell *cell, void *data)
 {
 	struct dect_dbc *dbc = data;
-	struct dect_bearer *bearer = dbc->bearer;
+	struct dect_bearer *bearer = &dbc->bearer;
 
 	switch (dbc->qctrl) {
 	case DECT_BEARER_QCTRL_WAIT:
@@ -3307,8 +3288,8 @@ static void dect_dbc_release(struct dect_dbc *dbc)
 {
 	struct dect_cell *cell = dbc->cell;
 
-	dect_channel_release(cell, dbc->bearer->trx, &dbc->bearer->chd);
-	dect_bearer_release(cell, dbc->bearer);
+	dect_channel_release(cell, dbc->bearer.trx, &dbc->bearer.chd);
+	dect_bearer_release(cell, &dbc->bearer);
 
 	dect_timer_del(&dbc->qctrl_timer);
 	dect_bc_release(&dbc->bc);
@@ -3356,15 +3337,13 @@ static struct dect_dbc *dect_dbc_init(struct dect_cell *cell,
 	dect_timer_setup(&dbc->qctrl_timer, dect_dbc_quality_control_timer, dbc);
 	dect_bc_init(cell, &dbc->bc);
 
-	dbc->bearer = dect_bearer_init(cell, &dect_dbc_ops, DECT_SIMPLEX_BEARER,
-				       trx, chd, mode, dbc);
-	if (dbc->bearer == NULL)
-		goto err3;
+	dect_bearer_init(cell, &dbc->bearer, &dect_dbc_ops, DECT_SIMPLEX_BEARER,
+			 trx, chd, mode, dbc);
 
 	if (cell->mode == DECT_MODE_FP)
-		dect_tx_bearer_schedule(cell, dbc->bearer, rssi);
+		dect_tx_bearer_schedule(cell, &dbc->bearer, rssi);
 	else {
-		dect_bearer_enable(dbc->bearer);
+		dect_bearer_enable(&dbc->bearer);
 
 		cell->a_rcv_stamp  = jiffies;
 		cell->nt_rcv_stamp = jiffies;
@@ -3373,8 +3352,6 @@ static struct dect_dbc *dect_dbc_init(struct dect_cell *cell,
 	list_add_tail(&dbc->list, &cell->dbcs);
 	return dbc;
 
-err3:
-	kfree(dbc);
 err2:
 	dect_channel_release(cell, trx, chd);
 err1:
@@ -3387,13 +3364,13 @@ err1:
 
 static void dect_dmb_release(struct dect_cell *cell, struct dect_dmb *dmb)
 {
-	cell->tbc_last_chd = dmb->rxb2->chd;
+	cell->tbc_last_chd = dmb->rxb2.chd;
 
-	dect_transceiver_release(&cell->trg, dmb->rxb1->trx, &dmb->rxb1->chd);
-	dect_bearer_release(dmb->cell, dmb->rxb1);
+	dect_transceiver_release(&cell->trg, dmb->rxb1.trx, &dmb->rxb1.chd);
+	dect_bearer_release(dmb->cell, &dmb->rxb1);
 
-	dect_transceiver_release(&cell->trg, dmb->rxb2->trx, &dmb->rxb2->chd);
-	dect_bearer_release(dmb->cell, dmb->rxb2);
+	dect_transceiver_release(&cell->trg, dmb->rxb2.trx, &dmb->rxb2.chd);
+	dect_bearer_release(dmb->cell, &dmb->rxb2);
 
 	dect_bc_release(&dmb->bc);
 	list_del(&dmb->list);
@@ -3439,29 +3416,17 @@ static struct dect_dmb *dect_dmb_init(struct dect_cell *cell,
 
 	dmb = kzalloc(sizeof(*dmb), GFP_ATOMIC);
 	if (dmb == NULL)
-		goto err1;
+		return NULL;
 	dmb->cell = cell;
 
-	dmb->rxb1 = dect_bearer_init(cell, &dect_dmb_ops, DECT_DUPLEX_BEARER,
-				     trx1, chd1, DECT_BEARER_RX, dmb);
-	if (dmb->rxb1 == NULL)
-		goto err2;
-
-	dmb->rxb2 = dect_bearer_init(cell, &dect_dmb_ops, DECT_DUPLEX_BEARER,
-				     trx2, chd2, DECT_BEARER_RX, dmb);
-	if (dmb->rxb2 == NULL)
-		goto err3;
+	dect_bearer_init(cell, &dmb->rxb1, &dect_dmb_ops, DECT_DUPLEX_BEARER,
+			 trx1, chd1, DECT_BEARER_RX, dmb);
+	dect_bearer_init(cell, &dmb->rxb2, &dect_dmb_ops, DECT_DUPLEX_BEARER,
+			 trx2, chd2, DECT_BEARER_RX, dmb);
 	dect_bc_init(cell, &dmb->bc);
 
 	list_add_tail(&dmb->list, &cell->dmbs);
 	return dmb;
-
-err3:
-	dect_bearer_release(cell, dmb->rxb1);
-err2:
-	kfree(dmb);
-err1:
-	return NULL;
 }
 
 static void dect_dmb_rcv_request(struct dect_cell *cell,
@@ -3508,8 +3473,8 @@ static void dect_dmb_rcv_request(struct dect_cell *cell,
 	if (dmb == NULL)
 		goto err3;
 
-	dect_bearer_enable(dmb->rxb1);
-	dect_bearer_enable(dmb->rxb2);
+	dect_bearer_enable(&dmb->rxb1);
+	dect_bearer_enable(&dmb->rxb2);
 
 	kfree_skb(skb);
 	return;
@@ -3930,8 +3895,8 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 		/* secondary transceiver */
 		dbc = dect_dbc_get(cell);
 		if (dbc == NULL ||
-		    dbc->bearer->chd.slot != chd.slot ||
-		    dbc->bearer->chd.carrier != chd.carrier)
+		    dbc->bearer.chd.slot    != chd.slot ||
+		    dbc->bearer.chd.carrier != chd.carrier)
 			return dect_restart_scan(cell, trx);
 
 		dect_transceiver_lock(trx, chd.slot);

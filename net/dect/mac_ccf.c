@@ -546,10 +546,11 @@ static struct dect_mbc *dect_mbc_init(struct dect_cluster *cl,
 	mbc = kzalloc(sizeof(*mbc), GFP_ATOMIC);
 	if (mbc == NULL)
 		return NULL;
-	mbc->refcnt = 1;
-	mbc->cl     = cl;
-	mbc->id     = *id;
-	mbc->state  = DECT_MBC_NONE;
+	mbc->refcnt   = 1;
+	mbc->cl       = cl;
+	mbc->id       = *id;
+	mbc->state    = DECT_MBC_NONE;
+	mbc->ho_stamp = jiffies - DECT_MBC_HANDOVER_TIMER;
 
 	INIT_LIST_HEAD(&mbc->tbs);
 	dect_timer_setup(&mbc->normal_rx_timer, dect_mbc_normal_rx_timer, mbc);
@@ -574,7 +575,8 @@ static int dect_mbc_tb_setup(struct dect_mbc *mbc, struct dect_tb *tb)
 	chd.b_fmt = DECT_B_UNPROTECTED;
 
 	err = ch->ops->tbc_establish_req(ch, &tb->id, &chd,
-					 DECT_SERVICE_IN_MIN_DELAY, false);
+					 DECT_SERVICE_IN_MIN_DELAY,
+					 tb->handover);
 	if (err < 0)
 		return err;
 
@@ -829,6 +831,67 @@ static int dect_tbc_event_ind(const struct dect_cluster_handle *clh,
 	}
 }
 
+static int dect_tbc_handover_req(const struct dect_cluster_handle *clh,
+				 const struct dect_tbc_id *id)
+{
+	struct dect_cluster *cl = dect_cluster(clh);
+	struct dect_cell_handle *ch;
+	struct dect_mbc *mbc;
+	struct dect_tb *tb;
+	unsigned int cnt;
+	int err;
+
+	mbc = dect_mbc_get_by_tbc_id(cl, id);
+	if (mbc == NULL)
+		return -ENOENT;
+	mbc_debug(mbc, "TBC_HANDOVER-req: TBEI: %u LBN: %u\n",
+		  id->tbei, id->lbn);
+
+	/* Handover already in progress or two bearers active?? */
+	cnt = 0;
+	list_for_each_entry(tb, &mbc->tbs, list) {
+		if (tb->id.lbn  != id->lbn)
+			continue;
+		 if (tb->id.tbei == 0)
+			return 0;
+		 cnt++;
+	}
+	if (cnt > 1)
+		return 0;
+
+	/* Handover rate-limiting */
+	if (mbc->ho_tokens == 0) {
+		if (time_after_eq(jiffies, mbc->ho_stamp + DECT_MBC_HANDOVER_TIMER)) {
+			mbc->ho_tokens = DECT_MBC_HANDOVER_LIMIT;
+			mbc->ho_stamp  = jiffies;
+		}
+		mbc_debug(mbc, "handover: tokens: %u\n", mbc->ho_tokens);
+		if (mbc->ho_tokens == 0)
+			return 0;
+	}
+
+	ch = dect_cluster_get_cell_by_rpn(cl, 0);
+	if (ch == NULL)
+		return -EHOSTUNREACH;
+
+	tb = dect_mbc_tb_init(mbc, ch, id->lbn);
+	if (tb == NULL)
+		return -ENOMEM;
+	tb->handover = true;
+
+	err = dect_mbc_tb_setup(mbc, tb);
+	if (err < 0)
+		goto err1;
+
+	list_add_tail(&tb->list, &mbc->tbs);
+	mbc->ho_tokens--;
+	return 0;
+
+err1:
+	dect_mbc_tb_release(tb);
+	return err;
+}
+
 /* TBC release indication from CSF */
 static void dect_tbc_dis_ind(const struct dect_cluster_handle *clh,
 			     const struct dect_tbc_id *id,
@@ -1002,6 +1065,7 @@ static const struct dect_ccf_ops dect_ccf_ops = {
 	.tbc_establish_ind	= dect_tbc_establish_ind,
 	.tbc_establish_cfm	= dect_tbc_establish_cfm,
 	.tbc_event_ind		= dect_tbc_event_ind,
+	.tbc_handover_req	= dect_tbc_handover_req,
 	.tbc_dis_ind		= dect_tbc_dis_ind,
 	.tbc_data_ind		= dect_tbc_data_ind,
 	.bmc_page_ind		= dect_bmc_page_ind,

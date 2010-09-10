@@ -314,6 +314,9 @@ struct dect_tbc {
 	struct dect_timer		release_timer;
 	enum dect_release_reasons	release_reason;
 
+	/* PP handover trigger */
+	s8				handover_tokens;
+
 	/* Encryption */
 	u64				ck;
 	struct dect_timer		enc_timer;
@@ -331,6 +334,11 @@ struct dect_tbc {
 };
 
 #define DECT_TBC_RFPI_TIMEOUT		(5 * DECT_FRAMES_PER_SECOND)
+
+#define DECT_TBC_HO_TOKENS_INITIAL	16
+#define DECT_TBC_HO_TOKENS_OK		1 /* Correct slot adds one token */
+#define DECT_TBC_HO_TOKENS_ERROR	8 /* Error slot subtracts eight tokens */
+#define DECT_TBC_HO_TOKENS_MAX		32
 
 enum dect_scan_status {
 	DECT_SCAN_FAIL,

@@ -2706,25 +2706,88 @@ static void dect_tbc_queue_cs_data(struct dect_cell *cell, struct dect_tbc *tbc,
 	clh->ops->tbc_data_ind(clh, &tbc->id, DECT_MC_C_S, skb);
 }
 
+static void dect_tbc_update_handover_state(struct dect_tbc *tbc, bool ok)
+{
+	const struct dect_cluster_handle *clh = tbc->cell->handle.clh;
+
+	if (ok) {
+		tbc->handover_tokens += DECT_TBC_HO_TOKENS_OK;
+		if (tbc->handover_tokens > DECT_TBC_HO_TOKENS_MAX)
+			tbc->handover_tokens = DECT_TBC_HO_TOKENS_MAX;
+	} else {
+		tbc->handover_tokens -= DECT_TBC_HO_TOKENS_ERROR;
+		if (tbc->handover_tokens < 0)
+			tbc->handover_tokens = 0;
+	}
+
+	tbc_debug(tbc, "handover: ok: %u tokens: %d\n", ok, tbc->handover_tokens);
+	if (tbc->handover_tokens == 0)
+		clh->ops->tbc_handover_req(clh, &tbc->id);
+}
+
+static void dect_tbc_report_rssi(struct dect_cell *cell,
+				 struct dect_bearer *bearer,
+				 u8 slot, u8 rssi)
+{
+	struct dect_tbc *tbc = bearer->tbc;
+
+	/* A RSSI report implies an In-Sync error */
+	dect_tbc_update_handover_state(tbc, false);
+}
+
+#define DECT_CHECKSUM_ALL \
+	(DECT_CHECKSUM_A_CRC_OK | DECT_CHECKSUM_X_CRC_OK | DECT_CHECKSUM_Z_CRC_OK)
+
+static bool dect_tbc_checksum_ok(const struct sk_buff *skb)
+{
+	return (DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_ALL) == DECT_CHECKSUM_ALL;
+}
+
 static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 			 struct sk_buff *skb)
 {
 	const struct dect_cluster_handle *clh = cell->handle.clh;
 	struct dect_tbc *tbc = bearer->tbc;
 	struct dect_tail_msg _tm, *tm = &_tm;
-	bool q2;
+	bool a_crc_ok, collision;
+	bool q1, q2;
+
+	dect_tbc_update_handover_state(tbc, dect_tbc_checksum_ok(skb));
 
 	/* Verify A-field checksum. Sucessful reception of the A-field is
-	 * indicated by transmitting the Q2 bit in the reverse direction.
+	 * indicated by transmitting the Q2 bit in the reverse direction
+	 * or the Q1 bit in the direction FP->PP when Q1 is set to 0.
 	 */
 	if (DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_A_CRC_OK)
 		tbc->txb.q = DECT_HDR_Q2_FLAG;
 	else
 		goto rcv_b_field;
 
+	/* Q1 and Q2 bit settings for MAC service IN as per section 10.8.1.3.1 */
+	q1 = skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG;
 	q2 = skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG;
-	if (tbc->cs_tx_ok) {
+
+	if (cell->mode == DECT_MODE_FP)
+		a_crc_ok = q2;
+	else {
 		if (q2) {
+			a_crc_ok  = true;
+			collision = q1;
+			/* ignore collision indications for now as the
+			 * transceiver firmware seems to improperly transmit
+			 * the Z-Field.
+			 */
+			collision = false;
+		} else {
+			a_crc_ok  = q1;
+			collision = false;
+		}
+
+		dect_tbc_update_handover_state(tbc, a_crc_ok && !collision);
+	}
+
+	if (tbc->cs_tx_ok) {
+		if (a_crc_ok) {
 			tbc_debug(tbc, "ARQ acknowledgement\n");
 			dect_tbc_event(tbc, DECT_TBC_ACK_RECEIVED);
 		} else
@@ -2885,9 +2948,15 @@ static void dect_tbc_enable_timer(struct dect_cell *cell,
 {
 	struct dect_tbc *tbc = bearer->tbc;
 	struct sk_buff *skb;
+	enum dect_cctrl_cmds cmd;
 
 	tbc_debug(tbc, "TX ACCESS_REQUEST\n");
-	skb = dect_tbc_build_cctrl(tbc, DECT_CCTRL_ACCESS_REQ);
+	if (tbc->handover)
+		cmd = DECT_CCTRL_BEARER_HANDOVER_REQ;
+	else
+		cmd = DECT_CCTRL_ACCESS_REQ;
+
+	skb = dect_tbc_build_cctrl(tbc, cmd);
 	if (skb == NULL)
 		return;
 
@@ -2911,6 +2980,7 @@ static const struct dect_bearer_ops dect_tbc_ops = {
 	.state		= DECT_TRAFFIC_BEARER,
 	.enable		= dect_tbc_enable_timer,
 	.rcv		= dect_tbc_rcv,
+	.report_rssi	= dect_tbc_report_rssi,
 };
 
 /**
@@ -2935,8 +3005,9 @@ static struct dect_tbc *dect_tbc_init(struct dect_cell *cell,
 	if (tbc == NULL)
 		return NULL;
 
-	tbc->cell = cell;
-	tbc->id   = *id;
+	tbc->cell	     = cell;
+	tbc->id		     = *id;
+	tbc->handover_tokens = DECT_TBC_HO_TOKENS_INITIAL;
 
 	INIT_LIST_HEAD(&tbc->bc.list);
 	dect_timer_init(&tbc->wait_timer);
@@ -2985,9 +3056,11 @@ static int dect_tbc_establish_req(const struct dect_cell_handle *ch,
 	tbc = dect_tbc_init(cell, id, rtrx, ttrx, &rchd, &tchd);
 	if (tbc == NULL)
 		goto err3;
-	tbc->id.tbei = dect_tbc_alloc_tbei(cell);
-	tbc->service = service;
+	tbc->id.tbei  = dect_tbc_alloc_tbei(cell);
+	tbc->service  = service;
+	tbc->handover = handover;
 
+	tbc_debug(tbc, "TBC_ESTABLISH-req: handover: %d\n", handover);
 	dect_tx_bearer_schedule(cell, &tbc->txb, rssi);
 	return 0;
 

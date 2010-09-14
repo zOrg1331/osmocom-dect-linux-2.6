@@ -247,6 +247,7 @@ static void dect_lu1_close(struct sock *sk, long timeout)
 	__skb_queue_purge(&sk->sk_write_queue);
 	kfree_skb(lu1->last);
 
+	sock_orphan(sk);
 	sock_put(sk);
 }
 

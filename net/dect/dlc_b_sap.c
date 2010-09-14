@@ -53,11 +53,7 @@ void dect_bsap_rcv(const struct dect_cluster *cl, struct sk_buff *skb)
 
 static void dect_bsap_close(struct sock *sk, long timeout)
 {
-	spin_lock_bh(&dect_bsap_lock);
-	sk_del_node_init(sk);
-	spin_unlock_bh(&dect_bsap_lock);
-
-	sock_put(sk);
+	sk_common_release(sk);
 }
 
 static int dect_bsap_bind(struct sock *sk, struct sockaddr *uaddr, int len)
@@ -87,6 +83,15 @@ static int dect_bsap_bind(struct sock *sk, struct sockaddr *uaddr, int len)
 out:
 	release_sock(sk);
 	return err;
+}
+
+static void dect_bsap_unhash(struct sock *sk)
+{
+	if (sk_hashed(sk)) {
+		spin_lock_bh(&dect_bsap_lock);
+		sk_del_node_init(sk);
+		spin_unlock_bh(&dect_bsap_lock);
+	}
 }
 
 static int dect_bsap_getname(struct sock *sk, struct sockaddr *uaddr, int *len,
@@ -240,6 +245,7 @@ static struct dect_proto dect_bsap_proto __read_mostly = {
 	.proto.obj_size	= sizeof(struct dect_bsap),
 	.proto.close	= dect_bsap_close,
 	.proto.bind	= dect_bsap_bind,
+	.proto.unhash	= dect_bsap_unhash,
 	.proto.recvmsg	= dect_bsap_recvmsg,
 	.proto.sendmsg	= dect_bsap_sendmsg,
 	.getname	= dect_bsap_getname,

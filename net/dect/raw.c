@@ -60,9 +60,7 @@ static void __dect_raw_rcv(struct sk_buff *skb)
 
 static void dect_raw_close(struct sock *sk, long timeout)
 {
-	if (!hlist_unhashed(&sk->sk_bind_node))
-		__sk_del_bind_node(sk);
-	sock_put(sk);
+	sk_common_release(sk);
 }
 
 static int dect_raw_bind(struct sock *sk, struct sockaddr *uaddr, int len)
@@ -83,6 +81,12 @@ static int dect_raw_bind(struct sock *sk, struct sockaddr *uaddr, int len)
 	sk_add_bind_node(sk, &dect_raw_sockets);
 	release_sock(sk);
 	return 0;
+}
+
+static void dect_raw_unhash(struct sock *sk)
+{
+	if (!hlist_unhashed(&sk->sk_bind_node))
+		__sk_del_bind_node(sk);
 }
 
 static int dect_raw_getname(struct sock *sk, struct sockaddr *uaddr, int *len,
@@ -228,6 +232,7 @@ static struct dect_proto dect_raw_proto = {
 	.proto.obj_size	= sizeof(struct dect_raw_sk),
 	.proto.close	= dect_raw_close,
 	.proto.bind	= dect_raw_bind,
+	.proto.unhash	= dect_raw_unhash,
 	.proto.recvmsg	= dect_raw_recvmsg,
 	.proto.sendmsg	= dect_raw_sendmsg,
 	.getname	= dect_raw_getname,

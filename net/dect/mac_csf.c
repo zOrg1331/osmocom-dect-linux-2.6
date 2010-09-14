@@ -1528,7 +1528,7 @@ static void dect_queue_page_segments(struct sk_buff_head *list,
 		else
 			t = DECT_PT_LONG_PAGE;
 
-		skb->data[0] &= 0x0f;
+		seg->data[0] &= 0x0f;
 		seg->data[0] |= t >> 56;
 		pr_debug("queue page segment len %u hdr %x\n",
 			 seg->len, seg->data[0] & 0xf0);
@@ -2752,7 +2752,8 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	bool a_crc_ok, collision;
 	bool q1, q2;
 
-	dect_tbc_update_handover_state(tbc, dect_tbc_checksum_ok(skb));
+	if (cell->mode == DECT_MODE_PP)
+		dect_tbc_update_handover_state(tbc, dect_tbc_checksum_ok(skb));
 
 	/* Verify A-field checksum. Sucessful reception of the A-field is
 	 * indicated by transmitting the Q2 bit in the reverse direction
@@ -4356,14 +4357,20 @@ void dect_mac_rcv(struct dect_transceiver *trx,
 	/* TX bearers can temporarily switch to RX mode for noise measurement */
 	if (ts->bearer != NULL &&
 	    ts->bearer->mode == DECT_BEARER_RX) {
-		rx_debug(cell, "%s: Q1: %d Q2: %d A/B: %02x%s ",
+		rx_debug(cell, "%s: Q1: %d Q2: %d A/B: %02x %s%s%s",
 			 trx->name,
 			 skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG ? 1 : 0,
 			 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG ? 1 : 0,
 			 skb->data[DECT_HDR_TA_OFF] &
 			 (DECT_HDR_TA_MASK | DECT_HDR_BA_MASK),
 			 DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_A_CRC_OK ?
-			 "" : " A-CRC error");
+			 "" : "A-CRC: 0 ",
+			 ts->chd.pkt == DECT_PACKET_P00 ||
+			 DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_X_CRC_OK ?
+			 "" : "X-CRC: 0 ",
+			 ts->chd.pkt == DECT_PACKET_P00 ||
+			 DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_Z_CRC_OK ?
+			 "" : "Z-CRC: 0 ");
 
 		ts->bearer->ops->rcv(cell, ts->bearer, skb);
 	} else

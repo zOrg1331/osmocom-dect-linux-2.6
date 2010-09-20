@@ -19,7 +19,6 @@
 #include <linux/crc32.h>
 #include <net/dect/transceiver.h>
 
-#include <pcmcia/cs_types.h>
 #include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ciscode.h>
@@ -61,20 +60,20 @@ static int com_on_air_probe(struct pcmcia_device *link)
 	dev_info(dev->dev, "%s %s %s %s\n", link->prod_id[0], link->prod_id[1],
 		 link->prod_id[2] ? : "", link->prod_id[3] ? : "");
 
-	link->io.Attributes1	= IO_DATA_PATH_WIDTH_AUTO;
-	link->io.NumPorts1	= 16;
-	link->io.Attributes2	= 0;
+	link->resource[0]->flags |= IO_DATA_PATH_WIDTH_AUTO;
+	link->resource[0]->end	  = 16;
+	link->resource[1]->flags |= 0;
 
-	link->conf.Attributes	= CONF_ENABLE_IRQ;
-	link->conf.IntType	= INT_MEMORY_AND_IO;
-	link->conf.ConfigIndex	= 1;
-	link->conf.Present	= PRESENT_OPTION;
-	link->conf.ConfigBase	= 0x1020;
+	link->conf.Attributes	  = CONF_ENABLE_IRQ;
+	link->conf.IntType	  = INT_MEMORY_AND_IO;
+	link->conf.ConfigIndex	  = 1;
+	link->conf.Present	  = PRESENT_OPTION;
+	link->conf.ConfigBase	  = 0x1020;
 
-	req.Attributes		= WIN_DATA_WIDTH_16 | WIN_ENABLE;
-	req.Base		= 0;
-	req.Size		= 0x1000;
-	req.AccessSpeed		= 500;
+	req.Attributes		  = WIN_DATA_WIDTH_16 | WIN_ENABLE;
+	req.Base		  = 0;
+	req.Size		  = 0x1000;
+	req.AccessSpeed		  = 500;
 
 	err = pcmcia_request_window(link, &req, &link->win);
 	if (err < 0) {
@@ -116,13 +115,13 @@ static int com_on_air_probe(struct pcmcia_device *link)
 
 	dev_dbg(dev->dev, "Present       %d\n", link->conf.Present);
 	dev_dbg(dev->dev, "IRQ           0x%x\n", link->irq);
-	dev_dbg(dev->dev, "BasePort1     0x%x\n", link->io.BasePort1);
-	dev_dbg(dev->dev, "NumPorts1     0x%x\n", link->io.NumPorts1);
-	dev_dbg(dev->dev, "Attributes1   0x%x\n", link->io.Attributes1);
-	dev_dbg(dev->dev, "BasePort2     0x%x\n", link->io.BasePort2);
-	dev_dbg(dev->dev, "NumPorts2     0x%x\n", link->io.NumPorts2);
-	dev_dbg(dev->dev, "Attributes2   0x%x\n", link->io.Attributes2);
-	dev_dbg(dev->dev, "IOAddrLines   0x%x\n", link->io.IOAddrLines);
+	dev_dbg(dev->dev, "BasePort1     0x%llx\n", link->resource[0]->start);
+	dev_dbg(dev->dev, "NumPorts1     0x%llx\n", link->resource[0]->end);
+	dev_dbg(dev->dev, "Attributes1   0x%lx\n", link->resource[0]->flags);
+	dev_dbg(dev->dev, "BasePort2     0x%llx\n", link->resource[1]->start);
+	dev_dbg(dev->dev, "NumPorts2     0x%llx\n", link->resource[1]->end);
+	dev_dbg(dev->dev, "Attributes2   0x%lx\n", link->resource[1]->flags);
+	dev_dbg(dev->dev, "IOAddrLines   0x%x\n", link->io_lines);
 	dev_dbg(dev->dev, "has%s function_config\n",
 		link->function_config ? "":" no");
 

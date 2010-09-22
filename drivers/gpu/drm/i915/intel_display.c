@@ -2463,11 +2463,19 @@ static bool intel_crtc_mode_fixup(struct drm_crtc *crtc,
 				  struct drm_display_mode *adjusted_mode)
 {
 	struct drm_device *dev = crtc->dev;
+
 	if (HAS_PCH_SPLIT(dev)) {
 		/* FDI link clock is fixed at 2.7G */
 		if (mode->clock * 3 > IRONLAKE_FDI_FREQ * 4)
 			return false;
 	}
+
+	/* XXX some encoders set the crtcinfo, others don't.
+	 * Obviously we need some form of conflict resolution here...
+	 */
+	if (adjusted_mode->crtc_htotal == 0)
+		drm_mode_set_crtcinfo(adjusted_mode, 0);
+
 	return true;
 }
 
@@ -2767,14 +2775,8 @@ static unsigned long intel_calculate_wm(unsigned long clock_in_khz,
 	/* Don't promote wm_size to unsigned... */
 	if (wm_size > (long)wm->max_wm)
 		wm_size = wm->max_wm;
-	if (wm_size <= 0) {
+	if (wm_size <= 0)
 		wm_size = wm->default_wm;
-		DRM_ERROR("Insufficient FIFO for plane, expect flickering:"
-			  " entries required = %ld, available = %lu.\n",
-			  entries_required + wm->guard_size,
-			  wm->fifo_size);
-	}
-
 	return wm_size;
 }
 
@@ -3388,8 +3390,7 @@ static void ironlake_update_wm(struct drm_device *dev,  int planea_clock,
 		reg_value = I915_READ(WM1_LP_ILK);
 		reg_value &= ~(WM1_LP_LATENCY_MASK | WM1_LP_SR_MASK |
 			       WM1_LP_CURSOR_MASK);
-		reg_value |= WM1_LP_SR_EN |
-			     (ilk_sr_latency << WM1_LP_LATENCY_SHIFT) |
+		reg_value |= (ilk_sr_latency << WM1_LP_LATENCY_SHIFT) |
 			     (sr_wm << WM1_LP_SR_SHIFT) | cursor_wm;
 
 		I915_WRITE(WM1_LP_ILK, reg_value);
@@ -5675,6 +5676,9 @@ void intel_init_clock_gating(struct drm_device *dev)
 			I915_WRITE(DISP_ARB_CTL,
 					(I915_READ(DISP_ARB_CTL) |
 						DISP_FBC_WM_DIS));
+		I915_WRITE(WM3_LP_ILK, 0);
+		I915_WRITE(WM2_LP_ILK, 0);
+		I915_WRITE(WM1_LP_ILK, 0);
 		}
 		/*
 		 * Based on the document from hardware guys the following bits
@@ -5696,8 +5700,7 @@ void intel_init_clock_gating(struct drm_device *dev)
 				   ILK_DPFC_DIS2 |
 				   ILK_CLK_FBC);
 		}
-		if (IS_GEN6(dev))
-			return;
+		return;
 	} else if (IS_G4X(dev)) {
 		uint32_t dspclk_gate;
 		I915_WRITE(RENCLK_GATE_D1, 0);
@@ -5758,11 +5761,9 @@ void intel_init_clock_gating(struct drm_device *dev)
 				OUT_RING(MI_FLUSH);
 				ADVANCE_LP_RING();
 			}
-		} else {
+		} else
 			DRM_DEBUG_KMS("Failed to allocate render context."
-				      "Disable RC6\n");
-			return;
-		}
+				       "Disable RC6\n");
 	}
 
 	if (I915_HAS_RC6(dev) && drm_core_check_feature(dev, DRIVER_MODESET)) {

@@ -264,7 +264,7 @@ out:
 	return lapc;
 
 err1:
-	sk_free(sk);
+	sk_free(newsk);
 	goto out;
 }
 

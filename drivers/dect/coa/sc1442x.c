@@ -464,6 +464,7 @@ static u16 sc1442x_slot_offset(u8 slot)
 {
 	u16 offset;
 
+	WARN_ON_ONCE(slot & 0x1);
 	offset = SC1442X_BANKSIZE + slot / 4 * SC1442X_BANKSIZE;
 	if (slot & 0x2)
 		offset += SC1442X_BANKSIZE / 2;
@@ -599,6 +600,7 @@ static void sc1442x_lock(const struct dect_transceiver *trx, u8 slot)
 	 * event. This will automagically establish the correct slot numbers
 	 * and thereby interrupt timing for all slots.
 	 */
+	WARN_ON_ONCE(slot & 0x1);
 	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 	sc1442x_write_cmd(dev, SlotTable, SLOTZERO, 0);
@@ -615,6 +617,7 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 	bool sync = trx->slots[chd->slot].flags & DECT_SLOT_SYNC;
 	u8 slot = chd->slot;
 
+	WARN_ON_ONCE(slot & 0x1);
 	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 

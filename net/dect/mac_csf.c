@@ -3772,12 +3772,15 @@ static void dect_irc_tx_frame_timer(struct dect_cell *cell, void *data)
 			if (trx->slots[chd.slot].state != DECT_SLOT_IDLE &&
 			    trx->slots[chd.slot].state != DECT_SLOT_SCANNING)
 				continue;
+			if (!dect_transceiver_channel_available(trx, &chd))
+				continue;
+
 			dect_scan_bearer_enable(trx, &chd);
 		}
 		dect_foreach_transmit_slot(chd.slot, end, cell) {
 			if (trx->slots[chd.slot].state != DECT_SLOT_IDLE)
 				continue;
-			if (!dect_slot_available(trx, chd.slot))
+			if (!dect_transceiver_channel_available(trx, &chd))
 				continue;
 			dect_scan_bearer_enable(trx, &chd);
 		}

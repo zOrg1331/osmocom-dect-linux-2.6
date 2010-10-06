@@ -1357,7 +1357,8 @@ static void dect_bearer_init(struct dect_cell *cell, struct dect_bearer *bearer,
 			     const struct dect_channel_desc *chd,
 			     enum dect_bearer_modes mode, void *data)
 {
-	pr_debug("init bearer on slot %u carrier %u\n", chd->slot, chd->carrier);
+	pr_debug("init bearer: mode: %s slot: %u carrier: %u\n",
+		 mode == DECT_BEARER_RX ? "RX" : "TX" , chd->slot, chd->carrier);
 	bearer->type  = type;
 	bearer->ops   = ops;
 	bearer->trx   = trx;
@@ -4357,12 +4358,12 @@ void dect_mac_rcv(struct dect_transceiver *trx,
 	/* TX bearers can temporarily switch to RX mode for noise measurement */
 	if (ts->bearer != NULL &&
 	    ts->bearer->mode == DECT_BEARER_RX) {
-		rx_debug(cell, "%s: Q1: %d Q2: %d A/B: %02x %s%s%s",
+		rx_debug(cell, "%s: Q1: %d Q2: %d A/B: %02x carrier: %u %s%s%s",
 			 trx->name,
 			 skb->data[DECT_HDR_Q1_OFF] & DECT_HDR_Q1_FLAG ? 1 : 0,
 			 skb->data[DECT_HDR_Q2_OFF] & DECT_HDR_Q2_FLAG ? 1 : 0,
 			 skb->data[DECT_HDR_TA_OFF] &
-			 (DECT_HDR_TA_MASK | DECT_HDR_BA_MASK),
+			 (DECT_HDR_TA_MASK | DECT_HDR_BA_MASK), ts->chd.carrier,
 			 DECT_TRX_CB(skb)->csum & DECT_CHECKSUM_A_CRC_OK ?
 			 "" : "A-CRC: 0 ",
 			 ts->chd.pkt == DECT_PACKET_P00 ||

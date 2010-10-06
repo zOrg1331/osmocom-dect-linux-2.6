@@ -2733,7 +2733,8 @@ static void dect_tbc_report_rssi(struct dect_cell *cell,
 	struct dect_tbc *tbc = bearer->tbc;
 
 	/* A RSSI report implies an In-Sync error */
-	dect_tbc_update_handover_state(tbc, false);
+	if (cell->mode == DECT_MODE_PP)
+		dect_tbc_update_handover_state(tbc, false);
 }
 
 #define DECT_CHECKSUM_ALL \

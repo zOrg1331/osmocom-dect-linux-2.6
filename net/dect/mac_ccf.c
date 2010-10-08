@@ -728,6 +728,7 @@ static int dect_tbc_establish_cfm(const struct dect_cluster_handle *clh,
 				  u8 rx_slot)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
+	const struct dect_cell_handle *ch;
 	struct dect_mbc *mbc;
 	struct dect_tb *tb, *i;
 
@@ -768,6 +769,12 @@ static int dect_tbc_establish_cfm(const struct dect_cluster_handle *clh,
 
 			return dect_mac_con_cfm(cl, mbc->id.mcei, mbc->service);
 		case DECT_MBC_ESTABLISHED:
+			ch = tb->ch;
+			if (mbc->cipher_state == DECT_CIPHER_ENABLED &&
+			    ch->ops->tbc_enc_req(ch, id, mbc->ck) < 0) {
+				ch->ops->tbc_dis_req(ch, id, DECT_REASON_UNKNOWN);
+				return -1;
+			}
 			dect_mbc_tb_complete_setup(cl, tb);
 			return 0;
 		default:

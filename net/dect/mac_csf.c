@@ -3982,9 +3982,10 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 	} else {
 		/* secondary transceiver */
 		dbc = dect_dbc_get(cell);
-		if (dbc == NULL ||
-		    dbc->bearer.chd.slot    != chd.slot ||
-		    dbc->bearer.chd.carrier != chd.carrier)
+		if (!(cell->flags & DECT_CELL_SLAVE) &&
+		    (dbc == NULL ||
+		     dbc->bearer.chd.slot    != chd.slot ||
+		     dbc->bearer.chd.carrier != chd.carrier))
 			return dect_restart_scan(cell, trx);
 
 		dect_transceiver_lock(trx, chd.slot);

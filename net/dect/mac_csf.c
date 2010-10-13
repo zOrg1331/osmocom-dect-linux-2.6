@@ -2754,6 +2754,8 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	bool a_crc_ok, collision;
 	bool q1, q2;
 
+	dect_raw_rcv(skb);
+
 	if (cell->mode == DECT_MODE_PP)
 		dect_tbc_update_handover_state(tbc, dect_tbc_checksum_ok(skb));
 
@@ -3139,6 +3141,8 @@ static void dect_tbc_rcv_request(struct dect_cell *cell,
 
 	if (tm->cctl.fmid != cell->fmid)
 		goto err1;
+	dect_raw_rcv(skb);
+
 	switch (tm->cctl.cmd) {
 	case DECT_CCTRL_ACCESS_REQ:
 		break;
@@ -3294,6 +3298,8 @@ static void dect_dbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	/* Update A-field receive time stamp (A-field CRC is always correct) */
 	if (dect_framenum(cell, DECT_TIMER_RX) == 0)
 		cell->a_rcv_stamp = jiffies;
+
+	dect_raw_rcv(skb);
 
 	if (dect_parse_tail_msg(&tm, skb) < 0)
 		goto err;
@@ -3459,6 +3465,8 @@ static void dect_dmb_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	struct dect_dmb *dmb = bearer->dmb;
 	struct dect_tail_msg tm;
 
+	dect_raw_rcv(skb);
+
 	if (dect_parse_tail_msg(&tm, skb) < 0)
 		goto err;
 
@@ -3516,6 +3524,7 @@ static void dect_dmb_rcv_request(struct dect_cell *cell,
 
 	if (tm->cctl.fmid != cell->fmid)
 		goto err1;
+	dect_raw_rcv(skb);
 
 	switch (tm->cctl.cmd) {
 	case DECT_CCTRL_ACCESS_REQ:
@@ -4357,7 +4366,6 @@ void dect_mac_rcv(struct dect_transceiver *trx,
 
 	DECT_TRX_CB(skb)->frame = dect_framenum(cell, DECT_TIMER_RX);
 	DECT_TRX_CB(skb)->mfn	= dect_mfn(cell, DECT_TIMER_RX);
-	dect_raw_rcv(skb);
 
 	/* TX bearers can temporarily switch to RX mode for noise measurement */
 	if (ts->bearer != NULL &&

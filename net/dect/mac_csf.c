@@ -2110,20 +2110,6 @@ static const char *tbc_states[] = {
 	[DECT_TBC_RELEASED]		= "RELEASED",
 };
 
-static struct dect_tbc *dect_tbc_lookup(const struct dect_cell *cell,
-					const struct dect_tbc_id *id)
-{
-	struct dect_tbc *tbc;
-
-	list_for_each_entry(tbc, &cell->tbcs, list) {
-		if (!dect_pmid_cmp(&tbc->id.pmid, &id->pmid) &&
-		    tbc->id.lbn == id->lbn &&
-		    tbc->id.ecn == id->ecn)
-			return tbc;
-	}
-	return NULL;
-}
-
 static struct dect_tbc *dect_tbc_get_by_tbei(const struct dect_cell *cell, u32 tbei)
 {
 	struct dect_tbc *tbc;

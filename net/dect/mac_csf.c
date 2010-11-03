@@ -4683,8 +4683,8 @@ int dect_cell_bind(struct dect_cell *cell, u8 index)
 
 	if (cell->flags & DECT_CELL_CCP) {
 		clh = dect_ccp_cell_init(cell, index);
-		if (clh == NULL)
-			return -ENOMEM;
+		if (IS_ERR(clh))
+			return PTR_ERR(clh);
 	} else {
 		cl = dect_cluster_get_by_index(index);
 		if (cl == NULL)

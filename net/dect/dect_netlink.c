@@ -738,11 +738,18 @@ static int dect_new_cluster(const struct sk_buff *skb,
 	memcpy(&cl->pari, &pari, sizeof(cl->pari));
 	cl->index = dect_cluster_alloc_index();
 	cl->mode  = mode;
-	dect_cluster_init(cl);
+
+	err = dect_cluster_init(cl);
+	if (err < 0)
+		goto err1;
 
 	list_add_tail(&cl->list, &dect_cluster_list);
 	dect_notify_cluster(DECT_NEW_CLUSTER, cl, nlh, NETLINK_CB(skb).pid);
 	return 0;
+
+err1:
+	kfree(cl);
+	return err;
 }
 
 static int dect_del_cluster(const struct sk_buff *skb,

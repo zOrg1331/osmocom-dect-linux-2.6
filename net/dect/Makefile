@@ -7,7 +7,9 @@ dect_ccf-y			+= dlc.o
 dect_ccf-y			+= dlc_cplane.o dlc_b_sap.o dlc_s_sap.o
 dect_ccf-y			+= dlc_uplane.o
 
-dect-y	+= $(dect_ccf-y) $(dect_csf-y) ccp.o
+dect_ccf-$(CONFIG_DECT_CCP)	+= ccp.o
+
+dect-y	+= $(dect_ccf-y) $(dect_csf-y)
 
 obj-$(CONFIG_DECT)		+= dect.o
 #obj-$(CONFIG_DECT_CSF)		+= dect_csf.o

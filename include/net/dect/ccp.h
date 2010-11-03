@@ -83,10 +83,28 @@ struct dect_ccp_data_msg {
 	u8		data[];
 } __attribute__((packed));
 
+#ifdef CONFIG_DECT_CCP
 extern int dect_ccp_cluster_init(struct dect_cluster *cl);
 extern void dect_ccp_cluster_shutdown(struct dect_cluster *cl);
 
 extern struct dect_cluster_handle *dect_ccp_cell_init(struct dect_cell *cell,
 						      u8 clindex);
+#else
+static inline int dect_ccp_cluster_init(struct dect_cluster *cl)
+{
+	return 0;
+}
+
+static inline void dect_ccp_cluster_shutdown(struct dect_cluster *cl)
+{
+	return;
+}
+
+static inline struct dect_cluster_handle *
+dect_ccp_cell_init(struct dect_cell *cell, u8 clindex)
+{
+	return ERR_PTR(-EOPNOTSUPP);
+}
+#endif
 
 #endif /* _NET_DECT_CPP */

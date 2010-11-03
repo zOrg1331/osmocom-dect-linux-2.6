@@ -195,7 +195,7 @@ struct dect_cluster {
 	struct dect_timer_base		timer_base[DECT_TIMER_BASE_MAX + 1];
 };
 
-extern void dect_cluster_init(struct dect_cluster *cl);
+extern int dect_cluster_init(struct dect_cluster *cl);
 extern void dect_cluster_shutdown(struct dect_cluster *cl);
 
 extern struct dect_cluster *dect_cluster_get_by_index(int index);

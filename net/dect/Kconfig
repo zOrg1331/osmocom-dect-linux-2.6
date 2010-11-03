@@ -53,7 +53,7 @@ config DECT_LU1_SAP
 	  If unsure, say N.
 
 config DECT_CCP
-	tristate "DECT Cell Control Protocol support"
+	bool "DECT Cell Control Protocol support"
 	depends on DECT_CSF || DECT_CCF
 	select TIPC
 	help

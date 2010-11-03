@@ -1135,7 +1135,7 @@ static void dect_fp_init_si(struct dect_cluster *cl)
 		      DECT_HLC_STANDARD_CIPHERING;
 }
 
-void dect_cluster_init(struct dect_cluster *cl)
+int dect_cluster_init(struct dect_cluster *cl)
 {
 	spin_lock_init(&cl->lock);
 	INIT_LIST_HEAD(&cl->bmc.bcs);
@@ -1151,9 +1151,7 @@ void dect_cluster_init(struct dect_cluster *cl)
 	cl->handle.ops = &dect_ccf_ops;
 	cl->handle.index = cl->index;
 
-	// FIXME:
-	if (dect_ccp_cluster_init(cl) < 0)
-		printk("CCP init failed\n");
+	return dect_ccp_cluster_init(cl);
 }
 
 void dect_cluster_shutdown(struct dect_cluster *cl)

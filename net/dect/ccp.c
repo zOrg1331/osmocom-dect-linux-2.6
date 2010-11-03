@@ -899,7 +899,7 @@ struct dect_cluster_handle *dect_ccp_cell_init(struct dect_cell *cell, u8 clinde
 
 	clh = kzalloc(sizeof(*clh), GFP_KERNEL);
 	if (clh == NULL)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	clh->index = clindex;
 	clh->ops = &dect_ccp_ccf_ops;
 	return clh;

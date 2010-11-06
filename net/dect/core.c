@@ -25,11 +25,13 @@ void dect_lock(void)
 {
 	mutex_lock(&dect_cfg_mutex);
 }
+EXPORT_SYMBOL_GPL(dect_lock);
 
 void dect_unlock(void)
 {
 	mutex_unlock(&dect_cfg_mutex);
 }
+EXPORT_SYMBOL_GPL(dect_unlock);
 
 /*
  * MAC layer timers
@@ -153,21 +155,16 @@ static int __init dect_module_init(void)
 {
 	int err;
 
-	err = dect_transceiver_module_init();
-	if (err < 0)
-		goto err1;
 	err = dect_netlink_module_init();
 	if (err < 0)
-		goto err2;
+		goto err1;
 	err = dect_af_module_init();
 	if (err < 0)
-		goto err3;
+		goto err2;
 	return 0;
 
-err3:
-	dect_netlink_module_exit();
 err2:
-	dect_af_module_exit();
+	dect_netlink_module_exit();
 err1:
 	return err;
 }
@@ -176,7 +173,6 @@ static void __exit dect_module_exit(void)
 {
 	dect_af_module_exit();
 	dect_netlink_module_exit();
-	dect_transceiver_module_exit();
 }
 
 module_init(dect_module_init);

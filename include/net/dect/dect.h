@@ -195,14 +195,23 @@ struct dect_cluster {
 	struct dect_timer_base		timer_base[DECT_TIMER_BASE_MAX + 1];
 };
 
-extern int dect_cluster_init(struct dect_cluster *cl);
-extern void dect_cluster_shutdown(struct dect_cluster *cl);
-
+extern struct list_head dect_cluster_list;
 extern struct dect_cluster *dect_cluster_get_by_index(int index);
-extern struct dect_cluster *dect_cluster_get_by_pari(const struct dect_ari *ari);
 
-extern int dect_cluster_preload(struct dect_cluster *cl, const struct dect_ari *ari,
-				const struct dect_si *si);
+struct dect_netlink_handler {
+	int (*doit)(const struct sk_buff *, const struct nlmsghdr *,
+		    const struct nlattr *[]);
+	int (*dump)(struct sk_buff *, struct netlink_callback *);
+	int (*done)(struct netlink_callback *);
+	const struct nla_policy *policy;
+	unsigned int maxtype;
+};
+
+extern void dect_netlink_register_handlers(const struct dect_netlink_handler *handler,
+					   unsigned int base, unsigned int n);
+extern void dect_netlink_unregister_handlers(unsigned int base, unsigned int n);
+
+extern struct sock *dect_nlsk;
 
 /**
  * struct dect_llme_req - LLME netlink request
@@ -214,13 +223,6 @@ struct dect_llme_req {
 	struct nlmsghdr		nlh;
 	u32			nlpid;
 };
-
-struct dect_scan_result;
-extern void dect_llme_scan_result_notify(const struct dect_cluster *cl,
-					 const struct dect_scan_result *res);
-extern void dect_llme_mac_info_ind(const struct dect_cluster *cl,
-				   const struct dect_idi *idi,
-				   const struct dect_si *si);
 
 #include <net/sock.h>
 

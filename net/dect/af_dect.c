@@ -61,6 +61,7 @@ struct sk_buff *dect_alloc_notification(u32 type, const void *data,
 	memcpy(skb_put(skb, size), data, size);
 	return skb;
 }
+EXPORT_SYMBOL_GPL(dect_alloc_notification);
 
 static void dect_destruct(struct sock *sk)
 {
@@ -444,34 +445,11 @@ static struct net_proto_family dect_family_ops = {
 
 int __init dect_af_module_init(void)
 {
-	int err;
-
-	err = sock_register(&dect_family_ops);
-	if (err < 0)
-		goto err1;
-
-	err = dect_bsap_module_init();
-	if (err < 0)
-		goto err2;
-
-	err = dect_ssap_module_init();
-	if (err < 0)
-		goto err3;
-
-	return 0;
-
-err3:
-	dect_bsap_module_exit();
-err2:
-	sock_unregister(PF_DECT);
-err1:
-	return err;
+	return sock_register(&dect_family_ops);
 }
 
 void dect_af_module_exit(void)
 {
-	dect_bsap_module_exit();
-	dect_ssap_module_exit();
 	sock_unregister(PF_DECT);
 }
 

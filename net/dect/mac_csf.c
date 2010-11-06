@@ -27,6 +27,8 @@
 #undef KERN_DEBUG
 #define KERN_DEBUG
 
+static void dect_notify_cell(u16 event, const struct dect_cell *cell,
+			     const struct nlmsghdr *nlh, u32 pid);
 static void dect_cell_schedule_page(struct dect_cell *cell, u32 mask);
 
 static const u8 dect_fp_preamble[]	= { 0x55, 0x55, 0xe9, 0x8a};
@@ -42,6 +44,31 @@ static const u8 dect_pp_preamble[]	= { 0xaa, 0xaa, 0x16, 0x75};
 	mac_debug(cell, DECT_TIMER_RX, fmt, ## args)
 #define tx_debug(cell, fmt, args...) \
 	mac_debug(cell, DECT_TIMER_TX, fmt, ## args)
+
+static LIST_HEAD(dect_cell_list);
+
+struct dect_cell *dect_cell_get_by_index(u32 index)
+{
+	struct dect_cell *cell;
+
+	list_for_each_entry(cell, &dect_cell_list, list) {
+		if (cell->index == index)
+			return cell;
+	}
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(dect_cell_get_by_index);
+
+static struct dect_cell *dect_cell_get_by_name(const struct nlattr *nla)
+{
+	struct dect_cell *cell;
+
+	list_for_each_entry(cell, &dect_cell_list, list) {
+		if (!nla_strcmp(nla, cell->name))
+			return cell;
+	}
+	return NULL;
+}
 
 static struct dect_cell *dect_cell(const struct dect_cell_handle *ch)
 {
@@ -4676,7 +4703,7 @@ static const struct dect_csf_ops dect_csf_ops = {
 	.tbc_data_req		= dect_tbc_data_req,
 };
 
-int dect_cell_bind(struct dect_cell *cell, u8 index)
+static int dect_cell_bind(struct dect_cell *cell, u8 index)
 {
 	struct dect_cluster_handle *clh;
 	struct dect_cluster *cl;
@@ -4695,7 +4722,7 @@ int dect_cell_bind(struct dect_cell *cell, u8 index)
 	return clh->ops->bind(clh, &cell->handle);
 }
 
-void dect_cell_shutdown(struct dect_cell *cell)
+static void dect_cell_shutdown(struct dect_cell *cell)
 {
 	struct dect_cluster_handle *clh = cell->handle.clh;
 	struct dect_transceiver *trx;
@@ -4712,7 +4739,7 @@ void dect_cell_shutdown(struct dect_cell *cell)
 /**
  * dect_mac_init_cell - Initialize a DECT cell
  */
-void dect_cell_init(struct dect_cell *cell)
+static void dect_cell_init(struct dect_cell *cell)
 {
 	spin_lock_init(&cell->lock);
 	INIT_LIST_HEAD(&cell->bcs);
@@ -4779,4 +4806,282 @@ void dect_cell_detach_transceiver(struct dect_cell *cell,
 	dect_transceiver_group_remove(&cell->trg, trx);
 	kfree(trx->irc);
 	trx->cell = NULL;
+
+	dect_notify_cell(DECT_NEW_CELL, cell, NULL, 0);
 }
+
+/*
+ * Cell netlink interface
+ */
+
+static u32 dect_cell_alloc_index(void)
+{
+	static u32 index;
+
+	for (;;) {
+		if (++index == 0)
+			index = 1;
+		if (!dect_cell_get_by_index(index))
+			return index;
+	}
+}
+
+static int dect_fill_cell(struct sk_buff *skb,
+			  const struct dect_cell *cell,
+			  u16 type, u32 pid, u32 seq, u16 flags)
+{
+	const struct dect_transceiver *trx;
+	struct nlmsghdr *nlh;
+	struct dectmsg *dm;
+	struct nlattr *nest;
+
+	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*dm), flags);
+	if (nlh == NULL)
+		return -EMSGSIZE;
+	dm = nlmsg_data(nlh);
+	dm->dm_index = cell->index;
+
+	NLA_PUT_STRING(skb, DECTA_CELL_NAME, cell->name);
+	if (cell->flags != 0)
+		NLA_PUT_U32(skb, DECTA_CELL_FLAGS, cell->flags);
+	if (cell->trg.trxmask != 0) {
+		nest = nla_nest_start(skb, DECTA_CELL_TRANSCEIVERS);
+		if (nest == NULL)
+			goto nla_put_failure;
+		dect_foreach_transceiver(trx, &cell->trg)
+			NLA_PUT_STRING(skb, DECTA_LIST_ELEM, trx->name);
+		nla_nest_end(skb, nest);
+	}
+	if (cell->handle.clh != NULL)
+		NLA_PUT_U8(skb, DECTA_CELL_CLUSTER, cell->handle.clh->index);
+
+	return nlmsg_end(skb, nlh);
+
+nla_put_failure:
+	nlmsg_cancel(skb, nlh);
+	return -EMSGSIZE;
+}
+
+static int dect_dump_cell(struct sk_buff *skb,
+			  struct netlink_callback *cb)
+{
+	const struct dect_cell *cell;
+	unsigned int idx, s_idx;
+
+	s_idx = cb->args[0];
+	idx = 0;
+	list_for_each_entry(cell, &dect_cell_list, list) {
+		if (idx < s_idx)
+			goto cont;
+		if (dect_fill_cell(skb, cell, DECT_NEW_CELL,
+				   NETLINK_CB(cb->skb).pid,
+				   cb->nlh->nlmsg_seq, NLM_F_MULTI) <= 0)
+			break;
+cont:
+		idx++;
+	}
+	cb->args[0] = idx;
+
+	return skb->len;
+}
+
+static void dect_notify_cell(u16 event, const struct dect_cell *cell,
+			     const struct nlmsghdr *nlh, u32 pid)
+{
+	struct sk_buff *skb;
+	bool report = nlh ? nlmsg_report(nlh) : 0;
+	u32 seq = nlh ? nlh->nlmsg_seq : 0;
+	int err = -ENOBUFS;
+
+	skb = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (skb == NULL)
+		goto err;
+
+	err = dect_fill_cell(skb, cell, event, pid, seq, NLMSG_DONE);
+	if (err < 0) {
+		WARN_ON(err == -EMSGSIZE);
+		kfree_skb(skb);
+		goto err;
+	}
+	nlmsg_notify(dect_nlsk, skb, pid, DECTNLGRP_CELL, report, GFP_KERNEL);
+err:
+	if (err < 0)
+		netlink_set_err(dect_nlsk, pid, DECTNLGRP_CELL, err);
+}
+
+static const struct nla_policy dect_cell_policy[DECTA_CELL_MAX + 1] = {
+	[DECTA_CELL_NAME]		= { .type = NLA_STRING, .len = DECTNAMSIZ },
+	[DECTA_CELL_FLAGS]		= { .type = NLA_U32 },
+	[DECTA_CELL_CLUSTER]		= { .type = NLA_U8 },
+};
+
+static int dect_new_cell(const struct sk_buff *skb,
+			 const struct nlmsghdr *nlh,
+			 const struct nlattr *tb[DECTA_CELL_MAX + 1])
+{
+	struct dect_cell *cell;
+	struct dectmsg *dm;
+	u32 flags = 0;
+	u8 cli = 0;
+	int err;
+
+	dm = nlmsg_data(nlh);
+	if (dm->dm_index != 0)
+		cell = dect_cell_get_by_index(dm->dm_index);
+	else if (tb[DECTA_CELL_NAME] != NULL)
+		cell = dect_cell_get_by_name(tb[DECTA_CELL_NAME]);
+	else
+		return -EINVAL;
+
+	if (tb[DECTA_CELL_FLAGS] != NULL) {
+		flags = nla_get_u32(tb[DECTA_CELL_FLAGS]);
+		if (flags & ~(DECT_CELL_CCP | DECT_CELL_SLAVE |
+			      DECT_CELL_MONITOR))
+			return -EINVAL;
+	}
+
+	if (tb[DECTA_CELL_CLUSTER] != NULL)
+		cli = nla_get_u8(tb[DECTA_CELL_CLUSTER]);
+
+	if (cell != NULL) {
+		if (nlh->nlmsg_flags & NLM_F_EXCL)
+			return -EEXIST;
+
+		if (tb[DECTA_CELL_CLUSTER] != NULL) {
+			if (cell->handle.clh != NULL)
+				return -EBUSY;
+			if (cli != 0)
+				return dect_cell_bind(cell, cli);
+		}
+		return 0;
+	}
+
+	if (!(nlh->nlmsg_flags & NLM_F_CREATE))
+		return -ENOENT;
+
+	cell = kzalloc(sizeof(*cell), GFP_KERNEL);
+	if (cell == NULL)
+		return -ENOMEM;
+	cell->index = dect_cell_alloc_index();
+	nla_strlcpy(cell->name, tb[DECTA_CELL_NAME], sizeof(cell->name));
+	cell->flags = flags;
+	dect_cell_init(cell);
+
+	if (cli != 0) {
+		err = dect_cell_bind(cell, cli);
+		if (err < 0)
+			goto err;
+	}
+
+	list_add_tail(&cell->list, &dect_cell_list);
+	dect_notify_cell(DECT_NEW_CELL, cell, nlh, NETLINK_CB(skb).pid);
+	return 0;
+
+err:
+	kfree(cell);
+	return err;
+}
+
+static int dect_del_cell(const struct sk_buff *skb,
+			 const struct nlmsghdr *nlh,
+			 const struct nlattr *tb[DECTA_CELL_MAX + 1])
+{
+	struct dect_cell *cell = NULL;
+	struct dectmsg *dm;
+
+	dm = nlmsg_data(nlh);
+	if (dm->dm_index != 0)
+		cell = dect_cell_get_by_index(dm->dm_index);
+	else if (tb[DECTA_CELL_NAME] != NULL)
+		cell = dect_cell_get_by_name(tb[DECTA_CELL_NAME]);
+	if (cell == NULL)
+		return -ENODEV;
+
+	cell = dect_cell_get_by_name(tb[DECTA_CELL_NAME]);
+	if (cell == NULL)
+		return -ENOENT;
+
+	dect_cell_shutdown(cell);
+	list_del(&cell->list);
+	dect_notify_cell(DECT_DEL_CELL, cell, nlh, NETLINK_CB(skb).pid);
+	kfree(cell);
+	return 0;
+}
+
+static int dect_get_cell(const struct sk_buff *in_skb,
+			 const struct nlmsghdr *nlh,
+			 const struct nlattr *tb[DECTA_CELL_MAX + 1])
+{
+	u32 pid = NETLINK_CB(in_skb).pid;
+	const struct dect_cell *cell = NULL;
+	struct dectmsg *dm;
+	struct sk_buff *skb;
+	int err;
+
+	dm = nlmsg_data(nlh);
+	if (dm->dm_index != 0)
+		cell = dect_cell_get_by_index(dm->dm_index);
+	else if (tb[DECTA_CELL_NAME] != NULL)
+		cell = dect_cell_get_by_name(tb[DECTA_CELL_NAME]);
+	if (cell == NULL)
+		return -ENODEV;
+
+	skb = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (skb == NULL)
+		return -ENOMEM;
+	err = dect_fill_cell(skb, cell, DECT_NEW_CELL, pid, nlh->nlmsg_seq,
+			     NLMSG_DONE);
+	if (err < 0)
+		goto err1;
+	return nlmsg_unicast(dect_nlsk, skb, pid);
+
+err1:
+	kfree_skb(skb);
+	return err;
+}
+
+static const struct dect_netlink_handler dect_cell_handlers[] = {
+       {
+	       /* DECT_NEW_CELL */
+		.policy		= dect_cell_policy,
+		.maxtype	= DECTA_CELL_MAX,
+		.doit		= dect_new_cell,
+	},
+	{
+		/* DECT_DEL_CELL */
+		.policy		= dect_cell_policy,
+		.maxtype	= DECTA_CELL_MAX,
+		.doit		= dect_del_cell,
+	},
+	{
+		/* DECT_GET_CELL */
+		.policy		= dect_cell_policy,
+		.maxtype	= DECTA_CELL_MAX,
+		.doit		= dect_get_cell,
+		.dump		= dect_dump_cell,
+	},
+};
+
+static int __init dect_csf_module_init(void)
+{
+	int err;
+
+	err = dect_transceiver_module_init();
+	if (err < 0)
+		return err;
+
+	dect_netlink_register_handlers(dect_cell_handlers, DECT_NEW_CELL,
+				       ARRAY_SIZE(dect_cell_handlers));
+	return 0;
+}
+
+static void __exit dect_csf_module_exit(void)
+{
+	dect_netlink_unregister_handlers(DECT_NEW_CELL,
+				         ARRAY_SIZE(dect_cell_handlers));
+	dect_transceiver_module_exit();
+}
+
+module_init(dect_csf_module_init);
+module_exit(dect_csf_module_exit);
+MODULE_LICENSE("GPL");

@@ -39,6 +39,7 @@ bool dect_ari_masked_cmp(const struct dect_ari *a1, const struct dect_ari *a2,
 		return true;
 	}
 }
+EXPORT_SYMBOL_GPL(dect_ari_masked_cmp);;
 
 bool dect_ari_cmp(const struct dect_ari *a1, const struct dect_ari *a2)
 {
@@ -50,6 +51,7 @@ bool dect_ari_cmp(const struct dect_ari *a1, const struct dect_ari *a2)
 	};
 	return dect_ari_masked_cmp(a1, a2, &mask);
 }
+EXPORT_SYMBOL_GPL(dect_ari_cmp);
 
 u8 dect_parse_ari(struct dect_ari *ari, u64 a)
 {
@@ -114,6 +116,7 @@ u64 dect_build_ari(const struct dect_ari *ari)
 	}
 	return a;
 }
+EXPORT_SYMBOL_GPL(dect_build_ari);
 
 u64 dect_build_rfpi(const struct dect_idi *idi)
 {
@@ -124,6 +127,7 @@ u64 dect_build_rfpi(const struct dect_idi *idi)
 	t |= idi->rpn << DECT_RFPI_RPN_SHIFT;
 	return t;
 }
+EXPORT_SYMBOL_GPL(dect_build_rfpi);
 
 bool dect_rfpi_cmp(const struct dect_idi *i1, const struct dect_idi *i2)
 {
@@ -131,6 +135,7 @@ bool dect_rfpi_cmp(const struct dect_idi *i1, const struct dect_idi *i2)
 	       i1->rpn != i2->rpn ||
 	       i1->e   != i2->e;
 }
+EXPORT_SYMBOL_GPL(dect_rfpi_cmp);
 
 u16 dect_build_fmid(const struct dect_idi *idi)
 {
@@ -140,6 +145,7 @@ u16 dect_build_fmid(const struct dect_idi *idi)
 	rfpi >>= (sizeof(rfpi) - DECT_NT_ID_RFPI_LEN) * BITS_PER_BYTE;
 	return rfpi & DECT_FMID_MASK;
 }
+EXPORT_SYMBOL_GPL(dect_build_fmid);
 
 /*
  * PMID (Portable MAC Identity)
@@ -185,6 +191,7 @@ bool dect_pmid_cmp(const struct dect_pmid *p1, const struct dect_pmid *p2)
 {
 	return memcmp(p1, p2, sizeof(*p1));
 }
+EXPORT_SYMBOL(dect_pmid_cmp);
 
 /**
  * dect_parse_mci - Extract the MCI elements from a packed MCI in a

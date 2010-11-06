@@ -19,8 +19,9 @@
 #include <net/dect/mac_csf.h>
 #include <net/dect/transceiver.h>
 
-static RAW_NOTIFIER_HEAD(dect_transceiver_chain);
-LIST_HEAD(dect_transceiver_list);
+static LIST_HEAD(dect_transceiver_list);
+static int dect_transceiver_notify(struct dect_transceiver *trx,
+				   unsigned long event);
 
 #define trx_debug(trx, fmt, args...) \
 	pr_debug("%s: " fmt, trx->name, ## args)
@@ -507,26 +508,6 @@ bool dect_transceiver_release(struct dect_transceiver_group *trg,
 	return dect_tg_update_blind_full_slots(trg);
 }
 
-void dect_register_notifier(struct notifier_block *nb)
-{
-	dect_lock();
-	raw_notifier_chain_register(&dect_transceiver_chain, nb);
-	dect_unlock();
-}
-
-void dect_unregister_notifier(struct notifier_block *nb)
-{
-	dect_lock();
-	raw_notifier_chain_unregister(&dect_transceiver_chain, nb);
-	dect_unlock();
-}
-
-static void dect_transceiver_notify(unsigned long val,
-				    struct dect_transceiver *trx)
-{
-	raw_notifier_call_chain(&dect_transceiver_chain, val, trx);
-}
-
 struct dect_transceiver *dect_transceiver_alloc(const struct dect_transceiver_ops *ops,
 						unsigned int priv)
 {
@@ -602,7 +583,7 @@ int dect_register_transceiver(struct dect_transceiver *trx)
 		goto out;
 
 	list_add_tail(&trx->list, &dect_transceiver_list);
-	dect_transceiver_notify(DECT_TRANSCEIVER_REGISTER, trx);
+	dect_transceiver_notify(trx, DECT_TRANSCEIVER_REGISTER);
 out:
 	dect_unlock();
 
@@ -614,13 +595,266 @@ void dect_unregister_transceiver(struct dect_transceiver *trx)
 {
 	dect_lock();
 	list_del(&trx->list);
-	dect_transceiver_notify(DECT_TRANSCEIVER_UNREGISTER, trx);
+	dect_transceiver_notify(trx, DECT_TRANSCEIVER_UNREGISTER);
 	dect_unlock();
 
 	synchronize_rcu();
 	trx->ops->destructor(trx);
 }
 EXPORT_SYMBOL_GPL(dect_unregister_transceiver);
+
+/*
+ * Transceiver netlink interface
+ */
+
+static struct dect_transceiver *dect_transceiver_get_by_name(const struct nlattr *nla)
+{
+	struct dect_transceiver *trx;
+
+	list_for_each_entry(trx, &dect_transceiver_list, list) {
+		if (!nla_strcmp(nla, trx->name))
+			return trx;
+	}
+	return NULL;
+}
+
+static int dect_fill_slot(struct sk_buff *skb,
+			  const struct dect_transceiver *trx, u8 slot)
+{
+	const struct dect_transceiver_slot *ts = &trx->slots[slot];
+
+	NLA_PUT_U8(skb, DECTA_SLOT_NUM, slot);
+	NLA_PUT_U8(skb, DECTA_SLOT_STATE, ts->state);
+	NLA_PUT_U32(skb, DECTA_SLOT_FLAGS, ts->flags);
+	NLA_PUT_U8(skb, DECTA_SLOT_CARRIER, ts->chd.carrier);
+	NLA_PUT_U32(skb, DECTA_SLOT_FREQUENCY, trx->band->frequency[ts->chd.carrier]);
+	if (ts->state == DECT_SLOT_RX) {
+		NLA_PUT_U32(skb, DECTA_SLOT_PHASEOFF, ts->phaseoff);
+		NLA_PUT_U8(skb, DECTA_SLOT_RSSI,
+			   ts->rssi >> DECT_RSSI_AVG_SCALE);
+	}
+	NLA_PUT_U32(skb, DECTA_SLOT_RX_BYTES, ts->rx_bytes);
+	NLA_PUT_U32(skb, DECTA_SLOT_RX_PACKETS, ts->rx_packets);
+	NLA_PUT_U32(skb, DECTA_SLOT_RX_A_CRC_ERRORS, ts->rx_a_crc_errors);
+	NLA_PUT_U32(skb, DECTA_SLOT_RX_X_CRC_ERRORS, ts->rx_x_crc_errors);
+	NLA_PUT_U32(skb, DECTA_SLOT_RX_Z_CRC_ERRORS, ts->rx_z_crc_errors);
+	NLA_PUT_U32(skb, DECTA_SLOT_TX_BYTES, ts->tx_bytes);
+	NLA_PUT_U32(skb, DECTA_SLOT_TX_PACKETS, ts->tx_packets);
+	return 0;
+
+nla_put_failure:
+	return -1;
+}
+
+static int dect_fill_transceiver(struct sk_buff *skb,
+				 const struct dect_transceiver *trx,
+				 u16 type, u32 pid, u32 seq, u16 flags)
+{
+	const struct dect_transceiver_stats *stats = &trx->stats;
+	struct nlattr *nest, *chan;
+	struct nlmsghdr *nlh;
+	struct dectmsg *dm;
+	u8 slot;
+
+	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*dm), flags);
+	if (nlh == NULL)
+		return -EMSGSIZE;
+
+	dm = nlmsg_data(nlh);
+
+	NLA_PUT_STRING(skb, DECTA_TRANSCEIVER_NAME, trx->name);
+	NLA_PUT_STRING(skb, DECTA_TRANSCEIVER_TYPE, trx->ops->name);
+	if (trx->cell != NULL)
+		NLA_PUT_U8(skb, DECTA_TRANSCEIVER_LINK, trx->cell->index);
+
+	nest = nla_nest_start(skb, DECTA_TRANSCEIVER_STATS);
+	if (nest == NULL)
+		goto nla_put_failure;
+	NLA_PUT_U32(skb, DECTA_TRANSCEIVER_STATS_EVENT_BUSY, stats->event_busy);
+	NLA_PUT_U32(skb, DECTA_TRANSCEIVER_STATS_EVENT_LATE, stats->event_late);
+	nla_nest_end(skb, nest);
+
+	NLA_PUT_U8(skb, DECTA_TRANSCEIVER_BAND, trx->band->band);
+
+	nest = nla_nest_start(skb, DECTA_TRANSCEIVER_SLOTS);
+	if (nest == NULL)
+		goto nla_put_failure;
+	for (slot = 0; slot < DECT_FRAME_SIZE; slot++) {
+		if (!dect_slot_available(trx, slot))
+			continue;
+
+		chan = nla_nest_start(skb, DECTA_LIST_ELEM);
+		if (chan == NULL)
+			goto nla_put_failure;
+		if (dect_fill_slot(skb, trx, slot) < 0)
+			goto nla_put_failure;
+		nla_nest_end(skb, chan);
+	}
+	nla_nest_end(skb, nest);
+
+	return nlmsg_end(skb, nlh);
+
+nla_put_failure:
+	nlmsg_cancel(skb, nlh);
+	return -EMSGSIZE;
+}
+
+static const struct nla_policy dect_transceiver_policy[DECTA_TRANSCEIVER_MAX + 1] = {
+	[DECTA_TRANSCEIVER_NAME]	= { .type = NLA_STRING, .len = DECTNAMSIZ },
+	[DECTA_TRANSCEIVER_LINK]	= { .type = NLA_U8 },
+};
+
+static int dect_new_transceiver(const struct sk_buff *in_skb,
+				const struct nlmsghdr *nlh,
+				const struct nlattr *tb[DECTA_TRANSCEIVER_MAX + 1])
+{
+	struct dect_transceiver *trx;
+	struct dect_cell *cell;
+	struct dectmsg *dm;
+	int index;
+
+	dm = nlmsg_data(nlh);
+
+	if (tb[DECTA_TRANSCEIVER_NAME] == NULL)
+		return -EINVAL;
+
+	trx = dect_transceiver_get_by_name(tb[DECTA_TRANSCEIVER_NAME]);
+	if (trx == NULL) {
+		if (nlh->nlmsg_flags & NLM_F_CREATE)
+			return -EOPNOTSUPP;
+		return -ENOENT;
+	}
+	if (nlh->nlmsg_flags & NLM_F_EXCL)
+		return -EEXIST;
+
+	if (tb[DECTA_TRANSCEIVER_LINK] != NULL) {
+		index = nla_get_u8(tb[DECTA_TRANSCEIVER_LINK]);
+		if (index == -1)
+			dect_cell_detach_transceiver(trx->cell, trx);
+		else {
+			cell = dect_cell_get_by_index(index);
+			if (cell == NULL)
+				return -ENOENT;
+			return dect_cell_attach_transceiver(cell, trx);
+		}
+	}
+	return 0;
+}
+
+static int dect_get_transceiver(const struct sk_buff *in_skb,
+				const struct nlmsghdr *nlh,
+				const struct nlattr *tb[DECTA_TRANSCEIVER_MAX + 1])
+{
+	u32 pid = NETLINK_CB(in_skb).pid;
+	const struct dect_transceiver *trx;
+	struct sk_buff *skb;
+	int err;
+
+	if (tb[DECTA_TRANSCEIVER_NAME] == NULL)
+		return -EINVAL;
+
+	trx = dect_transceiver_get_by_name(tb[DECTA_TRANSCEIVER_NAME]);
+	if (trx == NULL)
+		return -ENOENT;
+
+	skb = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (skb == NULL)
+		return -ENOMEM;
+	err = dect_fill_transceiver(skb, trx, DECT_NEW_TRANSCEIVER, pid,
+				    nlh->nlmsg_seq, NLMSG_DONE);
+	if (err < 0)
+		goto err1;
+	return nlmsg_unicast(dect_nlsk, skb, pid);
+
+err1:
+	kfree_skb(skb);
+	return err;
+}
+
+static int dect_dump_transceiver(struct sk_buff *skb,
+				 struct netlink_callback *cb)
+{
+	const struct dect_transceiver *trx;
+	unsigned int idx, s_idx;
+
+	s_idx = cb->args[0];
+	idx = 0;
+	list_for_each_entry(trx, &dect_transceiver_list, list) {
+		if (idx < s_idx)
+			goto cont;
+		if (dect_fill_transceiver(skb, trx, DECT_NEW_TRANSCEIVER,
+					  NETLINK_CB(cb->skb).pid,
+					  cb->nlh->nlmsg_seq, NLM_F_MULTI) <= 0)
+			break;
+cont:
+		idx++;
+	}
+	cb->args[0] = idx;
+
+	return skb->len;
+}
+
+static void dect_notify_transceiver(u16 event, const struct dect_transceiver *trx,
+				    const struct nlmsghdr *nlh, u32 pid)
+{
+	struct sk_buff *skb;
+	bool report = nlh ? nlmsg_report(nlh) : 0;
+	u32 seq = nlh ? nlh->nlmsg_seq : 0;
+	int err = -ENOBUFS;
+
+	skb = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (skb == NULL)
+		goto err;
+
+	err = dect_fill_transceiver(skb, trx, event, pid, seq, NLMSG_DONE);
+	if (err < 0) {
+		WARN_ON(err == -EMSGSIZE);
+		kfree_skb(skb);
+		goto err;
+	}
+	nlmsg_notify(dect_nlsk, skb, pid, DECTNLGRP_TRANSCEIVER, report, GFP_KERNEL);
+err:
+	if (err < 0)
+		netlink_set_err(dect_nlsk, pid, DECTNLGRP_TRANSCEIVER, err);
+}
+
+static int dect_transceiver_notify(struct dect_transceiver *trx,
+				   unsigned long event)
+{
+	struct dect_cell *cell = trx->cell;
+
+	switch (event) {
+	case DECT_TRANSCEIVER_REGISTER:
+		dect_notify_transceiver(DECT_NEW_TRANSCEIVER, trx, NULL, 0);
+		break;
+	case DECT_TRANSCEIVER_UNREGISTER:
+		if (cell != NULL)
+			dect_cell_detach_transceiver(cell, trx);
+		dect_notify_transceiver(DECT_DEL_TRANSCEIVER, trx, NULL, 0);
+		break;
+	}
+	return 0;
+};
+
+
+static const struct dect_netlink_handler dect_transceiver_handlers[] = {
+	{
+		/* DECT_NEW_TRANSCEIVER */
+		.policy		= dect_transceiver_policy,
+		.maxtype	= DECTA_TRANSCEIVER_MAX,
+		.doit		= dect_new_transceiver,
+	},
+	{
+		/* DECT_DEL_TRANSCEIVER */
+	},
+	{
+		/* DECT_GET_TRANSCEIVER */
+		.policy		= dect_transceiver_policy,
+		.maxtype	= DECTA_TRANSCEIVER_MAX,
+		.doit		= dect_get_transceiver,
+		.dump		= dect_dump_transceiver,
+	},
+};
 
 /*
  * RF-bands:
@@ -718,6 +952,10 @@ int __init dect_transceiver_module_init(void)
 		if (err < 0)
 			goto err1;
 	}
+
+	dect_netlink_register_handlers(dect_transceiver_handlers,
+				       DECT_NEW_TRANSCEIVER,
+				       ARRAY_SIZE(dect_transceiver_handlers));
 	return 0;
 
 err1:
@@ -728,6 +966,9 @@ err1:
 void dect_transceiver_module_exit(void)
 {
 	u8 band;
+
+	dect_netlink_unregister_handlers(DECT_NEW_TRANSCEIVER,
+				         ARRAY_SIZE(dect_transceiver_handlers));
 
 	for (band = 0; band < ARRAY_SIZE(dect_band); band++)
 		kfree(dect_band[band]);

@@ -172,10 +172,6 @@ extern int dect_mac_enc_eks_req(const struct dect_cluster *cl, u32 mcei,
 extern void dect_bmc_mac_page_req(struct dect_cluster *cl, struct sk_buff *skb);
 
 struct dect_llme_req;
-extern int dect_cluster_scan(struct dect_cluster *cl,
-			     const struct dect_llme_req *lreq,
-			     const struct dect_ari *pari,
-			     const struct dect_ari *pari_mask);
 
 /**
  * struct dect_ccf_ops - Cluster Control Ops

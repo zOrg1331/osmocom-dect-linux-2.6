@@ -592,10 +592,6 @@ struct dect_cell {
 
 extern struct dect_cell *dect_cell_get_by_index(u32 index);
 
-extern void dect_cell_init(struct dect_cell *cell);
-extern int dect_cell_bind(struct dect_cell *cell, u8 index);
-extern void dect_cell_shutdown(struct dect_cell *cell);
-
 extern int dect_cell_attach_transceiver(struct dect_cell *cell,
 					struct dect_transceiver *trx);
 extern void dect_cell_detach_transceiver(struct dect_cell *cell,

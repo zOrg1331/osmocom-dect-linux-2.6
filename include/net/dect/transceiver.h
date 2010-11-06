@@ -629,15 +629,10 @@ static inline void dect_release_transceiver_event(struct dect_transceiver_event 
 	atomic_dec(&event->busy);
 }
 
-extern struct list_head dect_transceiver_list;
-
 enum dect_transceiver_events {
 	DECT_TRANSCEIVER_REGISTER,
 	DECT_TRANSCEIVER_UNREGISTER,
 };
-
-extern void dect_register_notifier(struct notifier_block *nb);
-extern void dect_unregister_notifier(struct notifier_block *nb);
 
 #define DECT_TRX_GROUP_MAX	16
 

@@ -358,6 +358,7 @@ struct dect_dmb {
 	struct list_head		list;
 	struct dect_cell		*cell;
 
+	struct dect_timer		wd_timer;
 	struct dect_bearer		rxb1;
 	struct dect_bearer		rxb2;
 	struct dect_bc			bc;

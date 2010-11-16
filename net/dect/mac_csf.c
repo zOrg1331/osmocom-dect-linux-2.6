@@ -3461,6 +3461,8 @@ static void dect_dmb_release(struct dect_cell *cell, struct dect_dmb *dmb)
 {
 	cell->tbc_last_chd = dmb->rxb2.chd;
 
+	dect_timer_del(&dmb->wd_timer);
+
 	dect_transceiver_release(&cell->trg, dmb->rxb1.trx, &dmb->rxb1.chd);
 	dect_bearer_release(dmb->cell, &dmb->rxb1);
 
@@ -3470,6 +3472,18 @@ static void dect_dmb_release(struct dect_cell *cell, struct dect_dmb *dmb)
 	dect_bc_release(&dmb->bc);
 	list_del(&dmb->list);
 	kfree(dmb);
+}
+
+static void dect_dmb_watchdog_timer(struct dect_cell *cell, void *data)
+{
+	dect_dmb_release(cell, data);
+}
+
+static void dect_dmb_watchdog_reschedule(struct dect_cell *cell,
+					 struct dect_dmb *dmb)
+{
+	dect_bearer_timer_add(cell, &dmb->rxb1, &dmb->wd_timer,
+			      DECT_TBC_RFPI_TIMEOUT);
 }
 
 static void dect_dmb_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
@@ -3482,6 +3496,10 @@ static void dect_dmb_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 
 	if (dect_parse_tail_msg(&tm, skb) < 0)
 		goto err;
+
+	/* Reschedule watchdog on successful RFPI handshake. */
+	if (tm.type == DECT_TM_TYPE_ID && !dect_rfpi_cmp(&tm.idi, &cell->idi))
+		dect_dmb_watchdog_reschedule(cell, dmb);
 
 	dect_bc_rcv(cell, &dmb->bc, skb, &tm);
 
@@ -3516,6 +3534,7 @@ static struct dect_dmb *dect_dmb_init(struct dect_cell *cell,
 		return NULL;
 	dmb->cell = cell;
 
+	dect_timer_setup(&dmb->wd_timer, dect_dmb_watchdog_timer, dmb);
 	dect_bearer_init(cell, &dmb->rxb1, &dect_dmb_ops, DECT_DUPLEX_BEARER,
 			 trx1, chd1, DECT_BEARER_RX, dmb);
 	dect_bearer_init(cell, &dmb->rxb2, &dect_dmb_ops, DECT_DUPLEX_BEARER,
@@ -3573,6 +3592,9 @@ static void dect_dmb_rcv_request(struct dect_cell *cell,
 
 	dect_bearer_enable(&dmb->rxb1);
 	dect_bearer_enable(&dmb->rxb2);
+
+	dect_bearer_timer_add(cell, &dmb->rxb1, &dmb->wd_timer,
+			      DECT_TBC_RFPI_TIMEOUT);
 
 	kfree_skb(skb);
 	return;

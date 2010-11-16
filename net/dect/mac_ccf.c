@@ -1468,6 +1468,35 @@ static int dect_llme_mac_info_req(struct dect_cluster *cl,
 	return nlmsg_unicast(dect_nlsk, skb, lreq.nlpid);
 }
 
+static int dect_llme_mac_info_res(struct dect_cluster *cl,
+				  const struct sk_buff *skb_in,
+				  const struct nlmsghdr *nlh,
+				  const struct nlattr *tb[DECTA_MAC_INFO_MAX + 1])
+{
+	struct dect_cell_handle *ch;
+	struct dect_ari pari;
+	int err;
+
+	if (cl->mode != DECT_MODE_PP)
+		return -EOPNOTSUPP;
+
+	if (tb[DECTA_MAC_INFO_PARI] != NULL) {
+		err = dect_nla_parse_ari(&pari, tb[DECTA_MAC_INFO_PARI]);
+		if (err < 0)
+			return err;
+	} else
+		return -EINVAL;
+
+	ch = dect_cluster_get_cell_by_rpn(cl, 0);
+	if (ch == NULL)
+		return -EHOSTUNREACH;
+
+	cl->pari = pari;
+	memset(&cl->si, 0, sizeof(cl->si));
+
+	return dect_cluster_enable_cell(cl, ch);
+}
+
 static const struct nla_policy dect_llme_mac_info_policy[DECTA_MAC_INFO_MAX + 1] =  {
 	[DECTA_MAC_INFO_PARI]		= { .type = NLA_NESTED },
 	[DECTA_MAC_INFO_RPN]		= { .type = NLA_U8 },
@@ -1608,6 +1637,7 @@ static const struct dect_llme_link {
 		.maxtype	= DECTA_MAC_INFO_MAX,
 		.ops		= {
 			[DECT_LLME_REQUEST].doit = dect_llme_mac_info_req,
+			[DECT_LLME_RESPONSE].doit = dect_llme_mac_info_res,
 		},
 	},
 	[DECT_LLME_MAC_RFP_PRELOAD] = {

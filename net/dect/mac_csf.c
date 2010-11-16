@@ -3632,7 +3632,8 @@ void dect_mac_irc_rcv(struct dect_transceiver *trx, struct sk_buff *skb)
 	struct dect_irc *irc = trx->irc;
 	struct dect_tail_msg tm;
 
-	dect_parse_tail_msg(&tm, skb);
+	if (dect_parse_tail_msg(&tm, skb) < 0)
+		goto err;
 
 	switch (trx->state) {
 	case DECT_TRANSCEIVER_UNLOCKED:
@@ -3658,7 +3659,7 @@ void dect_mac_irc_rcv(struct dect_transceiver *trx, struct sk_buff *skb)
 	default:
 		break;
 	}
-
+err:
 	kfree_skb(skb);
 }
 

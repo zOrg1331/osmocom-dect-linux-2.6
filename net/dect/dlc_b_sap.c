@@ -33,7 +33,7 @@ void dect_bsap_rcv(const struct dect_cluster *cl, struct sk_buff *skb)
 {
 	struct hlist_node *node;
 	struct sk_buff *skb2;
-	struct sock *sk;
+	struct sock *sk, *prev = NULL;
 
 	spin_lock(&dect_bsap_lock);
 	sk_for_each(sk, node, &dect_bsap_sockets) {
@@ -45,9 +45,19 @@ void dect_bsap_rcv(const struct dect_cluster *cl, struct sk_buff *skb)
 		if (skb2 == NULL) {
 			sk->sk_err = -ENOMEM;
 			sk->sk_error_report(sk);
-		} else if (dect_sock_queue_rcv_skb(sk, skb2) < 0)
-			kfree_skb(skb2);
+			break;
+		}
+
+		if (prev != NULL) {
+			if (dect_sock_queue_rcv_skb(prev, skb2) < 0)
+				kfree_skb(skb2);
+		}
+		prev = sk;
 	}
+
+	if (prev == NULL || dect_sock_queue_rcv_skb(prev, skb) < 0)
+		kfree_skb(skb);
+
 	spin_unlock(&dect_bsap_lock);
 }
 

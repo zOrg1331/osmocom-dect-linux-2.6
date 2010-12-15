@@ -59,21 +59,6 @@ struct dect_channel_list {
 
 #define DECT_CHANNEL_MIN_DELAY		2	/* frames */
 
-/**
- * enum dect_bearer_types
- *
- * @DECT_SIMPLEX_BEARER:	simplex bearer, one physical channel
- * @DECT_DUPLEX_BEARER:		two simplex bearers on opposite channels
- * @DECT_DOUBLE_SIMLEX_BEARER:	two simplex bearers in same direction
- * @DECT_DOUBLE_DUPLEX_BEARER:	two duplex bearers
- */
-enum dect_bearer_types {
-	DECT_SIMPLEX_BEARER,
-	DECT_DUPLEX_BEARER,
-	DECT_DOUBLE_SIMPLEX_BEARER,
-	DECT_DOUBLE_DUPLEX_BEARER,
-};
-
 enum dect_bearer_states {
 	DECT_DUMMY_BEARER,
 	DECT_TRAFFIC_BEARER,
@@ -128,7 +113,6 @@ struct dect_bearer_ops {
  * @union:		bearer type specific data
  */
 struct dect_bearer {
-	enum dect_bearer_types		type;
 	const struct dect_bearer_ops	*ops;
 	struct dect_transceiver		*trx;
 	struct dect_channel_desc	chd;

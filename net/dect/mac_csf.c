@@ -1379,14 +1379,13 @@ static void dect_bearer_release(struct dect_cell *cell,
 
 static void dect_bearer_init(struct dect_cell *cell, struct dect_bearer *bearer,
 			     const struct dect_bearer_ops *ops,
-			     enum dect_bearer_types type,
 			     struct dect_transceiver *trx,
 			     const struct dect_channel_desc *chd,
 			     enum dect_bearer_modes mode, void *data)
 {
 	pr_debug("init bearer: mode: %s slot: %u carrier: %u\n",
 		 mode == DECT_BEARER_RX ? "RX" : "TX" , chd->slot, chd->carrier);
-	bearer->type  = type;
+
 	bearer->ops   = ops;
 	bearer->trx   = trx;
 	bearer->chd   = *chd;
@@ -3033,9 +3032,9 @@ static struct dect_tbc *dect_tbc_init(struct dect_cell *cell,
 	dect_timer_setup(&tbc->release_timer, dect_tbc_release_timer, tbc);
 	dect_timer_setup(&tbc->enc_timer, dect_tbc_enc_timer, tbc);
 
-	dect_bearer_init(cell, &tbc->rxb, &dect_tbc_ops, DECT_DUPLEX_BEARER,
+	dect_bearer_init(cell, &tbc->rxb, &dect_tbc_ops,
 			 rtrx, rchd, DECT_BEARER_RX, tbc);
-	dect_bearer_init(cell, &tbc->txb, &dect_tbc_ops, DECT_DUPLEX_BEARER,
+	dect_bearer_init(cell, &tbc->txb, &dect_tbc_ops,
 			 ttrx, tchd, DECT_BEARER_TX, tbc);
 
 	list_add_tail(&tbc->list, &cell->tbcs);
@@ -3432,8 +3431,7 @@ static struct dect_dbc *dect_dbc_init(struct dect_cell *cell,
 	dect_timer_setup(&dbc->qctrl_timer, dect_dbc_quality_control_timer, dbc);
 	dect_bc_init(cell, &dbc->bc);
 
-	dect_bearer_init(cell, &dbc->bearer, &dect_dbc_ops, DECT_SIMPLEX_BEARER,
-			 trx, chd, mode, dbc);
+	dect_bearer_init(cell, &dbc->bearer, &dect_dbc_ops, trx, chd, mode, dbc);
 
 	if (cell->mode == DECT_MODE_FP)
 		dect_tx_bearer_schedule(cell, &dbc->bearer, rssi);
@@ -3535,9 +3533,9 @@ static struct dect_dmb *dect_dmb_init(struct dect_cell *cell,
 	dmb->cell = cell;
 
 	dect_timer_setup(&dmb->wd_timer, dect_dmb_watchdog_timer, dmb);
-	dect_bearer_init(cell, &dmb->rxb1, &dect_dmb_ops, DECT_DUPLEX_BEARER,
+	dect_bearer_init(cell, &dmb->rxb1, &dect_dmb_ops,
 			 trx1, chd1, DECT_BEARER_RX, dmb);
-	dect_bearer_init(cell, &dmb->rxb2, &dect_dmb_ops, DECT_DUPLEX_BEARER,
+	dect_bearer_init(cell, &dmb->rxb2, &dect_dmb_ops,
 			 trx2, chd2, DECT_BEARER_RX, dmb);
 	dect_bc_init(cell, &dmb->bc);
 

@@ -1202,7 +1202,7 @@ static int dect_parse_tail_msg(struct dect_tail_msg *tm,
 	u64 t;
 
 	tm->type = DECT_TM_TYPE_INVALID;
-	t = get_unaligned_be64((__be64 *)&skb->data[DECT_T_FIELD_OFF]);
+	t = get_unaligned_be64((__be64 *)skb->data);
 
 	switch (dect_parse_tail(skb)) {
 	case DECT_TI_CT_PKT_0:
@@ -1286,7 +1286,7 @@ static struct sk_buff *dect_build_tail_msg(struct sk_buff *skb,
 
 	skb_put(skb, DECT_T_FIELD_SIZE);
 	for (i = 0; i < DECT_T_FIELD_SIZE; i++)
-		skb->data[i] = t >> ((sizeof(t) - i - 1) * BITS_PER_BYTE);
+		skb->data[i] = t >> ((sizeof(t) - i - 2) * BITS_PER_BYTE);
 
 	DECT_A_CB(skb)->id = ti;
 	return skb;
@@ -1556,7 +1556,7 @@ static void dect_queue_page_segments(struct sk_buff_head *list,
 			t = DECT_PT_LONG_PAGE;
 
 		seg->data[0] &= 0x0f;
-		seg->data[0] |= t >> 56;
+		seg->data[0] |= t >> 48;
 		pr_debug("queue page segment len %u hdr %x\n",
 			 seg->len, seg->data[0] & 0xf0);
 		__skb_queue_tail(list, seg);
@@ -1577,7 +1577,7 @@ static void dect_queue_page_segments(struct sk_buff_head *list,
 		t = DECT_PT_LONG_PAGE_LAST;
 
 	skb->data[0] &= 0x0f;
-	skb->data[0] |= t >> 56;
+	skb->data[0] |= t >> 48;
 	pr_debug("queue page segment len %u hdr %x\n",
 		 skb->len, skb->data[0] & 0xf0);
 	__skb_queue_tail(list, skb);
@@ -1821,8 +1821,8 @@ static void dect_page_add_mac_info(struct dect_cell *cell, struct dect_bc *bc,
 	}
 
 	it = skb_put(skb, DECT_PT_INFO_TYPE_SIZE);
-	it[0] = t >> 32;
-	it[1] = t >> 24;
+	it[0] = t >> 24;
+	it[1] = t >> 16;
 out:
 	bc->p_tx_mask &= ~(1 << tm.type);
 }
@@ -1865,9 +1865,9 @@ static struct sk_buff *dect_bc_p_dequeue(struct dect_cell *cell,
 		t |= (u64)dect_build_page_rfpi(cell) << DECT_PT_ZP_RFPI_SHIFT;
 
 		hdr = skb_put(skb, 3);
-		hdr[0] = t >> 56;
-		hdr[1] = t >> 48;
-		hdr[2] = t >> 40;
+		hdr[0] = t >> 48;
+		hdr[1] = t >> 40;
+		hdr[2] = t >> 32;
 
 		tailroom = DECT_PT_INFO_TYPE_SIZE;
 	}

@@ -124,7 +124,7 @@ u64 dect_build_rfpi(const struct dect_idi *idi)
 
 	t |= idi->e ? DECT_RFPI_E_FLAG : 0;
 	t |= dect_build_ari(&idi->pari) >> DECT_RFPI_ARI_SHIFT;
-	t |= idi->rpn << DECT_RFPI_RPN_SHIFT;
+	t |= (u64)idi->rpn << DECT_RFPI_RPN_SHIFT;
 	return t;
 }
 EXPORT_SYMBOL_GPL(dect_build_rfpi);
@@ -142,7 +142,7 @@ u16 dect_build_fmid(const struct dect_idi *idi)
 	u64 rfpi;
 
 	rfpi = dect_build_rfpi(idi);
-	rfpi >>= (sizeof(rfpi) - DECT_NT_ID_RFPI_LEN) * BITS_PER_BYTE;
+	rfpi >>= (sizeof(rfpi) - DECT_NT_ID_RFPI_LEN - 1) * BITS_PER_BYTE;
 	return rfpi & DECT_FMID_MASK;
 }
 EXPORT_SYMBOL_GPL(dect_build_fmid);

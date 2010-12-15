@@ -83,9 +83,9 @@ extern u64 dect_build_ari(const struct dect_ari *ari);
  * RFPI
  */
 
-#define DECT_RFPI_E_FLAG	0x8000000000000000ULL
-#define DECT_RFPI_ARI_SHIFT	1
-#define DECT_RFPI_RPN_SHIFT	24
+#define DECT_RFPI_E_FLAG	0x0080000000000000ULL
+#define DECT_RFPI_ARI_SHIFT	9
+#define DECT_RFPI_RPN_SHIFT	32
 
 struct dect_idi;
 extern bool dect_rfpi_cmp(const struct dect_idi *i1, const struct dect_idi *i2);

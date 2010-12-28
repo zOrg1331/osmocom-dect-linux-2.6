@@ -19,7 +19,6 @@
 #include <linux/crc32.h>
 #include <net/dect/transceiver.h>
 
-#include <pcmcia/cs.h>
 #include <pcmcia/cistpl.h>
 #include <pcmcia/ciscode.h>
 #include <pcmcia/ds.h>
@@ -38,7 +37,6 @@ static int com_on_air_probe(struct pcmcia_device *link)
 {
 	struct dect_transceiver *trx;
 	struct coa_device *dev;
-	win_req_t req;
 	int err;
 
 	trx = dect_transceiver_alloc(&sc1442x_transceiver_ops, sizeof(*dev));
@@ -64,31 +62,29 @@ static int com_on_air_probe(struct pcmcia_device *link)
 	link->resource[0]->end	  = 16;
 	link->resource[1]->flags |= 0;
 
-	link->conf.Attributes	  = CONF_ENABLE_IRQ;
-	link->conf.IntType	  = INT_MEMORY_AND_IO;
-	link->conf.ConfigIndex	  = 1;
-	link->conf.Present	  = PRESENT_OPTION;
-	link->conf.ConfigBase	  = 0x1020;
+	link->config_flags	  = CONF_ENABLE_IRQ;
+	link->config_index	  = 1;
+	link->config_regs	  = PRESENT_OPTION;
+	link->config_base	  = 0x1020;
 
-	req.Attributes		  = WIN_DATA_WIDTH_16 | WIN_ENABLE;
-	req.Base		  = 0;
-	req.Size		  = 0x1000;
-	req.AccessSpeed		  = 500;
+	link->resource[2]->flags  = WIN_DATA_WIDTH_16 | WIN_ENABLE;
+	link->resource[2]->start  = 0;
+	link->resource[2]->end	  = 0x1000;
 
-	err = pcmcia_request_window(link, &req, &link->win);
+	err = pcmcia_request_window(link, link->resource[2], 500);
 	if (err < 0) {
 		dev_err(dev->dev, "failed to obtain PCMCIA window\n");
 		goto err2;
 	}
 
-	dev->sc1442x_base = ioremap_nocache(req.Base, req.Size);
+	dev->sc1442x_base = ioremap_nocache(link->resource[2]->start,
+					    resource_size(link->resource[2]));
 	if (!dev->sc1442x_base) {
 		dev_err(dev->dev, "failed to remap PCMCIA resource\n");
 		err = -EIO;
 		goto err3;
 	}
 
-	link->conf.Present      = PRESENT_OPTION;
 	link->socket->functions = 0;
 
 	err = pcmcia_request_irq(link, sc1442x_interrupt);
@@ -97,23 +93,18 @@ static int com_on_air_probe(struct pcmcia_device *link)
 		goto err4;
 	}
 
-	err = pcmcia_request_configuration(link, &link->conf);
+	err = pcmcia_enable_device(link);
 	if (err < 0) {
-		dev_err(dev->dev, "failed to obtain PCMCIA configuration\n");
+		dev_err(dev->dev, "failed to enable PCMCIA device\n");
 		goto err5;
 	}
 
-	dev_dbg(dev->dev, "%svalid client.\n", (link->conf.Attributes) ? "":"in");
+	dev_dbg(dev->dev, "%svalid client.\n", (link->config_flags) ? "":"in");
 	dev_dbg(dev->dev, "Type          0x%x\n", link->socket->state);
 	dev_dbg(dev->dev, "Function      0x%x\n", link->func);
-	dev_dbg(dev->dev, "Attributes    %d\n", link->conf.Attributes);
-	dev_dbg(dev->dev, "IntType       %d\n", link->conf.IntType);
-	dev_dbg(dev->dev, "ConfigBase    0x%x\n", link->conf.ConfigBase);
-	dev_dbg(dev->dev, "Status %u, Pin %u, Copy %u, ExtStatus %u\n",
-		link->conf.Status, link->conf.Pin,
-		link->conf.Copy, link->conf.ExtStatus);
-
-	dev_dbg(dev->dev, "Present       %d\n", link->conf.Present);
+	dev_dbg(dev->dev, "config_flags  %d\n", link->config_flags);
+	dev_dbg(dev->dev, "config_base   0x%x\n", link->config_base);
+	dev_dbg(dev->dev, "config_regs   %d\n", link->config_regs);
 	dev_dbg(dev->dev, "IRQ           0x%x\n", link->irq);
 	dev_dbg(dev->dev, "BasePort1     0x%llx\n", link->resource[0]->start);
 	dev_dbg(dev->dev, "NumPorts1     0x%llx\n", link->resource[0]->end);
@@ -143,7 +134,7 @@ static int com_on_air_probe(struct pcmcia_device *link)
 	dev_info(dev->dev, "Radio type %s\n", dev->radio_ops->type);
 
 	dev->irq	 = link->irq;
-	dev->config_base = link->conf.ConfigBase;
+	dev->config_base = link->config_base;
 	err = sc1442x_init_device(dev);
 	if (err < 0)
 		goto err5;
@@ -161,7 +152,7 @@ err5:
 err4:
 	iounmap(dev->sc1442x_base);
 err3:
-	pcmcia_release_window(link, link->win);
+	pcmcia_release_window(link, link->resource[2]);
 err2:
 	dect_transceiver_free(trx);
 err1:
@@ -257,7 +248,7 @@ static int get_card_id(const struct pcmcia_device *link)
 
 static struct pcmcia_driver coa_driver = {
 	.owner		= THIS_MODULE,
-	.drv.name	= KBUILD_MODNAME,
+	.name		= KBUILD_MODNAME,
 	.probe		= com_on_air_probe,
 	.remove		= com_on_air_remove,
 	.suspend	= com_on_air_suspend,

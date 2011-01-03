@@ -21,7 +21,6 @@
 #include <net/dect/dect.h>
 #include <net/dect/mac_csf.h>
 #include <net/dect/ccp.h>
-#include <asm/unaligned.h>
 
 /* avoid <KERN_DEBUG> for continuation lines */
 #undef KERN_DEBUG
@@ -1202,7 +1201,8 @@ static int dect_parse_tail_msg(struct dect_tail_msg *tm,
 	u64 t;
 
 	tm->type = DECT_TM_TYPE_INVALID;
-	t = get_unaligned_be64((__be64 *)skb->data);
+	WARN_ON_ONCE(!IS_ALIGNED((unsigned long)skb->data, __alignof__(u64)));
+	t = *(u64 *)skb->data;
 
 	switch (dect_parse_tail(skb)) {
 	case DECT_TI_CT_PKT_0:

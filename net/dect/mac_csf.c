@@ -1370,6 +1370,7 @@ static void dect_bearer_release(struct dect_cell *cell,
 {
 	struct dect_transceiver *trx = bearer->trx;
 
+	__skb_queue_purge(&bearer->m_tx_queue);
 	dect_timer_del(&bearer->tx_timer);
 	dect_bearer_disable(bearer);
 	dect_disable_cipher(trx, bearer->chd.slot);

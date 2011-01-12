@@ -45,15 +45,18 @@ static const u8 dect_pkt_size[] = {
 struct sk_buff *dect_transceiver_alloc_skb(struct dect_transceiver *trx, u8 slot)
 {
 	const struct dect_transceiver_slot *ts = &trx->slots[slot];
+	unsigned int align;
 	struct sk_buff *skb;
 
-	skb = alloc_skb(dect_pkt_size[ts->chd.pkt], GFP_ATOMIC);
+	align = __alignof__(u64) - DECT_PREAMBLE_SIZE;
+
+	skb = alloc_skb(dect_pkt_size[ts->chd.pkt] + align, GFP_ATOMIC);
 	if (skb == NULL)
 		return NULL;
 	DECT_TRX_CB(skb)->trx = trx;
 	DECT_TRX_CB(skb)->slot = ts->chd.slot;
 	/* Reserve room for preamble and set up adjacent packet data pointer */
-	skb_reserve(skb, DECT_PREAMBLE_SIZE);
+	skb_reserve(skb, DECT_PREAMBLE_SIZE + align);
 	skb_put(skb, dect_pkt_size[ts->chd.pkt] - DECT_PREAMBLE_SIZE);
 	return skb;
 }

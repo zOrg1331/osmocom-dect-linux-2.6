@@ -1202,7 +1202,7 @@ static int dect_parse_tail_msg(struct dect_tail_msg *tm,
 
 	tm->type = DECT_TM_TYPE_INVALID;
 	WARN_ON_ONCE(!IS_ALIGNED((unsigned long)skb->data, __alignof__(u64)));
-	t = *(u64 *)skb->data;
+	t = be64_to_cpu(*(__be64 *)skb->data);
 
 	switch (dect_parse_tail(skb)) {
 	case DECT_TI_CT_PKT_0:

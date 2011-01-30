@@ -325,7 +325,7 @@ static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
 	}
 
 	dect_timer_add(cl, &mbc->normal_rx_timer, DECT_TIMER_RX,
-		       1, dect_normal_receive_base(cl->mode));
+		       1, dect_normal_receive_end(cl->mode));
 out:
 	dect_mbc_put(mbc);
 }
@@ -434,7 +434,7 @@ static int dect_mbc_complete_setup(struct dect_cluster *cl, struct dect_mbc *mbc
 		return 0;
 
 	dect_timer_add(cl, &mbc->normal_rx_timer, DECT_TIMER_RX,
-		       0, dect_normal_receive_base(cl->mode));
+		       0, dect_normal_receive_end(cl->mode));
 	dect_timer_add(cl, &mbc->normal_tx_timer, DECT_TIMER_TX,
 		       0, dect_normal_transmit_base(cl->mode));
 	mbc->state = DECT_MBC_ESTABLISHED;

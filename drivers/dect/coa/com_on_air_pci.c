@@ -107,10 +107,10 @@ static void __devexit coa_remove(struct pci_dev *pdev)
 
 	sc1442x_shutdown_device(dev);
 	free_irq(pdev->irq, trx);
+	dect_unregister_transceiver(trx);
 	iounmap(dev->sc1442x_base);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
-	dect_unregister_transceiver(trx);
 }
 
 static int coa_suspend(struct pci_dev *pdev, pm_message_t state)

@@ -4631,8 +4631,10 @@ static int dect_cell_preload(const struct dect_cell_handle *ch,
 	memcpy(&cell->si.fpc, &si->fpc, sizeof(cell->si.fpc));
 	memcpy(&cell->si.efpc, &si->efpc, sizeof(cell->si.efpc));
 	memcpy(&cell->si.efpc2, &si->efpc2, sizeof(cell->si.efpc2));
+	memcpy(&cell->si.mfn, &si->mfn, sizeof(cell->si.mfn));
 	memcpy(cell->si.sari, si->sari, sizeof(cell->si.sari));
 	cell->si.num_saris = si->num_saris;
+	dect_timer_synchronize_mfn(cell, cell->si.mfn.num);
 	spin_unlock_bh(&cell->lock);
 	return 0;
 }

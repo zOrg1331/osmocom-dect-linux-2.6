@@ -1594,6 +1594,7 @@ static int dect_llme_mac_rfp_preload(struct dect_cluster *cl,
 	struct dect_ari pari;
 	struct dect_si si;
 	int err = 0;
+	u32 num;
 
 	if (cl->mode != DECT_MODE_FP)
 		return -EINVAL;
@@ -1622,6 +1623,13 @@ static int dect_llme_mac_rfp_preload(struct dect_cluster *cl,
 		si.fpc.fpc |= DECT_FPC_EXTENDED_FP_INFO;
 	else
 		si.fpc.fpc &= ~DECT_FPC_EXTENDED_FP_INFO;
+
+        if (tb[DECTA_MAC_INFO_MFN]) {
+                num = nla_get_u32(tb[DECTA_MAC_INFO_MFN]);
+                if (num >= (1 << 24))
+                        return -EINVAL;
+                si.mfn.num = num;
+        }
 
 	return dect_cluster_preload(cl, &pari, &si);
 }

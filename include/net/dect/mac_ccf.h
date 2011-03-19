@@ -109,7 +109,6 @@ struct dect_tb {
  * @onrmal_tx_timer:	Normal transmit half frame timer
  * @ck:			Cipher key
  * @cipher_state:	Ciphering state
- * @kss:		Key stream segments
  * @cs_rx_seq:		C_S receive sequence number
  * @cs_tx_seq:		C_S transmit sequence number
  * @cs_tx_ok:		C_S segment transmit OK
@@ -143,7 +142,6 @@ struct dect_mbc {
 	/* Encryption */
 	u64				ck;
 	enum dect_cipher_states		cipher_state;
-	u8				kss[90];
 
 	/* C_S channel */
 	u8				cs_rx_seq;

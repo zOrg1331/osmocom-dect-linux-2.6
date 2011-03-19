@@ -613,7 +613,7 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 			     enum dect_slot_states mode)
 {
 	struct coa_device *dev = dect_transceiver_priv(trx);
-	bool cipher = false; //trx->slots[chd->slot].flags & DECT_SLOT_CIPHER;
+	bool cipher = trx->slots[chd->slot].flags & DECT_SLOT_CIPHER;
 	bool sync = trx->slots[chd->slot].flags & DECT_SLOT_SYNC;
 	u8 slot = chd->slot;
 

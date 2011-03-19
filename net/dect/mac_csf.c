@@ -2627,7 +2627,7 @@ static void dect_tbc_enc_timer(struct dect_cell *cell, void *data)
 	switch (tbc->enc_state) {
 	case DECT_TBC_ENC_START_REQ_RCVD:
 		tbc_debug(tbc, "TX encryption enabled\n");
-		//dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot, tbc->ck);
+		dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot, tbc->ck);
 		/* fall through */
 	case DECT_TBC_ENC_START_CFM_SENT:
 		tbc->enc_state = DECT_TBC_ENC_START_CFM_SENT;
@@ -2673,8 +2673,8 @@ static int dect_tbc_enc_state_process(struct dect_cell *cell,
 
 			dect_timer_del(&tbc->enc_timer);
 			tbc_debug(tbc, "TX encryption enabled\n");
-			//dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot,
-			//		   tbc->ck);
+			dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot,
+					   tbc->ck);
 		}
 		if (tbc->enc_state == DECT_TBC_ENC_START_CFM_RCVD) {
 			skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_START_GRANT);
@@ -2689,7 +2689,7 @@ static int dect_tbc_enc_state_process(struct dect_cell *cell,
 
 		dect_timer_del(&tbc->enc_timer);
 		tbc_debug(tbc, "RX encryption enabled\n");
-		//dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
+		dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
 		dect_tbc_event(tbc, DECT_TBC_CIPHER_ENABLED);
 		break;
 	case DECT_ENCCTRL_STOP_REQUEST:
@@ -2904,8 +2904,8 @@ static int dect_tbc_enc_req(const struct dect_cell_handle *ch,
 		  (unsigned long long)ck);
 
 	tbc->ck = ck;
-	//dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
-	//dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot, tbc->ck);
+	dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
+	dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot, tbc->ck);
 	return 0;
 }
 
@@ -2931,7 +2931,7 @@ static int dect_tbc_enc_eks_req(const struct dect_cell_handle *ch,
 	dect_bearer_timer_add(cell, &tbc->txb, &tbc->enc_timer, 0);
 
 	tbc_debug(tbc, "RX encryption enabled\n");
-	//dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
+	dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
 	return 0;
 }
 

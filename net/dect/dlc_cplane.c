@@ -66,7 +66,7 @@ static void dect_lapc_transmit_skb(struct dect_lapc *lapc)
 	struct sk_buff *skb = skb_peek(&lapc->retransmit_queue);
 	struct dect_fa_hdr *fh;
 
-	skb = skb_copy(skb, GFP_ATOMIC);
+	skb = skb_clone(skb, GFP_ATOMIC);
 	if (skb == NULL)
 		return;
 

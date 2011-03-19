@@ -21,7 +21,6 @@
 #include <net/dect/dect.h>
 #include <net/dect/mac_ccf.h>
 #include <net/dect/mac_csf.h>
-#include <net/dect/dsc.h>
 #include <net/dect/ccp.h>
 
 static void dect_llme_scan_result_notify(const struct dect_cluster *cl,
@@ -270,31 +269,6 @@ u32 dect_mbc_alloc_mcei(struct dect_cluster *cl)
 	}
 }
 
-static void dect_mbc_init_kss(const struct dect_cluster *cl, struct dect_mbc *mbc)
-{
-	u64 iv;
-
-	iv = dect_dsc_iv(dect_mfn(cl, DECT_TIMER_TX),
-			 dect_framenum(cl, DECT_TIMER_TX));
-	dect_dsc_keystream(iv, (uint8_t *)&mbc->ck, mbc->kss, sizeof(mbc->kss));
-}
-
-static void dect_mbc_cipher(const struct dect_mbc *mbc, struct sk_buff *skb,
-			    unsigned int kss_idx, unsigned int kss_off)
-{
-	unsigned int i;
-
-	for (i = 0; i < skb->len; i++) {
-		if (skb->len < 40)
-			printk("data[%u]: 0x%02x ^= 0x%02x = 0x%02x\n",
-				i, skb->data[i],
-				mbc->kss[kss_idx * 45 + kss_off + i],
-				skb->data[i] ^ mbc->kss[kss_idx * 45 + kss_off + i]);
-
-		skb->data[i] ^= mbc->kss[kss_idx * 45 + kss_off + i];
-	}
-}
-
 static bool dect_ct_tail_allowed(const struct dect_cluster *cl, u8 framenum)
 {
 	if (cl->mode == DECT_MODE_FP)
@@ -325,15 +299,9 @@ static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
 	mbc_debug(mbc, "Normal RX timer\n");
 	dect_mbc_hold(mbc);
 
-	if (cl->mode == DECT_MODE_PP &&
-	    mbc->cipher_state == DECT_CIPHER_ENABLED)
-		dect_mbc_init_kss(cl, mbc);
-
 	if (mbc->cs_rx_skb != NULL) {
 		skb = mbc->cs_rx_skb;
 		mbc->cs_rx_skb = NULL;
-		if (mbc->cipher_state == DECT_CIPHER_ENABLED)
-			dect_mbc_cipher(mbc, skb, 1, 0);
 		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_C_S, skb);
 
 		/* C-channel reception might trigger release of the MBC in case
@@ -353,8 +321,6 @@ static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
 			continue;
 		skb = tb->b_rx_skb;
 		tb->b_rx_skb = NULL;
-		if (mbc->cipher_state == DECT_CIPHER_ENABLED)
-			dect_mbc_cipher(mbc, skb, 1, 5);
 		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_I_N, skb);
 	}
 
@@ -381,8 +347,6 @@ static void dect_mbc_slot_rx_timer(struct dect_cluster *cl, void *data)
 	if (tb->b_rx_skb != NULL) {
 		skb = tb->b_rx_skb;
 		tb->b_rx_skb = NULL;
-		if (mbc->cipher_state == DECT_CIPHER_ENABLED)
-			dect_mbc_cipher(mbc, skb, 1, 5);
 		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_I_N, skb);
 	}
 
@@ -403,13 +367,9 @@ static void dect_mbc_normal_tx_timer(struct dect_cluster *cl, void *data)
 	const struct dect_cell_handle *ch;
 	struct dect_mbc *mbc = data;
 	struct dect_tb *tb;
-	struct sk_buff *skb, *cskb;
+	struct sk_buff *skb;
 
 	mbc_debug(mbc, "Normal TX timer\n");
-
-	if (cl->mode == DECT_MODE_FP &&
-	    mbc->cipher_state == DECT_CIPHER_ENABLED)
-		dect_mbc_init_kss(cl, mbc);
 
 	if (dect_ct_tail_allowed(cl, dect_framenum(cl, DECT_TIMER_TX))) {
 		if (mbc->cs_tx_skb == NULL) {
@@ -422,22 +382,14 @@ static void dect_mbc_normal_tx_timer(struct dect_cluster *cl, void *data)
 		}
 
 		if (mbc->cs_tx_skb != NULL) {
-			if (mbc->cipher_state == DECT_CIPHER_ENABLED) {
-				cskb = skb_copy(mbc->cs_tx_skb, GFP_ATOMIC);
-				dect_mbc_cipher(mbc, cskb, 0, 0);
-			} else
-				cskb = skb_get(mbc->cs_tx_skb);
-
 			list_for_each_entry(tb, &mbc->tbs, list) {
-				skb = skb_clone(cskb, GFP_ATOMIC);
+				skb = skb_clone(mbc->cs_tx_skb, GFP_ATOMIC);
 				if (skb == NULL)
 					continue;
 				ch = tb->ch;
 				ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_C_S, skb);
 				mbc->cs_tx_ok = true;
 			}
-
-			kfree_skb(cskb);
 		}
 	}
 
@@ -445,11 +397,8 @@ static void dect_mbc_normal_tx_timer(struct dect_cluster *cl, void *data)
 		list_for_each_entry(tb, &mbc->tbs, list) {
 			ch = tb->ch;
 			skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
-			if (skb == NULL)
-				continue;
-			if (mbc->cipher_state == DECT_CIPHER_ENABLED)
-				dect_mbc_cipher(mbc, skb, 0, 5);
-			ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_I_N, skb);
+			if (skb != NULL)
+				ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_I_N, skb);
 		}
 	}
 
@@ -473,12 +422,9 @@ static void dect_mbc_slot_tx_timer(struct dect_cluster *cl, void *data)
 		  tb->id.tbei, tb->id.lbn, tb->tx_slot);
 
 	skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
-	if (skb == NULL)
-		goto out;
-	if (mbc->cipher_state == DECT_CIPHER_ENABLED)
-		dect_mbc_cipher(mbc, skb, 0, 5);
-	ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_I_N, skb);
-out:
+	if (skb != NULL)
+		ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_I_N, skb);
+
 	dect_timer_add(cl, &tb->slot_tx_timer, DECT_TIMER_TX, 1, tb->tx_slot);
 }
 
@@ -617,12 +563,11 @@ static struct dect_mbc *dect_mbc_init(struct dect_cluster *cl,
 	mbc = kzalloc(sizeof(*mbc), GFP_ATOMIC);
 	if (mbc == NULL)
 		return NULL;
-	mbc->refcnt	  = 1;
-	mbc->cl		  = cl;
-	mbc->id		  = *id;
-	mbc->state	  = DECT_MBC_NONE;
-	mbc->ho_stamp	  = jiffies - DECT_MBC_HANDOVER_TIMER;
-	mbc->cipher_state = DECT_CIPHER_DISABLED;
+	mbc->refcnt   = 1;
+	mbc->cl       = cl;
+	mbc->id       = *id;
+	mbc->state    = DECT_MBC_NONE;
+	mbc->ho_stamp = jiffies - DECT_MBC_HANDOVER_TIMER;
 
 	INIT_LIST_HEAD(&mbc->tbs);
 	dect_timer_setup(&mbc->normal_rx_timer, dect_mbc_normal_rx_timer, mbc);

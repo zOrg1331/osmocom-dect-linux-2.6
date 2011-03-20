@@ -303,7 +303,7 @@ struct dect_lc {
 	u8			tx_len;
 
 	u8			use;
-	struct dect_lapc	*lapcs[DECT_LLN_MAX + 1];
+	struct dect_lapc	*lapcs[DECT_LLN_UNASSIGNED + 1];
 	struct dect_lapc	*elapc;
 };
 

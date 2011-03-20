@@ -55,6 +55,37 @@ struct dect_bsap_auxdata {
 };
 
 /**
+ * enum dect_sapis - S SAP Identifier
+ *
+ * @DECT_SAPI_CO_SIGNALLING:	connection oriented signalling
+ * @DECT_SAPI_CL_SIGNALLING:	connectionless signalling
+ * @DECT_SAPI_ANY:		wildcard
+ */
+enum dect_sapis {
+	DECT_SAPI_CO_SIGNALLING = 0,
+	DECT_SAPI_CL_SIGNALLING = 3,
+	DECT_SAPI_ANY		= 7,
+};
+
+/**
+ * enum dect_llns - Logical Link Numbers
+ *
+ * @DECT_LLN_CLASS_U:		Class U operation
+ * @DECT_LLN_CLASS_A:		Class A operation
+ * @DECT_LLN_ASSIGNABLE*:	Assignable LLN (class B operation)
+ * @DECT_LLN_UNASSIGNED:	LLN unassigned (class B operation
+ * @DECT_LLN_ANY:		wildcard
+ */
+enum dect_llns {
+	DECT_LLN_CLASS_U	= 0,
+	DECT_LLN_CLASS_A	= 1,
+	DECT_LLN_ASSIGNABLE_MIN	= 2,
+	DECT_LLN_ASSIGNABLE_MAX	= 6,
+	DECT_LLN_UNASSIGNED	= 7,
+	DECT_LLN_ANY		= 15,
+};
+
+/**
  * struct sockaddr_dect_ssap
  *
  * @dect_family:	family (AF_DECT)
@@ -69,7 +100,7 @@ struct dect_bsap_auxdata {
 struct sockaddr_dect_ssap {
 	sa_family_t	dect_family;
 	__u8		dect_lln:4,
-			dect_sapi:4;
+			dect_sapi:3;
 	__u8		dect_class;
 	int		dect_index;
 	__u64		dect_ari:40,

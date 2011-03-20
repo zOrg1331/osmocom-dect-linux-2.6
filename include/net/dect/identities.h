@@ -175,35 +175,6 @@ extern u64 dect_build_mci(const struct dect_mci *mci);
  */
 
 /**
- * enum dect_sapis - S SAP Identifier
- *
- * @DECT_SAPI_CO_SIGNALLING: connection oriented signalling
- * @DECT_SAPI_CL_SIGNALLING: connectionless signalling
- */
-enum dect_sapis {
-	DECT_SAPI_CO_SIGNALLING	= 0,
-	DECT_SAPI_CL_SIGNALLING = 3,
-};
-
-/**
- * enum dect_llns - Logical Link Numbers
- *
- * @DECT_LLN_CLASS_U:		Class U operation
- * @DECT_LLN_CLASS_A:		Class A operation
- * @DECT_LLN_ASSIGNABLE*:	Assignable LLN (class B operation)
- * @DECT_LLN_UNASSIGNED:	LLN unassigned (class B operation)
- */
-enum dect_llns {
-	DECT_LLN_CLASS_U	= 0,
-	DECT_LLN_CLASS_A	= 1,
-	DECT_LLN_ASSIGNABLE_MIN	= 2,
-	DECT_LLN_ASSIGNABLE_MAX	= 6,
-	DECT_LLN_UNASSIGNED	= 7,
-	__DECT_LLN_MAX
-};
-#define DECT_LLN_MAX		(__DECT_LLN_MAX - 1)
-
-/**
  * struct dect_dlei - DECT Data Link Endpoint Identifier (DLEI)
  *
  */

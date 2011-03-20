@@ -26,8 +26,6 @@ static DEFINE_SPINLOCK(dect_ssap_lock);
 static HLIST_HEAD(dect_ssap_sockets);
 static HLIST_HEAD(dect_ssap_listeners);
 
-#define DECT_LLN_ANY		255
-
 struct dect_ssap {
 	struct dect_csk		csk;
 	int			index;
@@ -49,13 +47,15 @@ static int dect_parse_dlei(struct dect_dlei *dlei,
 	dlei->mci.lcn = addr->dect_lcn;
 
 	dlei->lln = addr->dect_lln;
-	if (dlei->lln > DECT_LLN_MAX)
+	if (dlei->lln > DECT_LLN_UNASSIGNED &&
+	    dlei->lln != DECT_LLN_ANY)
 		return -EINVAL;
 
 	dlei->sapi = addr->dect_sapi;
 	switch (dlei->sapi) {
 	case DECT_SAPI_CO_SIGNALLING:
 	case DECT_SAPI_CL_SIGNALLING:
+	case DECT_SAPI_ANY:
 		break;
 	default:
 		return -EINVAL;
@@ -148,8 +148,10 @@ static int dect_ssap_bind_conflict(int index, const struct dect_dlei *dlei)
 	sk_for_each(sk, n, &dect_ssap_sockets) {
 		ssap = dect_ssap(sk);
 		if (ssap->index == index &&
+		    !dect_ari_cmp(&ssap->dlei.mci.ari, &dlei->mci.ari) &&
 		    !dect_pmid_cmp(&ssap->dlei.mci.pmid, &dlei->mci.pmid) &&
-		    ssap->dlei.lln == dlei->lln)
+		    ssap->dlei.lln == dlei->lln &&
+		    ssap->dlei.sapi == dlei->sapi)
 			return -EADDRINUSE;
 	}
 	return 0;
@@ -208,7 +210,8 @@ static struct dect_ssap *dect_ssap_lookup_listener(const struct dect_cluster *cl
 		if (ssap->dlei.lln != DECT_LLN_ANY &&
 		    ssap->dlei.lln != dli->lln)
 			continue;
-		if (ssap->dlei.sapi != sapi)
+		if (ssap->dlei.sapi != DECT_SAPI_ANY &&
+		    ssap->dlei.sapi != sapi)
 			continue;
 		return ssap;
 	}

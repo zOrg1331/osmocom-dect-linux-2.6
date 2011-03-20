@@ -4556,8 +4556,8 @@ void dect_mac_tx_tick(struct dect_transceiver_group *grp, u8 slot)
 	u8 scn;
 
 	/* TX timers run at the beginning of a slot, update the time first */
-	dect_cluster_time_ind(cell, DECT_TIMER_TX, slot);
 	dect_timer_base_update(cell, DECT_TIMER_TX, slot);
+	dect_cluster_time_ind(cell, DECT_TIMER_TX, slot);
 	dect_run_timers(cell, DECT_TIMER_TX);
 
 	dect_cell_state_process(cell);

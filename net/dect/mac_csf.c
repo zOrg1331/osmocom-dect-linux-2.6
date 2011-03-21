@@ -578,6 +578,11 @@ static enum dect_tail_identifications dect_parse_tail(const struct sk_buff *skb)
 	return skb->data[DECT_HDR_TA_OFF] & DECT_HDR_TA_MASK;
 }
 
+static enum dect_b_identifications dect_parse_b_id(const struct sk_buff *skb)
+{
+	return skb->data[DECT_HDR_TA_OFF] & DECT_HDR_BA_MASK;
+}
+
 static int dect_parse_identities_information(struct dect_tail_msg *tm, u64 t)
 {
 	struct dect_idi *idi = &tm->idi;
@@ -2850,6 +2855,14 @@ static void dect_tbc_rcv(struct dect_cell *cell, struct dect_bearer *bearer,
 	}
 
 rcv_b_field:
+	switch (dect_parse_b_id(skb)) {
+	case DECT_BI_UTYPE_0:
+	case DECT_BI_UTYPE_1:
+		break;
+	default:
+		goto err;
+	}
+
 	skb_pull(skb, DECT_A_FIELD_SIZE);
 	skb_trim(skb, DECT_B_FIELD_SIZE);
 	clh->ops->tbc_data_ind(clh, &tbc->id, DECT_MC_I_N, skb);

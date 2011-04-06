@@ -109,14 +109,12 @@ PP22:		WNT	2
 ;
 RX_P00:		JMP	RFInit		; Init radio
 		JMP	Receive		; Receive S- and beginning of A-field		|
-		WT	1		; 						| p: 94		A: 62
 		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
 		JMP	ReceiveEnd	; End reception					| p: 96		B:  0
 		BR	WriteBMC1	;
 
 RX_P00_Sync:	JMP	RFInit		; Init radio
 		JMP	ReceiveSync	; Receive S- and beginning of A-field		|
-		WT	1		; 						| p: 94		A: 62
 		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
 		JMP	ReceiveEnd	; End reception					| p: 96		B:  0
 		BR	WriteBMC1	;
@@ -126,7 +124,6 @@ RX_P00_Sync:	JMP	RFInit		; Init radio
 ;
 RX_P32U:	JMP	RFInit
 		JMP	Receive
-		WT	1		;						| p: 94		A: 62
 		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
 		JMP	RX_P32U_BZ	; Receive B-field				| p: 96		B:  0
 		BR	WriteBMC2
@@ -139,7 +136,16 @@ RX_P32U_Enc:	JMP	LoadEncKey
 ;
 RX_P32P:	JMP	RFInit
 		JMP	Receive
-		BR	RX_P32P_B	; Receive B-Subfields				| p: 94		A: 62
+		B_BRFP	SD_B_FIELD_OFF	; Receive protected full slot B-field data	| p:  95	A:  63
+		JMP	TransferP32P_B	; Receive the B-subfields			| p:  96-411	B:   0-315
+		WT	3		;	 					| p: 412-414	B: 316-318
+		B_XR			; Receive X-CRC					| p: 415	B: 319
+		WT	6		;						| p: 416-419	B: 320-323	X: 0-3
+					;						| p: 420-421	Z:   0-  1
+		JMP	ReceiveEnd	;						| p: 422	Z: 2
+		B_WRS	SD_BASE_OFF	; write status
+		WT	6
+		BR	label_58
 
 ;-------------------------------------------------------------------------------
 ; Transmit a P00 packet
@@ -154,7 +160,6 @@ TX_P00:		JMP	RFInit		; Init radio
 ;
 TX_P32U:	JMP	RFInit		; Init radio
 		JMP	Transmit	; Transmit S- and beginning of A-field		|
-		WT	1		; Transmit one bit of A-field data		| p: 94		A: 62
 		B_BTFU	SD_B_FIELD_OFF	; Transmit unprotected full-slot B-field data	| p: 95		A: 63
 		JMP	TX_P32U_BZ	; Transmit the B- and Z-fields			| p: 96		B: 0
 		BR	label_54	;
@@ -167,7 +172,16 @@ TX_P32U_Enc:	JMP	LoadEncKey
 ;
 TX_P32P:	JMP	RFInit		; Enable radio
 		JMP	Transmit	; Transmit S- and beginning of A-field		|
-		BR	TX_P32P_B	; Transmit B-Subfields				| p: 94		A: 62
+		B_BTFP	SD_B_FIELD_OFF	; Transmit protect fulls-slot B-field data	| p:  95	A:  63
+		JMP	TransferP32P_B	; Transmit the B-subfields			| p:  96-411	B:   0-315
+		WT	3		; 						| p: 412-414	B: 316-318
+		B_XT			; Transmit X-CRC				| p: 415	B: 319
+		WT	13		;						| p: 416-419	B: 320-323	X: 0-3
+					;						| p: 420-423	Z: 0-3
+					;						| p: 424-428	???
+		B_RST			;						| p: 429
+		JMP	TransmitEnd	; End transmission				| p: 430
+		BR	label_58	;
 
 ;-------------------------------------------------------------------------------
 WriteBMC1:	B_WRS	SD_BASE_OFF	; write status
@@ -205,7 +219,7 @@ ClockAdjust:	EN_SL_ADJ		;						| p: -16	S: 0
 		WT	32		;						| p:  -2-29	S: 14-45
 ClockSyncOff:	P_SC	0x00		;						| p:  30	S: 46
 		B_AR2	SD_A_FIELD_OFF	; Start reception of A-field/A-field CRC	| p:  31	S: 47
-		WT	61		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
+		WT	62		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
 		RTN			; Return					| p:  93	A: 61
 
 ReceiveSync:	P_LDH	PB_RX_ON
@@ -224,7 +238,7 @@ ReceiveSync:	P_LDH	PB_RX_ON
 		WT	32		;						| p:  -2-29	S: 14-45
 		P_SC	0x00		;						| p:  30	S: 46
 		B_AR2	SD_A_FIELD_OFF	; Start reception of A-field/A-field CRC	| p:  31	S: 47
-		WT	61		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
+		WT	62		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
 		RTN			; Return					| p:  93	A: 61
 
 ; Receive the B- and Z-fields of a P32 packet using the protected full slot
@@ -251,18 +265,18 @@ Transmit:	P_LDH	0x00		;
 		P_LDH	PB_TX_ON	; Enable transmitter				| p: -7		S:  1
 		WT	37		; Transmit 29 bits S-field			| p: -6-30	S:  2-38
 		B_AT2	SD_A_FIELD_OFF	; Start transission of A-field data/A-field CRC	| p: 31		S: 39
- 		WT	61		; Transmit first 61 bits of A-field		| p: 32-92	A:  0-60
+		WT	62		; Transmit first 61 bits of A-field		| p: 32-92	A:  0-60
 		RTN			; Return					| p: 93		A: 61
 
 ;-------------------------------------------------------------------------------
 ;
 ;
 TX_P32U_BZ:	WT	249		; 						| p:  97-345	B:   1-249
-             	WT	84		; Last bits of B-field data			| p: 346-415	B: 250-319
+		WT	84		; Last bits of B-field data			| p: 346-415	B: 250-319
 					; X-field					| p: 416-419	B: 320-323	X: 0-3
 					; Z-field (?)					| p: 420-424	Z:   0-  3
 					; 5 bits of crap?				| p: 425-429
-             	B_RST			; Reset BMC					| p: 430
+		B_RST			; Reset BMC					| p: 430
 
 TransmitEnd:	P_LDL	PB_TX_ON	; Disable transmitter				|
 		WT	8		; Wait until transmitter is disabled		|
@@ -291,34 +305,6 @@ TransferP32P_B:	WT	61		; Transfer 61 bits of B-field			| p:  97-157	B:   1- 61	 
 		B_XON			; 						| p: 399	B: 303		  B3: 63
 		WT	11		;						| p: 400-410	B: 304-314	R_B3:  0-10
 		RTN			;						| p: 411	B: 315		R_B3: 11
-
-;-------------------------------------------------------------------------------
-; Receive the B-subfields in protected format
-;
-RX_P32P_B: 	B_BRFP	SD_B_FIELD_OFF	; Receive protected full slot B-field data	| p:  95	A:  63
-             	JMP	TransferP32P_B	; Receive the B-subfields			| p:  96-411	B:   0-315
-             	WT	3		;	 					| p: 412-414	B: 316-318
-             	B_XR			; Receive X-CRC					| p: 415	B: 319
-             	WT	6		;						| p: 416-419	B: 320-323	X: 0-3
-					;						| p: 420-421	Z:   0-  1
-             	JMP	ReceiveEnd	;						| p: 422	Z: 2
-             	B_WRS	SD_BASE_OFF	; write status
-             	WT	6
-             	BR	label_58
-
-;-------------------------------------------------------------------------------
-; Transmit the B-subfields in protected format
-;
-TX_P32P_B:	B_BTFP	SD_B_FIELD_OFF	; Transmit protect fulls-slot B-field data	| p:  95	A:  63
-             	JMP	TransferP32P_B	; Transmit the B-subfields			| p:  96-411	B:   0-315
-             	WT	3		; 						| p: 412-414	B: 316-318
-             	B_XT			; Transmit X-CRC				| p: 415	B: 319
-             	WT	13		;						| p: 416-419	B: 320-323	X: 0-3
-					;						| p: 420-423	Z: 0-3
-					;						| p: 424-428	???
-             	B_RST			;						| p: 429
-             	JMP	TransmitEnd	; End transmission				| p: 430
-             	BR	label_58	;
 
 ;-------------------------------------------------------------------------------
 

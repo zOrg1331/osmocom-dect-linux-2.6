@@ -104,11 +104,12 @@ static void __devexit coa_remove(struct pci_dev *pdev)
 {
 	struct dect_transceiver *trx = pci_get_drvdata(pdev);
 	struct coa_device *dev = dect_transceiver_priv(trx);
+	u8 __iomem *sc1442x_base = dev->sc1442x_base;
 
 	sc1442x_shutdown_device(dev);
 	free_irq(pdev->irq, trx);
 	dect_unregister_transceiver(trx);
-	iounmap(dev->sc1442x_base);
+	iounmap(sc1442x_base);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
 }

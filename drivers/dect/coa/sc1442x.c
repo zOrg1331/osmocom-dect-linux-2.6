@@ -545,7 +545,7 @@ static void sc1442x_enable(const struct dect_transceiver *trx)
 		sc1442x_write_cmd(dev, TX_P32U_Enc, JMP, LoadEncKey);
 		sc1442x_write_cmd(dev, RX_P32U_Enc, JMP, LoadEncState);
 	} else {
-		sc1442x_write_cmd(dev, ClockSyncOn, P_SC, 0x20);
+		sc1442x_write_cmd(dev, ClockSyncOn, P_SC, PSC_S_SYNC_ON);
 		sc1442x_write_cmd(dev, ClockAdjust, EN_SL_ADJ, 1);
 		sc1442x_write_cmd(dev, ClockSyncOff, P_SC, 0x00);
 

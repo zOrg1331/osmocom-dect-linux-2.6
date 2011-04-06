@@ -47,6 +47,10 @@ extern const unsigned char sc1442x_firmware[509];
 #define ClockSyncOn 0x63
 #define ClockSyncOff 0x6B
 #define ClockAdjust 0x67
+#define PSC_ARPD1 0x80
+#define PSC_S_SYNC 0x40
+#define PSC_S_SYNC_ON 0x20
+#define PSC_EOPSM 0x10
 #define RX_P00 0x20
 #define RX_P00_Sync 0x25
 #define RX_P32U 0x2A

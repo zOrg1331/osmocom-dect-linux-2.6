@@ -10,6 +10,12 @@ PB_RADIOPOWER   EQU     0x04
 PB_DCTHRESHOLD  EQU     0x02
 PB_RSSI		EQU	0x01
 
+; synchronisation control
+PSC_ARPD1	EQU	0x80
+PSC_S_SYNC	EQU	0x40
+PSC_S_SYNC_ON	EQU	0x20
+PSC_EOPSM	EQU	0x10
+
 ; memory banks 0-7, lower and upper halfs (128 bytes each)
 BANK0_LOW	EQU	0x00
 BANK0_HIGH	EQU	0x10
@@ -209,7 +215,7 @@ Receive:	P_LDH	PB_RX_ON
 		WNT	1		; Wait until beginning of slot			|
 		WT	8		;						| p: -33--26
 		B_XON			;						| p: -25
-ClockSyncOn:	P_SC	0x20		;						| p: -24
+ClockSyncOn:	P_SC	PSC_S_SYNC_ON	;						| p: -24
 		P_LDH	PB_DCTHRESHOLD	;						| p: -23
 		WT	5		;						| p: -22--16
 		B_SR			; Receive S-field				| p: -17
@@ -228,7 +234,7 @@ ReceiveSync:	P_LDH	PB_RX_ON
 		WNT	1		; Wait until beginning of slot			|
 		WT	8		;						| p: -33--26
 		B_XON			;						| p: -25
-		P_SC	0x20		;						| p: -24
+		P_SC	PSC_S_SYNC_ON	;						| p: -24
 		P_LDH	PB_DCTHRESHOLD	;						| p: -23
 		WT	5		;						| p: -22--16
 		B_SR			; Receive S-field				| p: -17
@@ -362,7 +368,7 @@ LoadEncState:	D_RST
 SyncInit:	BK_C	BANK1_LOW
 Sync:		JMP	RFInit
 		WT	250
-		P_SC	0x20
+		P_SC	PSC_S_SYNC_ON
 		P_LDH	PB_RX_ON | PB_DCTHRESHOLD
 		UNLCK
 		WT	64
@@ -411,6 +417,7 @@ RFStart:	BR	SyncInit
 		SHARED	RFStart,SlotTable
 		SHARED	SyncInit,Sync,SyncLock,SyncLoop
 		SHARED	ClockSyncOn,ClockSyncOff,ClockAdjust
+		SHARED	PSC_ARPD1,PSC_S_SYNC,PSC_S_SYNC_ON,PSC_EOPSM
 
 		SHARED	RX_P00,RX_P00_Sync,RX_P32U,RX_P32P,RX_P32U_Enc
 		SHARED	TX_P00,TX_P32U,TX_P32P,TX_P32U_Enc

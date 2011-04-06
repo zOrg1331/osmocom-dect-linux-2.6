@@ -128,14 +128,12 @@ RX_P00_Sync:	JMP	RFInit		; Init radio
 ; Receive a P32 packet using the the unprotected full slot B-field format in
 ; the D32-field
 ;
+RX_P32U_Enc:	JMP	LoadEncKey
 RX_P32U:	JMP	RFInit
 		JMP	Receive
 		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
 		JMP	RX_P32U_BZ	; Receive B-field				| p: 96		B:  0
 		BR	WriteBMC2
-
-RX_P32U_Enc:	JMP	LoadEncKey
-		BR	RX_P32U
 
 ; Receive a P32 packet using the protected full slot B-field format in the
 ; D32-field
@@ -164,14 +162,12 @@ TX_P00:		JMP	RFInit		; Init radio
 ; Transmit a P32 packet using the unprotected full slot B-field format in the
 ; D32-field
 ;
+TX_P32U_Enc:	JMP	LoadEncKey
 TX_P32U:	JMP	RFInit		; Init radio
 		JMP	Transmit	; Transmit S- and beginning of A-field		|
 		B_BTFU	SD_B_FIELD_OFF	; Transmit unprotected full-slot B-field data	| p: 95		A: 63
 		JMP	TX_P32U_BZ	; Transmit the B- and Z-fields			| p: 96		B: 0
 		BR	label_54	;
-
-TX_P32U_Enc:	JMP	LoadEncKey
-		BR	TX_P32U
 
 ; Transmit a P32 packet using the protected full slot B-field format in the
 ; D32-field

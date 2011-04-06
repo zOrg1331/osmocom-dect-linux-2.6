@@ -1374,12 +1374,17 @@ static void dect_bearer_release(struct dect_cell *cell,
 				struct dect_bearer *bearer)
 {
 	struct dect_transceiver *trx = bearer->trx;
+	u8 slot = bearer->chd.slot;
 
 	__skb_queue_purge(&bearer->m_tx_queue);
 	dect_timer_del(&bearer->tx_timer);
 	dect_bearer_disable(bearer);
 	dect_disable_cipher(trx, bearer->chd.slot);
-	if (trx->index < 3)
+
+	if (trx->index < 3 &&
+	    ((slot >= dect_normal_receive_base(cell->mode) &&
+	      slot <= dect_normal_receive_end(cell->mode)) ||
+	     (cell->flags & DECT_CELL_MONITOR)))
 		dect_scan_bearer_enable(trx, &bearer->chd);
 }
 

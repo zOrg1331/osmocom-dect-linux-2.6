@@ -226,18 +226,12 @@
 
 
 static const u8 banktable[] = {
-	SC1442X_RAMBANK1, 0,
-	SC1442X_RAMBANK1, 0,
-	SC1442X_RAMBANK2, 0,
-	SC1442X_RAMBANK2, 0,
-	SC1442X_RAMBANK3, 0,
-	SC1442X_RAMBANK3, 0,
-	SC1442X_RAMBANK4, 0,
-	SC1442X_RAMBANK4, 0,
-	SC1442X_RAMBANK5, 0,
-	SC1442X_RAMBANK5, 0,
-	SC1442X_RAMBANK6, 0,
-	SC1442X_RAMBANK6, 0,
+	SC1442X_RAMBANK1,
+	SC1442X_RAMBANK2,
+	SC1442X_RAMBANK3,
+	SC1442X_RAMBANK4,
+	SC1442X_RAMBANK5,
+	SC1442X_RAMBANK6,
 };
 
 static const u8 jumptable[] = {
@@ -460,6 +454,11 @@ static void sc1442x_from_dmem(const struct coa_device *dev, void *dst,
 		*(u8 *)(dst + i) = sc1442x_dreadb(dev, offset + i);
 }
 
+static u8 sc1442x_slot_bank(u8 slot)
+{
+	return banktable[slot / 4];
+}
+
 static u16 sc1442x_slot_offset(u8 slot)
 {
 	u16 offset;
@@ -509,11 +508,11 @@ static void sc1442x_transfer_dcs_state(struct coa_device *dev,
 	    !(ts2->flags & DECT_SLOT_CIPHER))
 		return;
 
-	sc1442x_switch_to_bank(dev, banktable[slot]);
+	sc1442x_switch_to_bank(dev, sc1442x_slot_bank(slot));
 	off = sc1442x_slot_offset(slot);
 	sc1442x_from_dmem(dev, dcs_state, off + DCS_STATE, DCS_STATE_SIZE);
 
-	sc1442x_switch_to_bank(dev, banktable[slot2]);
+	sc1442x_switch_to_bank(dev, sc1442x_slot_bank(slot2));
 	off = sc1442x_slot_offset(slot2);
 	sc1442x_to_dmem(dev, off + DCS_STATE, dcs_state, DCS_STATE_SIZE);
 }
@@ -648,7 +647,7 @@ static void sc1442x_set_carrier(const struct dect_transceiver *trx,
 	WARN_ON(ts->state == DECT_SLOT_IDLE);
 
 	sc1442x_lock_mem(dev);
-	sc1442x_switch_to_bank(dev, banktable[slot]);
+	sc1442x_switch_to_bank(dev, sc1442x_slot_bank(slot));
 	off = sc1442x_slot_offset(slot);
 	dev->radio_ops->set_carrier(dev, off, ts->state, carrier);
 	sc1442x_unlock_mem(dev);
@@ -671,7 +670,7 @@ static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 	u16 off;
 
 	sc1442x_lock_mem(dev);
-	sc1442x_switch_to_bank(dev, banktable[slot]);
+	sc1442x_switch_to_bank(dev, sc1442x_slot_bank(slot));
 	off = sc1442x_slot_offset(slot);
 
 	/* Duplicate first byte for transmission during ramp-up */
@@ -786,7 +785,7 @@ static void sc1442x_process_slot(struct coa_device *dev,
 	mfn = trx->cell->timer_base[DECT_TIMER_RX].mfn;
 	framenum = trx->cell->timer_base[DECT_TIMER_RX].framenum;
 
-	sc1442x_switch_to_bank(dev, banktable[slot]);
+	sc1442x_switch_to_bank(dev, sc1442x_slot_bank(slot));
 	off = sc1442x_slot_offset(slot);
 
 	/*
@@ -923,7 +922,7 @@ static void sc1442x_init_slot(const struct coa_device *dev, u8 slot)
 {
 	u16 off;
 
-	sc1442x_switch_to_bank(dev, banktable[slot]);
+	sc1442x_switch_to_bank(dev, sc1442x_slot_bank(slot));
 	off = sc1442x_slot_offset(slot);
 	sc1442x_write_bmc_config(dev, off + BMC_TX_CTRL, slot < 12, true);
 	sc1442x_write_bmc_config(dev, off + BMC_RX_CTRL, slot < 12, false);

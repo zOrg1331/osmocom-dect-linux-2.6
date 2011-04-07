@@ -4,11 +4,11 @@
 extern const unsigned char sc1442x_firmware[509];
 
 #define DIP_CC_INIT 0x10
-#define DIP_RF_INIT 0x0
 #define RF_DESC 0x3A
-#define RX_DESC 0x48
-#define TX_DESC 0x40
-#define TRX_DESC_FN 0x6
+#define BMC_CTRL_INIT 0x0
+#define BMC_RX_CTRL 0x48
+#define BMC_TX_CTRL 0x40
+#define BMC_CTRL_MFR_OFF 0x6
 #define SD_RSSI_OFF 0x0
 #define SD_CSUM_OFF 0x1
 #define SD_PREAMBLE_OFF 0x1
@@ -53,13 +53,13 @@ extern const unsigned char sc1442x_firmware[509];
 #define PSC_EOPSM 0x10
 #define RX_P00 0x20
 #define RX_P00_Sync 0x25
-#define RX_P32U 0x2A
-#define RX_P32P 0x31
-#define RX_P32U_Enc 0x2F
-#define TX_P00 0x3C
+#define RX_P32U 0x2B
+#define RX_P32P 0x30
+#define RX_P32U_Enc 0x2A
+#define TX_P00 0x3B
 #define TX_P32U 0x40
-#define TX_P32P 0x47
-#define TX_P32U_Enc 0x45
+#define TX_P32P 0x45
+#define TX_P32U_Enc 0x3F
 #define DCS_IV 0x50
 #define DCS_CK 0x58
 #define DCS_STATE 0x70

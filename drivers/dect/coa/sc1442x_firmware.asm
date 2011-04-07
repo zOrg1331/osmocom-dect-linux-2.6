@@ -34,14 +34,21 @@ BANK6_HIGH	EQU	0xd0
 BANK7_LOW	EQU	0xe0
 BANK7_HIGH	EQU	0xf0
 
-DIP_RF_INIT	EQU	0x00
+BMC_CTRL_INIT	EQU	0x00
 
 ; Codec Control
 DIP_CC_INIT	EQU	0x10
 
+; Radio configuration word
 RF_DESC		EQU	0x3a
-TX_DESC		EQU	0x40
-RX_DESC		EQU	0x48
+
+; BMC control information
+BMC_CTRL_SIZE	EQU	7
+BMC_TX_CTRL	EQU	0x40
+BMC_RX_CTRL	EQU	0x48
+
+; (multi) frame number for scambler and DCS
+BMC_CTRL_MFR_OFF EQU	6
 
 ; Cipher IV/Key
 DCS_DESC	EQU	0x50
@@ -51,9 +58,6 @@ DCS_CK		EQU	DCS_DESC + 0x8
 ; Cipher state
 DCS_STATE	EQU	0x70
 DCS_STATE_SIZE	EQU	11
-
-; scrambler frame number offset to {RX,TX}_DESC
-TRX_DESC_FN	EQU	0x06
 
 SD_PREAMBLE_OFF	EQU	0x01
 SD_A_FIELD_OFF	EQU	0x06
@@ -205,7 +209,10 @@ label_58:	B_RST
 ; Enable the receiver, receive the S-field and the first 61 bits of the D-field
 ; (93 bits total)
 ;
-Receive:	P_LDH	PB_RX_ON
+Receive:	B_RST
+		B_RC	BMC_RX_CTRL
+		WT	BMC_CTRL_SIZE + 1
+		P_LDH	PB_RX_ON
 		P_LDL	PB_RSSI		; enable RSSI measurement
 		WT	25
 		WNT	1		; Wait until beginning of slot			|
@@ -224,7 +231,10 @@ ClockSyncOff:	P_SC	0x00		;						| p:  30	S: 46
 		WT	62		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
 		RTN			; Return					| p:  93	A: 61
 
-ReceiveSync:	P_LDH	PB_RX_ON
+ReceiveSync:	B_RST
+		B_RC	BMC_RX_CTRL
+		WT	BMC_CTRL_SIZE + 1
+		P_LDH	PB_RX_ON
 		P_LDL	PB_RSSI		; enable RSSI measurement
 		WT	25
 		WNT	1		; Wait until beginning of slot			|
@@ -260,7 +270,7 @@ ReceiveEnd:	P_LDH	PB_RSSI		;						|
 Transmit:	P_LDH	0x00		;
 		WT	40		;
 		B_RST			;
-		B_RC	TX_DESC		;
+		B_RC	BMC_TX_CTRL	;
 		WNT	1		; Wait until beginning of slot
 		B_ST	0x00		; Start transmission of S-field data		|
 		WT	1		; Wait one bit					| p: -8		S:  0
@@ -326,11 +336,8 @@ RFInit:		RFEN			; Enable RF-clock
 		MEN1
 		WT	1
 
-RFInit2:  	P_LDL	0x20
-
-RFInit3:	B_RST
-		B_RC	RX_DESC
-		WT	8
+		P_LDL	0x20
+		WT	10
 		MEN2
 		WT	182
 		MEN2N
@@ -390,8 +397,8 @@ InitDIP:	B_RST
 		BK_C	BANK0_LOW
 		C_LD	DIP_CC_INIT
 		WT	10
-		B_RC	DIP_RF_INIT
-		WT	8
+		B_RC	BMC_CTRL_INIT
+		WT	BMC_CTRL_SIZE + 1
 		B_RST
 		;C_ON
 		WT	10
@@ -402,8 +409,8 @@ InitDIP:	B_RST
 RFStart:	BR	SyncInit
 ;-------------------------------------------------------------
 
-		SHARED	DIP_CC_INIT,DIP_RF_INIT
-		SHARED	RF_DESC,RX_DESC,TX_DESC,TRX_DESC_FN
+		SHARED	DIP_CC_INIT,RF_DESC
+		SHARED	BMC_CTRL_INIT,BMC_RX_CTRL,BMC_TX_CTRL,BMC_CTRL_MFR_OFF
 		SHARED	SD_RSSI_OFF,SD_CSUM_OFF,SD_PREAMBLE_OFF,SD_DATA_OFF
 
 		SHARED	SlotTable

@@ -417,26 +417,63 @@ void dect_transceiver_lock(struct dect_transceiver *trx, u8 slot)
 	trx->ops->lock(trx, slot);
 }
 
+static void dect_transceiver_set_blind(struct dect_transceiver *trx, u8 slot)
+{
+	u8 n = DECT_FRAME_SIZE - 1 - slot;
+
+	trx->slots[slot].blinded++;
+	trx->blind_full_slots |= 1 << n;
+}
+
+static void dect_transceiver_set_visible(struct dect_transceiver *trx, u8 slot)
+{
+	u8 n = DECT_FRAME_SIZE - 1 - slot;
+
+	if (--trx->slots[slot].blinded == 0)
+		trx->blind_full_slots &= ~(1 << n);
+}
+
+static bool dect_transceiver_slot_blind(const struct dect_transceiver *trx, u8 slot)
+{
+	u8 n = DECT_FRAME_SIZE - 1 - slot;
+
+	return trx->blind_full_slots & (1 << n);
+}
+
 bool dect_transceiver_channel_available(const struct dect_transceiver *trx,
 				        const struct dect_channel_desc *chd)
 {
-	u8 n = DECT_FRAME_SIZE - 1 - chd->slot;
+	u8 slot = chd->slot, prev, next;
 
-	if (trx->slots[chd->slot].state == DECT_SLOT_RX ||
-	    trx->slots[chd->slot].state == DECT_SLOT_TX)
+	if (trx->slots[slot].state == DECT_SLOT_RX ||
+	    trx->slots[slot].state == DECT_SLOT_TX)
 		return false;
 
 	switch ((int)chd->pkt) {
 	case DECT_PACKET_P80:
-		if (trx->blind_full_slots & (1 << (n + 1)))
+		if (dect_transceiver_slot_blind(trx, slot + 1))
 			return false;
 	case DECT_PACKET_P32:
 	case DECT_PACKET_P08:
 	case DECT_PACKET_P00:
-		if (trx->blind_full_slots & (1 << n))
+		if (dect_transceiver_slot_blind(trx, slot))
 			return false;
 		break;
 	}
+
+	/* In case of slow hopping transceivers the adjacent slots must be
+	 * available as well. Scanning slots are not blind, so they must be
+	 * checked for explicitly.
+	 */
+	if (trx->ops->features & DECT_TRANSCEIVER_SLOW_HOPPING) {
+		prev = dect_prev_slotnum(slot);
+		if (trx->slots[prev].state == DECT_SLOT_SCANNING)
+			return false;
+		next = dect_next_slotnum(slot);
+		if (trx->slots[next].state == DECT_SLOT_SCANNING)
+			return false;
+	}
+
 	return true;
 }
 
@@ -469,16 +506,22 @@ bool dect_transceiver_reserve(struct dect_transceiver_group *trg,
 			      struct dect_transceiver *trx,
 			      const struct dect_channel_desc *chd)
 {
-	u8 n = DECT_FRAME_SIZE - 1 - chd->slot;
+	u8 slot = chd->slot;
 
 	switch ((int)chd->pkt) {
 	case DECT_PACKET_P80:
-		trx->blind_full_slots |= 1 << (n + 1);
+		dect_transceiver_set_blind(trx, slot + 1);
 	case DECT_PACKET_P32:
 	case DECT_PACKET_P08:
 	case DECT_PACKET_P00:
-		trx->blind_full_slots |= 1 << n;
+		dect_transceiver_set_blind(trx, slot);
 		break;
+	}
+
+	/* Set adjacent slots blind if the transceiver is slow hopping */
+	if (trx->ops->features & DECT_TRANSCEIVER_SLOW_HOPPING) {
+		dect_transceiver_set_blind(trx, dect_prev_slotnum(slot));
+		dect_transceiver_set_blind(trx, dect_next_slotnum(slot));
 	}
 
 	return dect_tg_update_blind_full_slots(trg);
@@ -496,16 +539,22 @@ bool dect_transceiver_release(struct dect_transceiver_group *trg,
 			      struct dect_transceiver *trx,
 			      const struct dect_channel_desc *chd)
 {
-	u8 n = DECT_FRAME_SIZE - 1 - chd->slot;
+	u8 slot = chd->slot;
 
 	switch ((int)chd->pkt) {
 	case DECT_PACKET_P80:
-		trx->blind_full_slots &= ~(1 << (n + 1));
+		dect_transceiver_set_visible(trx, slot + 1);
 	case DECT_PACKET_P32:
 	case DECT_PACKET_P08:
 	case DECT_PACKET_P00:
-		trx->blind_full_slots &= ~(1 << n);
+		dect_transceiver_set_visible(trx, slot);
 		break;
+	}
+
+	/* Set adjacent slots unblind if the transceiver is slow hopping */
+	if (trx->ops->features & DECT_TRANSCEIVER_SLOW_HOPPING) {
+		dect_transceiver_set_visible(trx, dect_next_slotnum(slot));
+		dect_transceiver_set_visible(trx, dect_prev_slotnum(slot));
 	}
 
 	return dect_tg_update_blind_full_slots(trg);
@@ -527,7 +576,6 @@ struct dect_transceiver *dect_transceiver_alloc(const struct dect_transceiver_op
 
 	trx->state = DECT_TRANSCEIVER_STOPPED;
 	trx->ops = ops;
-	trx->blind_full_slots = ops->slotmask;
 	for (i = 0; i < DECT_FRAME_SIZE; i++)
 		trx->slots[i].chd.slot = i;
 
@@ -667,6 +715,7 @@ static int dect_fill_transceiver(struct sk_buff *skb,
 
 	NLA_PUT_STRING(skb, DECTA_TRANSCEIVER_NAME, trx->name);
 	NLA_PUT_STRING(skb, DECTA_TRANSCEIVER_TYPE, trx->ops->name);
+	NLA_PUT_U32(skb, DECTA_TRANSCEIVER_FEATURES, trx->ops->features);
 	if (trx->cell != NULL)
 		NLA_PUT_U8(skb, DECTA_TRANSCEIVER_LINK, trx->cell->index);
 
@@ -683,9 +732,6 @@ static int dect_fill_transceiver(struct sk_buff *skb,
 	if (nest == NULL)
 		goto nla_put_failure;
 	for (slot = 0; slot < DECT_FRAME_SIZE; slot++) {
-		if (!dect_slot_available(trx, slot))
-			continue;
-
 		chan = nla_nest_start(skb, DECTA_LIST_ELEM);
 		if (chan == NULL)
 			goto nla_put_failure;

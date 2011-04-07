@@ -692,7 +692,7 @@ static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 
 const struct dect_transceiver_ops sc1442x_transceiver_ops = {
 	.name			= "sc1442x",
-	.slotmask		= 0x555555,
+	.features		= DECT_TRANSCEIVER_SLOW_HOPPING,
 	.eventrate		= 6,
 	.latency		= 6,
 	.disable		= sc1442x_disable,

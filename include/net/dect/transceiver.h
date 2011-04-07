@@ -129,9 +129,21 @@ static inline u8 dect_next_slotnum(u8 slot)
 	return slot;
 }
 
+static inline u8 dect_prev_slotnum(u8 slot)
+{
+	if (slot == 0)
+		slot = DECT_FRAME_SIZE;
+	return slot - 1;
+}
+
 static inline u8 dect_slot_add(u8 s1, u8 s2)
 {
 	return (s1 + s2) % DECT_FRAME_SIZE;
+}
+
+static inline u8 dect_slot_sub(u8 s1, u8 s2)
+{
+	return s1 >= s2 ? s1 - s2 : DECT_FRAME_SIZE + s1 - s2;
 }
 
 static inline u8 dect_slot_distance(u8 s1, u8 s2)
@@ -277,7 +289,8 @@ enum dect_channel_priv_flags {
 struct dect_transceiver_slot {
 	u8				flags;
 	u8				priv_flags;
-	enum dect_slot_states		state:16;
+	u8				blinded;
+	enum dect_slot_states		state:8;
 	struct dect_channel_desc	chd;
 	struct dect_bearer		*bearer;
 	u64				ck;
@@ -365,7 +378,7 @@ static inline struct dect_skb_trx_cb *DECT_TRX_CB(const struct sk_buff *skb)
  * @set_band:		set the RF-band
  * @destructor:		destructor
  * @name		transceiver driver name
- * @slotmask:		bitmask of available slots
+ * @features:		transceiver features
  * @eventrate:		rate at which slot events are generated, must be integral
  * 			divisor of the number of slots per TDMA half frame
  * @latency:		latency in slots until updates for a slot take effect
@@ -428,7 +441,7 @@ struct dect_transceiver_ops {
 	void		(*destructor)(struct dect_transceiver *trx);
 	const char	*name;
 
-	u32		slotmask;
+	u32		features;
 	u8		eventrate;
 	u8		latency;
 };
@@ -520,11 +533,6 @@ struct dect_transceiver {
 static inline void *dect_transceiver_priv(const struct dect_transceiver *trx)
 {
 	return (void *)&trx->event[DECT_HALF_FRAME_SIZE / trx->ops->eventrate];
-}
-
-static inline bool dect_slot_available(const struct dect_transceiver *trx, u8 slot)
-{
-	return trx->ops->slotmask & (1 << slot);
 }
 
 extern struct dect_transceiver *dect_transceiver_alloc(const struct dect_transceiver_ops *ops,

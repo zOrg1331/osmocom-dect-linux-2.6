@@ -251,7 +251,6 @@ static void dect_vtrx_tx(const struct dect_transceiver *trx, struct sk_buff *skb
 
 static const struct dect_transceiver_ops vtrx_transceiver_ops = {
 	.name			= "vtrx",
-	.slotmask		= 0xffffff,
 	.eventrate		= 1,
 	.latency		= 1,
 	.enable			= dect_vtrx_enable,

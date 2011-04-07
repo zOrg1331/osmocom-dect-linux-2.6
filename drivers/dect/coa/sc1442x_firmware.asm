@@ -80,36 +80,60 @@ Start:		BR	InitDIP
 
 SlotTable:	SLOTZERO
 
-JP0:		BK_C	BANK1_LOW
-PP0:		WNT	2
-JP2:		BK_C	BANK1_HIGH
-PP2:		WNT	2
-JP4:		BK_C	BANK2_LOW
-PP4:		WNT	2
+Slot00:		WT	1
+		WNT	1
+Slot01:		WT	1
+		WNT	1
+Slot02:		WT	1
+		WNT	1
+Slot03:		WT	1
+		WNT	1
+Slot04:		WT	1
+		WNT	1
+Slot05:		WT	1
+		WNT	1
 		U_INT0
 
-JP6:		BK_C	BANK2_HIGH
-PP6:		WNT	2
-JP8:		BK_C	BANK3_LOW
-PP8:		WNT	2
-JP10:		BK_C	BANK3_HIGH
-PP10:		WNT	2
+Slot06:		WT	1
+		WNT	1
+Slot07:		WT	1
+		WNT	1
+Slot08:		WT	1
+		WNT	1
+Slot09:		WT	1
+		WNT	1
+Slot10:		WT	1
+		WNT	1
+Slot11:		WT	1
+		WNT	1
 		U_INT1
 
-JP12:		BK_C	BANK4_LOW
-PP12:		WNT	2
-JP14:		BK_C	BANK4_HIGH
-PP14:		WNT	2
-JP16:		BK_C	BANK5_LOW
-PP16:		WNT	2
+Slot12:		WT	1
+		WNT	1
+Slot13:		WT	1
+		WNT	1
+Slot14:		WT	1
+		WNT	1
+Slot15:		WT	1
+		WNT	1
+Slot16:		WT	1
+		WNT	1
+Slot17:		WT	1
+		WNT	1
 		U_INT2
 
-JP18:		BK_C	BANK5_HIGH
-PP18:		WNT	2
-JP20:		BK_C	BANK6_LOW
-PP20:		WNT	2
-JP22:		BK_C	BANK6_HIGH
-PP22:		WNT	2
+Slot18:		WT	1
+		WNT	1
+Slot19:		WT	1
+		WNT	1
+Slot20:		WT	1
+		WNT	1
+Slot21:		WT	1
+		WNT	1
+Slot22:		WT	1
+		WNT	1
+Slot23:		WT	1
+		WNT	1
 		U_INT3
 
 		BR	SlotTable
@@ -117,24 +141,19 @@ PP22:		WNT	2
 ;-------------------------------------------------------------------------------
 ; Receive a P00 packet
 ;
-RX_P00:		JMP	RFInit		; Init radio
-		JMP	Receive		; Receive S- and beginning of A-field		|
-		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
+RX_P00:		JMP	Receive		; Receive S- and beginning of A-field		|
+RX_P00_End:	B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
 		JMP	ReceiveEnd	; End reception					| p: 96		B:  0
 		BR	WriteBMC1	;
 
-RX_P00_Sync:	JMP	RFInit		; Init radio
-		JMP	ReceiveSync	; Receive S- and beginning of A-field		|
-		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
-		JMP	ReceiveEnd	; End reception					| p: 96		B:  0
-		BR	WriteBMC1	;
+RX_P00_Sync:	JMP	ReceiveSync	; Receive S- and beginning of A-field		|
+		BR	RX_P00_End
 
 ; Receive a P32 packet using the the unprotected full slot B-field format in
 ; the D32-field
 ;
 RX_P32U_Enc:	JMP	LoadEncKey
-RX_P32U:	JMP	RFInit
-		JMP	Receive
+RX_P32U:	JMP	Receive
 		B_BRFU	SD_B_FIELD_OFF	; Receive unprotected full-slot B-field		| p: 95		A: 63
 		JMP	RX_P32U_BZ	; Receive B-field				| p: 96		B:  0
 		BR	WriteBMC2
@@ -142,8 +161,7 @@ RX_P32U:	JMP	RFInit
 ; Receive a P32 packet using the protected full slot B-field format in the
 ; D32-field
 ;
-RX_P32P:	JMP	RFInit
-		JMP	Receive
+RX_P32P:	JMP	Receive
 		B_BRFP	SD_B_FIELD_OFF	; Receive protected full slot B-field data	| p:  95	A:  63
 		JMP	TransferP32P_B	; Receive the B-subfields			| p:  96-411	B:   0-315
 		WT	3		;	 					| p: 412-414	B: 316-318
@@ -158,8 +176,7 @@ RX_P32P:	JMP	RFInit
 ;-------------------------------------------------------------------------------
 ; Transmit a P00 packet
 ;
-TX_P00:		JMP	RFInit		; Init radio
-		JMP	Transmit	; Transmit S- and beginning of A-field		|
+TX_P00:		JMP	Transmit	; Transmit S- and beginning of A-field		|
 		JMP	TransmitEnd	; End transmission				| p: 94		A: 62
 		BR	label_53	;
 
@@ -167,8 +184,7 @@ TX_P00:		JMP	RFInit		; Init radio
 ; D32-field
 ;
 TX_P32U_Enc:	JMP	LoadEncKey
-TX_P32U:	JMP	RFInit		; Init radio
-		JMP	Transmit	; Transmit S- and beginning of A-field		|
+TX_P32U:	JMP	Transmit	; Transmit S- and beginning of A-field		|
 		B_BTFU	SD_B_FIELD_OFF	; Transmit unprotected full-slot B-field data	| p: 95		A: 63
 		JMP	TX_P32U_BZ	; Transmit the B- and Z-fields			| p: 96		B: 0
 		BR	label_54	;
@@ -176,8 +192,7 @@ TX_P32U:	JMP	RFInit		; Init radio
 ; Transmit a P32 packet using the protected full slot B-field format in the
 ; D32-field
 ;
-TX_P32P:	JMP	RFInit		; Enable radio
-		JMP	Transmit	; Transmit S- and beginning of A-field		|
+TX_P32P:	JMP	Transmit	; Transmit S- and beginning of A-field		|
 		B_BTFP	SD_B_FIELD_OFF	; Transmit protect fulls-slot B-field data	| p:  95	A:  63
 		JMP	TransferP32P_B	; Transmit the B-subfields			| p:  96-411	B:   0-315
 		WT	3		; 						| p: 412-414	B: 316-318
@@ -334,14 +349,13 @@ RFInit:		RFEN			; Enable RF-clock
 		WT	U2785_CFG2_LEN + 1
 		M_RST
 		MEN1
-		WT	1
+		;WT	1
 
 		P_LDL	0x20
 		WT	10
 		MEN2
 		WT	182
 		MEN2N
-		P_LDH	0x00
 		WT	16
 		RTN
 ;--------------------------------------------------------------
@@ -393,7 +407,7 @@ SyncLock:	JMP	RX_P00
 SyncLoop:	BR	Sync
 ;-------------------------------------------------------------
 
-InitDIP:	B_RST
+InitDIP:	;B_RST
 		BK_C	BANK0_LOW
 		C_LD	DIP_CC_INIT
 		WT	10
@@ -414,10 +428,11 @@ RFStart:	BR	SyncInit
 		SHARED	SD_RSSI_OFF,SD_CSUM_OFF,SD_PREAMBLE_OFF,SD_DATA_OFF
 
 		SHARED	SlotTable
-		SHARED	PP0,PP2,PP4,PP6,PP8,PP10,PP12,PP14,PP16,PP18,PP20,PP22
-		SHARED	JP0,JP2,JP4,JP6,JP8,JP10,JP12,JP14,JP16,JP18,JP20,JP22
+		SHARED	Slot00,Slot01,Slot02,Slot03,Slot04,Slot05,Slot06,Slot07
+		SHARED	Slot08,Slot09,Slot10,Slot11,Slot12,Slot13,Slot14,Slot15
+		SHARED	Slot16,Slot17,Slot18,Slot19,Slot20,Slot21,Slot22,Slot23
 
-		SHARED	RFStart,SlotTable
+		SHARED	RFStart,RFInit
 		SHARED	SyncInit,Sync,SyncLock,SyncLoop
 		SHARED	ClockSyncOn,ClockSyncOff,ClockAdjust
 		SHARED	PSC_ARPD1,PSC_S_SYNC,PSC_S_SYNC_ON,PSC_EOPSM

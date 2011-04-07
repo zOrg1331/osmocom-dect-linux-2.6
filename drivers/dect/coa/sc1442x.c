@@ -224,6 +224,9 @@
 #define SC1442X_CC0_STANDBY		0xc2
 #define SC1442X_CC0_POWERDOWN		0x3d
 
+/* Logical memory banks */
+#define SC1442X_BANK_UNITS		8
+#define SC1442X_SLOT_BANK_SIZE		128
 
 static const u8 banktable[] = {
 	SC1442X_RAMBANK1,
@@ -234,34 +237,10 @@ static const u8 banktable[] = {
 	SC1442X_RAMBANK6,
 };
 
-static const u8 jumptable[] = {
-	JP0, 0,
-	JP2, 0,
-	JP4, 0,
-	JP6, 0,
-	JP8, 0,
-	JP10, 0,
-	JP12, 0,
-	JP14, 0,
-	JP16, 0,
-	JP18, 0,
-	JP20, 0,
-	JP22, 0
-};
-
-static const u8 patchtable[] = {
-	PP0, 0,
-	PP2, 0,
-	PP4, 0,
-	PP6, 0,
-	PP8, 0,
-	PP10, 0,
-	PP12, 0,
-	PP14, 0,
-	PP16, 0,
-	PP18, 0,
-	PP20, 0,
-	PP22, 0
+static const u8 slottable[] = {
+	Slot00, Slot01, Slot02, Slot03, Slot04, Slot05, Slot06, Slot07,
+	Slot08, Slot09, Slot10, Slot11, Slot12, Slot13, Slot14, Slot15,
+	Slot16, Slot17, Slot18, Slot19, Slot20, Slot21,	Slot22, Slot23,
 };
 
 static const u8 sc1442x_rx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1][2][2] = {
@@ -454,6 +433,11 @@ static void sc1442x_from_dmem(const struct coa_device *dev, void *dst,
 		*(u8 *)(dst + i) = sc1442x_dreadb(dev, offset + i);
 }
 
+static u8 sc1442x_dip_bankaddress(u8 slot)
+{
+	return (slot / 2 + 2) * SC1442X_SLOT_BANK_SIZE / SC1442X_BANK_UNITS;
+}
+
 static u8 sc1442x_slot_bank(u8 slot)
 {
 	return banktable[slot / 4];
@@ -463,7 +447,6 @@ static u16 sc1442x_slot_offset(u8 slot)
 {
 	u16 offset;
 
-	WARN_ON_ONCE(slot & 0x1);
 	offset = SC1442X_BANKSIZE + slot / 4 * SC1442X_BANKSIZE;
 	if (slot & 0x2)
 		offset += SC1442X_BANKSIZE / 2;
@@ -533,8 +516,10 @@ static void sc1442x_enable(const struct dect_transceiver *trx)
 
 	/* Restore slot table to a pristine state */
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
-	for (slot = 0; slot < DECT_FRAME_SIZE; slot += 2)
-		sc1442x_write_cmd(dev, patchtable[slot], WNT, 2);
+	for (slot = 0; slot < DECT_FRAME_SIZE; slot++) {
+		sc1442x_write_cmd(dev, slottable[slot] + 0, WT, 1);
+		sc1442x_write_cmd(dev, slottable[slot] + 1, WNT, 1);
+	}
 
 	if (trx->cell->mode == DECT_MODE_FP) {
 		sc1442x_write_cmd(dev, ClockSyncOn, WT, 1);
@@ -599,11 +584,10 @@ static void sc1442x_lock(const struct dect_transceiver *trx, u8 slot)
 	 * event. This will automagically establish the correct slot numbers
 	 * and thereby interrupt timing for all slots.
 	 */
-	WARN_ON_ONCE(slot & 0x1);
 	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 	sc1442x_write_cmd(dev, SlotTable, SLOTZERO, 0);
-	sc1442x_write_cmd(dev, SyncLoop, BR, jumptable[slot]);
+	sc1442x_write_cmd(dev, SyncLoop, BR, slottable[slot]);
 	sc1442x_unlock_mem(dev);
 }
 
@@ -614,23 +598,33 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 	struct coa_device *dev = dect_transceiver_priv(trx);
 	bool cipher = trx->slots[chd->slot].flags & DECT_SLOT_CIPHER;
 	bool sync = trx->slots[chd->slot].flags & DECT_SLOT_SYNC;
-	u8 slot = chd->slot;
+	u8 slot = chd->slot, prev = dect_slot_sub(slot, 1);
 
-	WARN_ON_ONCE(slot & 0x1);
 	sc1442x_lock_mem(dev);
 	sc1442x_switch_to_bank(dev, SC1442X_CODEBANK);
 
 	switch (mode) {
 	case DECT_SLOT_IDLE:
-		sc1442x_write_cmd(dev, patchtable[slot], WNT, 2);
+		sc1442x_write_cmd(dev, slottable[prev] + 0, WT, 1);
+		sc1442x_write_cmd(dev, slottable[prev] + 1, WNT, 1);
+		sc1442x_write_cmd(dev, slottable[slot] + 0, WT, 1);
+		sc1442x_write_cmd(dev, slottable[slot] + 1, WNT, 1);
 		break;
 	case DECT_SLOT_SCANNING:
 	case DECT_SLOT_RX:
-		sc1442x_write_cmd(dev, patchtable[slot], JMP,
+		sc1442x_write_cmd(dev, slottable[prev] + 0, BK_C,
+				  sc1442x_dip_bankaddress(slot));
+		sc1442x_write_cmd(dev, slottable[prev] + 1, JMP, RFInit);
+		sc1442x_write_cmd(dev, slottable[slot] + 0, WT, 1);
+		sc1442x_write_cmd(dev, slottable[slot] + 1, JMP,
 				  sc1442x_rx_funcs[chd->pkt][chd->b_fmt][cipher][sync]);
 		break;
 	case DECT_SLOT_TX:
-		sc1442x_write_cmd(dev, patchtable[slot], JMP,
+		sc1442x_write_cmd(dev, slottable[prev] + 0, BK_C,
+				  sc1442x_dip_bankaddress(slot));
+		sc1442x_write_cmd(dev, slottable[prev] + 1, JMP, RFInit);
+		sc1442x_write_cmd(dev, slottable[slot] + 0, WT, 1);
+		sc1442x_write_cmd(dev, slottable[slot] + 1, JMP,
 				  sc1442x_tx_funcs[chd->pkt][chd->b_fmt][cipher]);
 		break;
 	}
@@ -871,7 +865,7 @@ irqreturn_t sc1442x_interrupt(int irq, void *dev_id)
 			goto out;
 
 		spin_lock(&dev->lock);
-		for (slot = 6 * i; slot < 6 * (i + 1); slot += 2) {
+		for (slot = 6 * i; slot < 6 * (i + 1); slot++) {
 			sc1442x_process_slot(dev, trx, event, slot);
 			if (slot < DECT_HALF_FRAME_SIZE)
 				sc1442x_transfer_dcs_state(dev, trx, slot);

@@ -22,13 +22,13 @@ BIN2C		= $(obj)/bin2c
 
 quiet_cmd_asl	= ASL     $<
       cmd_asl	= $(ASL) -q -c $< -o $(<:.asm=.p) -shareout $(<:.asm=.h.tmp); \
-		  $(P2BIN) $(<:.asm=.p) $(<:.asm=.bin) -r 0-507; \
+		  $(P2BIN) $(<:.asm=.p) $(<:.asm=.bin) -r 0-509; \
 		  $(BIN2C) $(<:.asm=.bin) $(NAME)_firmware > $@; \
 		  ( \
 			echo "\#ifndef $$(echo $(NAME) | tr a-z A-Z)_FIRMWARE"; \
 			echo "\#define $$(echo $(NAME) | tr a-z A-Z)_FIRMWARE"; \
 			echo;\
-			echo "extern const unsigned char $(NAME)_firmware[509];"; \
+			echo "extern const unsigned char $(NAME)_firmware[510];"; \
 			echo;\
 			grep define $(<:.asm=.h.tmp); \
 			echo;\

@@ -265,7 +265,7 @@ ReceiveSync:	B_RST
 		WT	32		;						| p:  -2-29	S: 14-45
 		P_SC	0x00		;						| p:  30	S: 46
 		B_AR2	SD_A_FIELD_OFF	; Start reception of A-field/A-field CRC	| p:  31	S: 47
-		WT	62		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
+		WT	61		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
 		RTN			; Return					| p:  93	A: 61
 
 ; Receive the B- and Z-fields of a P32 packet using the protected full slot

@@ -34,8 +34,6 @@ BANK6_HIGH	EQU	0xd0
 BANK7_LOW	EQU	0xe0
 BANK7_HIGH	EQU	0xf0
 
-BMC_CTRL_INIT	EQU	0x00
-
 ; Codec Control
 DIP_CC_INIT	EQU	0x10
 
@@ -44,8 +42,7 @@ RF_DESC		EQU	0x3a
 
 ; BMC control information
 BMC_CTRL_SIZE	EQU	7
-BMC_TX_CTRL	EQU	0x40
-BMC_RX_CTRL	EQU	0x48
+BMC_CTRL	EQU	0x40
 
 ; (multi) frame number for scambler and DCS
 BMC_CTRL_MFR_OFF EQU	6
@@ -225,7 +222,7 @@ label_58:	B_RST
 ; (93 bits total)
 ;
 Receive:	B_RST
-		B_RC	BMC_RX_CTRL
+		B_RC	BMC_CTRL
 		WT	BMC_CTRL_SIZE + 1
 		P_LDH	PB_RX_ON
 		P_LDL	PB_RSSI		; enable RSSI measurement
@@ -247,7 +244,7 @@ ClockSyncOff:	P_SC	0x00		;						| p:  30	S: 46
 		RTN			; Return					| p:  93	A: 61
 
 ReceiveSync:	B_RST
-		B_RC	BMC_RX_CTRL
+		B_RC	BMC_CTRL
 		WT	BMC_CTRL_SIZE + 1
 		P_LDH	PB_RX_ON
 		P_LDL	PB_RSSI		; enable RSSI measurement
@@ -285,7 +282,7 @@ ReceiveEnd:	P_LDH	PB_RSSI		;						|
 Transmit:	P_LDH	0x00		;
 		WT	40		;
 		B_RST			;
-		B_RC	BMC_TX_CTRL	;
+		B_RC	BMC_CTRL	;
 		WNT	1		; Wait until beginning of slot
 		B_ST	0x00		; Start transmission of S-field data		|
 		WT	1		; Wait one bit					| p: -8		S:  0
@@ -411,7 +408,7 @@ InitDIP:	;B_RST
 		BK_C	BANK0_LOW
 		C_LD	DIP_CC_INIT
 		WT	10
-		B_RC	BMC_CTRL_INIT
+		B_RC	BMC_CTRL
 		WT	BMC_CTRL_SIZE + 1
 		B_RST
 		;C_ON
@@ -424,7 +421,7 @@ RFStart:	BR	SyncInit
 ;-------------------------------------------------------------
 
 		SHARED	DIP_CC_INIT,RF_DESC
-		SHARED	BMC_CTRL_INIT,BMC_RX_CTRL,BMC_TX_CTRL,BMC_CTRL_MFR_OFF
+		SHARED	BMC_CTRL,BMC_CTRL_MFR_OFF
 		SHARED	SD_RSSI_OFF,SD_CSUM_OFF,SD_PREAMBLE_OFF,SD_DATA_OFF
 
 		SHARED	SlotTable

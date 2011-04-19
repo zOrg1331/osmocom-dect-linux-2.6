@@ -5,9 +5,7 @@ extern const unsigned char sc1442x_firmware[510];
 
 #define DIP_CC_INIT 0x10
 #define RF_DESC 0x3A
-#define BMC_CTRL_INIT 0x0
-#define BMC_RX_CTRL 0x48
-#define BMC_TX_CTRL 0x40
+#define BMC_CTRL 0x40
 #define BMC_CTRL_MFR_OFF 0x6
 #define SD_RSSI_OFF 0x0
 #define SD_CSUM_OFF 0x1

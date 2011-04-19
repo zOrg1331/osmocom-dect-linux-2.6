@@ -63,8 +63,7 @@
  * 0x0e - 0x35:		B-Field		B-Field
  *
  * 0x3a - 0x3e:		Radio Cfg	Radio Cfg
- * 0x40 - 0x47:				BMC TX Cfg
- * 0x48 - 0x4f:		BMC RX Cfg
+ * 0x40 - 0x47:		BMC Ctrl	BMC Ctrl
  * 0x50 - 0x5f:		DCS IV/Key	DCS IV/Key
  * 0x70 - 0x7b:		DCS state	DCS state
  */
@@ -591,6 +590,42 @@ static void sc1442x_lock(const struct dect_transceiver *trx, u8 slot)
 	sc1442x_unlock_mem(dev);
 }
 
+static void sc1442x_write_bmc_config(const struct coa_device *dev,
+				     u8 slot, bool tx)
+{
+	u16 off;
+	u8 cfg;
+
+	off = sc1442x_slot_offset(slot) + BMC_CTRL;
+
+	cfg  = 2 << SC1442X_BC0_S_ERR_SHIFT;
+	cfg |= SC1442X_BC0_INV_TDO;
+	cfg |= SC1442X_BC0_SENS_A;
+	if (slot < 12 && !tx)
+		cfg |= SC1442X_BC0_PP_MODE;
+	sc1442x_dwriteb(dev, off + 0, cfg);
+
+	/* S-field error mask */
+	sc1442x_dwriteb(dev, off + 1, 0);
+	/* S-field sliding window error mask */
+	sc1442x_dwriteb(dev, off + 2, 0x3f);
+
+	/* DAC output */
+	sc1442x_dwriteb(dev, off + 3, 0);
+
+	cfg  = SC1442X_BC4_ADP;
+	cfg |= 0xf & SC1442X_BC4_WIN_MASK;
+	cfg |= 0x80;
+	sc1442x_dwriteb(dev, off + 4, cfg);
+
+	cfg  = SC1442X_BC5_DO_FR;
+	cfg |= tx ? SC1442X_BC5_TDO_DIGITAL : SC1442X_BC5_TDO_POWER_DOWN;
+	sc1442x_dwriteb(dev, off + 5, cfg);
+
+	/* Frame number */
+	sc1442x_dwriteb(dev, off + 6, 0);
+}
+
 static void sc1442x_set_mode(const struct dect_transceiver *trx,
 			     const struct dect_channel_desc *chd,
 			     enum dect_slot_states mode)
@@ -618,6 +653,9 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 		sc1442x_write_cmd(dev, slottable[slot] + 0, WT, 1);
 		sc1442x_write_cmd(dev, slottable[slot] + 1, JMP,
 				  sc1442x_rx_funcs[chd->pkt][chd->b_fmt][cipher][sync]);
+
+		sc1442x_switch_to_bank(dev, sc1442x_slot_bank(slot));
+		sc1442x_write_bmc_config(dev, slot, false);
 		break;
 	case DECT_SLOT_TX:
 		sc1442x_write_cmd(dev, slottable[prev] + 0, BK_C,
@@ -626,6 +664,9 @@ static void sc1442x_set_mode(const struct dect_transceiver *trx,
 		sc1442x_write_cmd(dev, slottable[slot] + 0, WT, 1);
 		sc1442x_write_cmd(dev, slottable[slot] + 1, JMP,
 				  sc1442x_tx_funcs[chd->pkt][chd->b_fmt][cipher]);
+
+		sc1442x_switch_to_bank(dev, sc1442x_slot_bank(slot));
+		sc1442x_write_bmc_config(dev, slot, true);
 		break;
 	}
 	sc1442x_unlock_mem(dev);
@@ -672,7 +713,7 @@ static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 	sc1442x_to_dmem(dev, off + SD_PREAMBLE_OFF,
 			skb_mac_header(skb), skb->mac_len);
 	sc1442x_to_dmem(dev, off + SD_DATA_OFF, skb->data, skb->len);
-	sc1442x_dwriteb(dev, off + BMC_TX_CTRL + BMC_CTRL_MFR_OFF, cb->frame);
+	sc1442x_dwriteb(dev, off + BMC_CTRL + BMC_CTRL_MFR_OFF, cb->frame);
 
 	/* Init DCS for slots in the first half frame */
 	if (ts->flags & DECT_SLOT_CIPHER && slot < DECT_HALF_FRAME_SIZE)
@@ -835,7 +876,7 @@ out:
 	dect_transceiver_record_rssi(event, slot, rssi);
 
 	/* Update frame number for next reception */
-	sc1442x_dwriteb(dev, off + BMC_RX_CTRL + BMC_CTRL_MFR_OFF, framenum + 1);
+	sc1442x_dwriteb(dev, off + BMC_CTRL + BMC_CTRL_MFR_OFF, framenum + 1);
 
 	/* Init DCS for slots in the first half frame */
 	if (ts->flags & DECT_SLOT_CIPHER && slot < DECT_HALF_FRAME_SIZE)
@@ -879,47 +920,12 @@ out:
 }
 EXPORT_SYMBOL_GPL(sc1442x_interrupt);
 
-static void sc1442x_write_bmc_config(const struct coa_device *dev,
-				     u16 off, bool pp, bool tx)
-{
-	u8 cfg;
-
-	cfg  = 2 << SC1442X_BC0_S_ERR_SHIFT;
-	cfg |= SC1442X_BC0_INV_TDO;
-	cfg |= SC1442X_BC0_SENS_A;
-	if (pp && !tx)
-		cfg |= SC1442X_BC0_PP_MODE;
-	sc1442x_dwriteb(dev, off + 0, cfg);
-
-	/* S-field error mask */
-	sc1442x_dwriteb(dev, off + 1, 0);
-	/* S-field sliding window error mask */
-	sc1442x_dwriteb(dev, off + 2, 0x3f);
-
-	/* DAC output */
-	sc1442x_dwriteb(dev, off + 3, 0);
-
-	cfg  = SC1442X_BC4_ADP;
-	cfg |= 0xf & SC1442X_BC4_WIN_MASK;
-	cfg |= 0x80;
-	sc1442x_dwriteb(dev, off + 4, cfg);
-
-	cfg  = SC1442X_BC5_DO_FR;
-	cfg |= tx ? SC1442X_BC5_TDO_DIGITAL : SC1442X_BC5_TDO_POWER_DOWN;
-	sc1442x_dwriteb(dev, off + 5, cfg);
-
-	/* Frame number */
-	sc1442x_dwriteb(dev, off + 6, 0);
-}
-
 static void sc1442x_init_slot(const struct coa_device *dev, u8 slot)
 {
 	u16 off;
 
 	sc1442x_switch_to_bank(dev, sc1442x_slot_bank(slot));
 	off = sc1442x_slot_offset(slot);
-	sc1442x_write_bmc_config(dev, off + BMC_TX_CTRL, slot < 12, true);
-	sc1442x_write_bmc_config(dev, off + BMC_RX_CTRL, slot < 12, false);
 	dev->radio_ops->rx_init(dev, off);
 	dev->radio_ops->tx_init(dev, off);
 }
@@ -987,7 +993,7 @@ int sc1442x_init_device(struct coa_device *dev)
 	for (i = 1; i < SC1442X_CC_SIZE; i++)
 		sc1442x_dwriteb(dev, DIP_CC_INIT + i, 0);
 
-	sc1442x_write_bmc_config(dev, BMC_CTRL_INIT, false, false);
+	sc1442x_write_bmc_config(dev, 0, false);
 	for (slot = 0; slot < DECT_FRAME_SIZE; slot += 2)
 		sc1442x_init_slot(dev, slot);
 

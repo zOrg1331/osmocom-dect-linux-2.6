@@ -62,10 +62,10 @@
  * 0x06 - 0x0d:		A-Field		A-Field
  * 0x0e - 0x35:		B-Field		B-Field
  *
- * 0x3a - 0x3e:		Radio Cfg	Radio Cfg
- * 0x40 - 0x47:		BMC Ctrl	BMC Ctrl
- * 0x50 - 0x5f:		DCS IV/Key	DCS IV/Key
- * 0x70 - 0x7b:		DCS state	DCS state
+ * 0x65 - 0x68:		Radio Cfg	Radio Cfg
+ * 0x69 - 0x6f:		BMC Ctrl	BMC Ctrl
+ * 0x70 - 0x7f:		DCS IV/Key	DCS IV/Key
+ * 0x70 - 0x7a:		DCS state	DCS state
  */
 
 #define SC1442X_DIPSTOPPED		0x80

@@ -38,17 +38,17 @@ BANK7_HIGH	EQU	0xf0
 DIP_CC_INIT	EQU	0x10
 
 ; Radio configuration word
-RF_DESC		EQU	0x3a
+RF_DESC		EQU	0x65
 
 ; BMC control information
 BMC_CTRL_SIZE	EQU	7
-BMC_CTRL	EQU	0x40
+BMC_CTRL	EQU	0x69
 
 ; (multi) frame number for scambler and DCS
 BMC_CTRL_MFR_OFF EQU	6
 
 ; Cipher IV/Key
-DCS_DESC	EQU	0x50
+DCS_DESC	EQU	0x70
 DCS_IV		EQU	DCS_DESC
 DCS_CK		EQU	DCS_DESC + 0x8
 

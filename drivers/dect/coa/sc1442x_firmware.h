@@ -4,8 +4,8 @@
 extern const unsigned char sc1442x_firmware[510];
 
 #define DIP_CC_INIT 0x10
-#define RF_DESC 0x3A
-#define BMC_CTRL 0x40
+#define RF_DESC 0x65
+#define BMC_CTRL 0x69
 #define BMC_CTRL_MFR_OFF 0x6
 #define SD_RSSI_OFF 0x0
 #define SD_CSUM_OFF 0x1
@@ -58,8 +58,8 @@ extern const unsigned char sc1442x_firmware[510];
 #define TX_P32U 0x51
 #define TX_P32P 0x55
 #define TX_P32U_Enc 0x50
-#define DCS_IV 0x50
-#define DCS_CK 0x58
+#define DCS_IV 0x70
+#define DCS_CK 0x78
 #define DCS_STATE 0x70
 #define DCS_STATE_SIZE 0xB
 #define LoadEncKey 0xCC

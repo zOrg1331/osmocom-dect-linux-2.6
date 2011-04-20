@@ -745,8 +745,6 @@ struct dect_si {
  * B-Field
  */
 
-#define DECT_B_FIELD_SIZE	40
-
 /**
  * dect_b_identitifications - MAC layer B-Field Identification
  *

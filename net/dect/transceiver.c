@@ -28,10 +28,11 @@ static int dect_transceiver_notify(struct dect_transceiver *trx,
 
 static const struct dect_band *dect_band[DECT_BAND_NUM];
 static const u8 dect_pkt_size[] = {
-	[DECT_PACKET_P00] = DECT_P00_SIZE,
-	[DECT_PACKET_P08] = DECT_P08_SIZE,
-	[DECT_PACKET_P32] = DECT_P32_SIZE,
-	[DECT_PACKET_P80] = DECT_P80_SIZE,
+	[DECT_PACKET_P00]	= DECT_P00_SIZE,
+	[DECT_PACKET_P08]	= DECT_P08_SIZE,
+	[DECT_PACKET_P32]	= DECT_P32_SIZE,
+	[DECT_PACKET_P640j]	= DECT_P640j_SIZE,
+	[DECT_PACKET_P80]	= DECT_P80_SIZE,
 };
 
 /**

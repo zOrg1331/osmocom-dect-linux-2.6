@@ -33,6 +33,18 @@ static void dect_cell_schedule_page(struct dect_cell *cell, u32 mask);
 static const u8 dect_fp_preamble[]	= { 0x55, 0x55, 0xe9, 0x8a};
 static const u8 dect_pp_preamble[]	= { 0xaa, 0xaa, 0x16, 0x75};
 
+static const u8 dect_b_field_sizes[] = {
+	[DECT_PACKET_P00]	= 0,
+	[DECT_PACKET_P32]	= 40,
+	[DECT_PACKET_P640j]	= 80,
+	[DECT_PACKET_P80]	= 100,
+};
+
+static u8 dect_b_field_size(const struct dect_channel_desc *chd)
+{
+	return dect_b_field_sizes[chd->pkt];
+}
+
 #define mac_debug(cell, base, fmt, args...) \
 	pr_debug("%s %u.%.2u.%.2u: " fmt, \
 		 (base) == DECT_TIMER_TX ? "TX" : "RX", \
@@ -2869,7 +2881,7 @@ rcv_b_field:
 	}
 
 	skb_pull(skb, DECT_A_FIELD_SIZE);
-	skb_trim(skb, DECT_B_FIELD_SIZE);
+	skb_trim(skb, dect_b_field_size(&bearer->chd));
 	clh->ops->tbc_data_ind(clh, &tbc->id, DECT_MC_I_N, skb);
 	return;
 
@@ -4069,6 +4081,7 @@ static struct sk_buff *dect_u_mux(struct dect_cell *cell,
 {
 	struct sk_buff *skb = NULL;
 	struct dect_tbc *tbc;
+	u8 b_field_size;
 
 	if (bearer->ops->state == DECT_TRAFFIC_BEARER) {
 		tbc = bearer->tbc;
@@ -4077,11 +4090,12 @@ static struct sk_buff *dect_u_mux(struct dect_cell *cell,
 	}
 
 	if (skb == NULL) {
-		skb = alloc_skb(DECT_B_FIELD_SIZE, GFP_ATOMIC);
+		b_field_size = dect_b_field_size(&bearer->chd);
+		skb = alloc_skb(b_field_size, GFP_ATOMIC);
 		if (skb == NULL)
 			return NULL;
-		skb_put(skb, DECT_B_FIELD_SIZE);
-		memset(skb->data, 0xff, DECT_B_FIELD_SIZE);
+		skb_put(skb, b_field_size);
+		memset(skb->data, 0xff, b_field_size);
 		DECT_B_CB(skb)->id = DECT_BI_UTYPE_0;
 	}
 	return skb;

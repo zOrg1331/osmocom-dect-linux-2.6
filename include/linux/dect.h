@@ -109,12 +109,26 @@ struct sockaddr_dect_ssap {
 };
 
 /* S-SAP primitives */
-#define DECT_DL_ENC_KEY	1
-#define DECT_DL_ENCRYPT	2
+#define DECT_DL_ENC_KEY		1
+#define DECT_DL_ENCRYPT		2
+#define DECT_DL_MAC_CONN_PARAMS	3
 
 enum dect_cipher_states {
 	DECT_CIPHER_DISABLED,
 	DECT_CIPHER_ENABLED,
+};
+
+/**
+ * enum dect_mac_connection_types - MAC Connection types
+ *
+ * @DECT_MAC_CONN_BASIC:	Basic connection, always I_N_min_delay service
+ * @DECT_MAC_CONN_ADVANCED:	Advanced connection
+ * @DECT_MAC_CONN_COMPLEMENT:	Complementary connection
+ */
+enum dect_mac_connection_types {
+	DECT_MAC_CONN_BASIC,
+	DECT_MAC_CONN_ADVANCED,
+	DECT_MAC_CONN_COMPLEMENT,
 };
 
 enum dect_mac_service_types {
@@ -128,6 +142,31 @@ enum dect_mac_service_types {
 	/* Lifetime encoded in low three bits */
 	DECT_SERVICE_IP_ERROR_CORRECTION	= 0x18,
 	DECT_SERVICE_IPQ_ERROR_CORRECTION	= 0x38,
+};
+
+/**
+ * enum dect_slot_types - DECT slot types
+ *
+ * @DECT_FULL_SLOT:		Full-slot format (480 bits)
+ * @DECT_HALF_SLOT:		Half-slot format (240 bits)
+ * @DECT_DOUBLE_SLOT:		Double-slot format (960 bits)
+ * @DECT_LONG_SLOT_j640:	Long slot format j=640 (800 bits)
+ * @DECT_LONG_SLOT_j672:	Long slot format j=672 (832 bits)
+ *
+ * The numeric values must match the MAC-layer attributes-T coding.
+ */
+enum dect_slot_types {
+	DECT_FULL_SLOT		= 0x0,
+	DECT_HALF_SLOT		= 0x1,
+	DECT_DOUBLE_SLOT	= 0x2,
+	DECT_LONG_SLOT_640	= 0x3,
+	DECT_LONG_SLOT_672	= 0x4,
+};
+
+struct dect_mac_conn_params {
+	enum dect_mac_connection_types	type;
+	enum dect_mac_service_types	service;
+	enum dect_slot_types		slot;
 };
 
 /**

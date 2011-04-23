@@ -805,19 +805,6 @@ enum dect_data_channels {
 #define DECT_MC_MAX		(__DECT_MC_MAX - 1)
 
 /**
- * enum dect_mac_connection_types - MAC Connection types
- *
- * @DECT_MAC_CONN_BASIC:	Basic connection, always I_N_min_delay service
- * @DECT_MAC_CONN_ADVANCED:	Advanced connection
- * @DECT_MAC_CONN_COMPLEMENT:	Complementary connection
- */
-enum dect_mac_connection_types {
-	DECT_MAC_CONN_BASIC,
-	DECT_MAC_CONN_ADVANCED,
-	DECT_MAC_CONN_COMPLEMENT,
-};
-
-/**
  * struct dect_tbc_id
  *
  * @ari:		FT identifier
@@ -838,7 +825,6 @@ struct dect_tbc_id {
  * struct dect_mbc_id
  *
  * @mcei:		MAC Connection Endpoint Identifier
- * @type:		Connection Type (Basic/Advanced)
  * @ari:		FT identifier
  * @pmid:		Portable MAC Identity
  * @ecn:		Exchanged Connection Number
@@ -846,7 +832,6 @@ struct dect_tbc_id {
  */
 struct dect_mbc_id {
 	u32				mcei;
-	enum dect_mac_connection_types	type;
 	struct dect_ari			ari;
 	struct dect_pmid		pmid;
 	u8				ecn;

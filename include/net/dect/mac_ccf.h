@@ -98,7 +98,6 @@ struct dect_mbc_stats {
  * @list:		Cluster connection list node
  * @cl:			Cluster the MBC is contained in
  * @refcnt:		Reference count
- * @type:		connection type
  * @id:			MBC identity
  * @state:		MBC state
  * @timer:		Connection setup timer (T200)
@@ -122,10 +121,9 @@ struct dect_mbc {
 	struct dect_cluster		*cl;
 	unsigned int			refcnt;
 
-	enum dect_mac_connection_types	type;
 	struct dect_mbc_id		id;
+	struct dect_mac_conn_params	mcp;
 	enum dect_mbc_state		state;
-	enum dect_mac_service_types	service;
 
 	struct timer_list		timer;
 	u8				setup_cnt;
@@ -165,7 +163,8 @@ struct dect_mbc {
 
 extern u32 dect_mbc_alloc_mcei(struct dect_cluster *cl);
 extern int dect_mac_con_req(struct dect_cluster *cl,
-			    const struct dect_mbc_id *id);
+			    const struct dect_mbc_id *id,
+			    const struct dect_mac_conn_params *mcp);
 extern void dect_mac_dis_req(struct dect_cluster *cl, u32 mcei);
 
 extern int dect_mac_enc_key_req(const struct dect_cluster *cl, u32 mcei, u64 ck);
@@ -173,6 +172,8 @@ extern int dect_mac_enc_eks_req(const struct dect_cluster *cl, u32 mcei,
 				enum dect_cipher_states status);
 
 extern void dect_bmc_mac_page_req(struct dect_cluster *cl, struct sk_buff *skb);
+
+extern u8 dect_b_field_size(enum dect_slot_types slot);
 
 struct dect_llme_req;
 
@@ -209,7 +210,7 @@ struct dect_ccf_ops {
 	int	(*tbc_establish_ind)(const struct dect_cluster_handle *,
 				     const struct dect_cell_handle *,
 				     const struct dect_tbc_id *,
-				     enum dect_mac_service_types, bool);
+				     const struct dect_mac_conn_params *, bool);
 	int	(*tbc_establish_cfm)(const struct dect_cluster_handle *,
 				     const struct dect_tbc_id *, bool, u8);
 	void	(*tbc_dis_ind)(const struct dect_cluster_handle *,

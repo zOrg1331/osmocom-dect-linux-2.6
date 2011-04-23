@@ -176,25 +176,6 @@ static inline u8 dect_tdd_slot(u8 slot)
 					     slot - DECT_HALF_FRAME_SIZE;
 }
 
-/**
- * enum dect_slot_types - DECT slot types
- *
- * @DECT_FULL_SLOT:		Full-slot format (480 bits)
- * @DECT_HALF_SLOT:		Half-slot format (240 bits)
- * @DECT_DOUBLE_SLOT:		Double-slot format (960 bits)
- * @DECT_LONG_SLOT_j640:	Long slot format j=640 (800 bits)
- * @DECT_LONG_SLOT_j672:	Long slot format j=672 (832 bits)
- *
- * The numeric values must match the MAC-layer attributes-T coding.
- */
-enum dect_slot_types {
-	DECT_FULL_SLOT		= 0x0,
-	DECT_HALF_SLOT		= 0x1,
-	DECT_DOUBLE_SLOT	= 0x2,
-	DECT_LONG_SLOT_640	= 0x3,
-	DECT_LONG_SLOT_672	= 0x4,
-};
-
 enum dect_packet_sizes {
 	DECT_P00_SIZE		= 12,
 	DECT_P08_SIZE		= 23,

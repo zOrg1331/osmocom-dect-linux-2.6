@@ -1,7 +1,7 @@
 /*
  * DECT DLC LU1 SAP sockets
  *
- * Copyright (c) 2009-2010 Patrick McHardy <kaber@trash.net>
+ * Copyright (c) 2009-2011 Patrick McHardy <kaber@trash.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -83,7 +83,8 @@ static struct sk_buff *dect_lu1_dequeue(struct dect_lux *lux)
 	struct dect_cluster *cl = lu1->mc->cl;
 	struct sock *sk = &lu1->sk;
 	struct sk_buff *skb, *clone, *head = NULL;
-	u8 frame, slot, off, last_off, need = 40;
+	u8 need = dect_b_field_size(lu1->mc->mcp.slot);
+	u8 frame, slot, off, last_off;
 
 	/* Fill queue up to prequeue len before delivering the first frame */
 	if (lu1->frame == DECT_LU1_FRAME_NONE &&
@@ -96,8 +97,8 @@ static struct sk_buff *dect_lu1_dequeue(struct dect_lux *lux)
 	if (slot >= DECT_HALF_FRAME_SIZE)
 		slot -= DECT_HALF_FRAME_SIZE;
 
-	last_off = slot_offset_tbl[DECT_FULL_SLOT][lu1->slot];
-	off      = slot_offset_tbl[DECT_FULL_SLOT][slot];
+	last_off = slot_offset_tbl[lu1->mc->mcp.slot][lu1->slot];
+	off      = slot_offset_tbl[lu1->mc->mcp.slot][slot];
 
 	if (off > last_off)
 		off -= last_off;

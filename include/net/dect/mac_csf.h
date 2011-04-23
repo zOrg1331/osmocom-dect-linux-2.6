@@ -203,6 +203,7 @@ struct dect_cbc {
  * @DECT_TBC_WAIT_RCVD:		Initiator: intermediate state
  * @DECT_TBC_REQ_RCVD:		Responder: request received
  * @DECT_TBC_RESPONSE_SENT:	Responder: immediate response to request sent
+ * @DECT_TBC_ATTRIBUTES_SENT:	Initiator: attributes-T request sent
  * @DECT_TBC_OTHER_WAIT:	Waiting for "other" message
  * @DECT_TBC_ESTABLISHED	Established
  * @DECT_TBC_RELEASING		First RELEASE message sent
@@ -214,6 +215,7 @@ enum dect_tbc_state {
 	DECT_TBC_WAIT_RCVD,
 	DECT_TBC_REQ_RCVD,
 	DECT_TBC_RESPONSE_SENT,
+	DECT_TBC_ATTRIBUTES_SENT,
 	DECT_TBC_OTHER_WAIT,
 	DECT_TBC_ESTABLISHED,
 	DECT_TBC_RELEASING,
@@ -284,8 +286,7 @@ struct dect_tbc {
 	struct list_head		list;
 	struct dect_cell		*cell;
 	struct dect_tbc_id		id;
-	enum dect_mac_connection_types	type;
-	enum dect_mac_service_types	service;
+	struct dect_mac_conn_params	mcp;
 	bool				handover;
 
 	struct dect_bearer		txb;
@@ -429,8 +430,7 @@ struct dect_csf_ops {
 
 	int	(*tbc_establish_req)(const struct dect_cell_handle *,
 				     const struct dect_tbc_id *,
-				     const struct dect_channel_desc *,
-				     enum dect_mac_service_types, bool);
+				     const struct dect_mac_conn_params *, bool);
 	int	(*tbc_establish_res)(const struct dect_cell_handle *,
 				     const struct dect_tbc_id *);
 	void	(*tbc_dis_req)(const struct dect_cell_handle *,

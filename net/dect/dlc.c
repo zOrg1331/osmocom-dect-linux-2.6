@@ -117,18 +117,18 @@ static void dect_mac_conn_state_change(struct dect_mac_conn *mc,
 	dect_cplane_notify_state_change(mc);
 }
 
-int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc)
+int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc,
+				const struct dect_mac_conn_params *mcp)
 {
 	struct dect_mbc_id mid = {
 		.mcei		= mc->mcei,
 		.ari		= mc->mci.ari,
 		.pmid		= mc->mci.pmid,
-		.type		= DECT_MAC_CONN_BASIC,
 		.ecn		= mc->mci.lcn,
 	};
 	int err;
 
-	err = dect_mac_con_req(mc->cl, &mid);
+	err = dect_mac_con_req(mc->cl, &mid, mcp);
 	if (err < 0)
 		return err;
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_OPEN_PENDING);
@@ -136,14 +136,14 @@ int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc)
 }
 
 int dect_mac_con_cfm(struct dect_cluster *cl, u32 mcei,
-		     enum dect_mac_service_types service)
+		     const struct dect_mac_conn_params *mcp)
 {
 	struct dect_mac_conn *mc;
 
 	mc = dect_mac_conn_get_by_mcei(cl, mcei);
 	if (WARN_ON(mc == NULL))
 		return -ENOENT;
-	mc->service = service;
+	mc->mcp = *mcp;
 
 	mc_debug(mc, "MAC_CON-cfm\n");
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_OPEN);
@@ -151,7 +151,7 @@ int dect_mac_con_cfm(struct dect_cluster *cl, u32 mcei,
 }
 
 int dect_mac_con_ind(struct dect_cluster *cl, const struct dect_mbc_id *id,
-		     enum dect_mac_service_types service)
+		     const struct dect_mac_conn_params *mcp)
 {
 	struct dect_mac_conn *mc;
 	struct dect_mci mci = {
@@ -163,7 +163,7 @@ int dect_mac_con_ind(struct dect_cluster *cl, const struct dect_mbc_id *id,
 	mc = dect_mac_conn_init(cl, &mci, id);
 	if (mc == NULL)
 		return -ENOMEM;
-	mc->service = service;
+	mc->mcp = *mcp;
 
 	mc_debug(mc, "MAC_CON-ind\n");
 	dect_mac_conn_state_change(mc, DECT_MAC_CONN_OPEN);

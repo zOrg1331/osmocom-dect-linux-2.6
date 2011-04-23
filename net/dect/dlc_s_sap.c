@@ -27,10 +27,11 @@ static HLIST_HEAD(dect_ssap_sockets);
 static HLIST_HEAD(dect_ssap_listeners);
 
 struct dect_ssap {
-	struct dect_csk		csk;
-	int			index;
-	struct dect_dlei	dlei;
-	struct dect_lapc	*lapc;
+	struct dect_csk			csk;
+	int				index;
+	struct dect_dlei		dlei;
+	struct dect_lapc		*lapc;
+	struct dect_mac_conn_params	mcp;
 };
 
 static inline struct dect_ssap *dect_ssap(struct sock *sk)
@@ -421,7 +422,7 @@ static int dect_ssap_connect(struct sock *sk, struct sockaddr *uaddr, int len)
 	dect_lc_bind(lc, lapc);
 
 	if (new_mc)
-		err = dect_dlc_mac_conn_establish(mc);
+		err = dect_dlc_mac_conn_establish(mc, &ssap->mcp);
 	else
 		err = dect_lapc_establish(lapc);
 
@@ -477,11 +478,47 @@ static int dect_ssap_setsockopt(struct sock *sk, int level, int optname,
 				char __user *optval, unsigned int optlen)
 {
 	struct dect_ssap *ssap = dect_ssap(sk);
+	struct dect_mac_conn_params mcp;
 	struct dect_dl_encrypt dle;
 	int err;
 	u64 ck;
 
 	switch (optname) {
+	case DECT_DL_MAC_CONN_PARAMS:
+		if (optlen != sizeof(mcp))
+			return -EINVAL;
+		if (sk->sk_state != DECT_SK_RELEASED)
+			return -EISCONN;
+		if (copy_from_user(&mcp, optval, sizeof(mcp)))
+			return -EFAULT;
+
+		switch (mcp.service) {
+		case DECT_SERVICE_IN_MIN_DELAY:
+		case DECT_SERVICE_IPX_ENCODED_PROTECTED:
+		case DECT_SERVICE_IN_NORMAL_DELAY:
+		case DECT_SERVICE_UNKNOWN:
+		case DECT_SERVICE_C_CHANNEL_ONLY:
+		case DECT_SERVICE_IP_ERROR_DETECTION:
+		case DECT_SERVICE_IPQ_ERROR_DETECTION:
+			break;
+		default:
+			return -EINVAL;
+		}
+
+		switch (mcp.slot) {
+		case DECT_FULL_SLOT:
+		case DECT_HALF_SLOT:
+		case DECT_DOUBLE_SLOT:
+		case DECT_LONG_SLOT_640:
+		case DECT_LONG_SLOT_672:
+			break;
+		default:
+			return -EINVAL;
+		}
+
+		ssap->mcp = mcp;
+		err = 0;
+		break;
 	case DECT_DL_ENC_KEY:
 		if (optlen != sizeof(ck))
 			return -EINVAL;
@@ -508,6 +545,38 @@ static int dect_ssap_setsockopt(struct sock *sk, int level, int optname,
 		err = -ENOPROTOOPT;
 	}
 	return err;
+}
+
+static int dect_ssap_getsockopt(struct sock *sk, int level, int optname,
+				char __user *optval, int __user *optlen)
+{
+	struct dect_ssap *ssap = dect_ssap(sk);
+	struct dect_mac_conn_params *mcp;
+	int len;
+
+	if (get_user(len, optlen))
+		return -EFAULT;
+	if (len < 0)
+		return -EINVAL;
+
+	switch (optname) {
+	case DECT_DL_MAC_CONN_PARAMS:
+		if (sk->sk_state != DECT_SK_ESTABLISH_PENDING &&
+		    sk->sk_state != DECT_SK_ESTABLISHED)
+			return -ENOTCONN;
+
+		mcp = &ssap->lapc->lc->mc->mcp;
+		len = min_t(unsigned int, len, sizeof(*mcp));
+		if (copy_to_user(optval, mcp, len))
+			return -EFAULT;
+		break;
+	default:
+		return -ENOPROTOOPT;
+	}
+
+	if (put_user(len, optlen))
+		return -EFAULT;
+	return 0;
 }
 
 static int dect_ssap_recvmsg(struct kiocb *iocb, struct sock *sk,
@@ -639,6 +708,7 @@ static struct dect_proto dect_ssap_proto __read_mostly = {
 	.proto.connect		= dect_ssap_connect,
 	.proto.shutdown		= dect_ssap_shutdown,
 	.proto.setsockopt	= dect_ssap_setsockopt,
+	.proto.getsockopt	= dect_ssap_getsockopt,
 	.proto.recvmsg		= dect_ssap_recvmsg,
 	.proto.sendmsg		= dect_ssap_sendmsg,
 	.getname		= dect_ssap_getname,

@@ -1,7 +1,7 @@
 /*
  * DECT MAC Cluster Control Functions
  *
- * Copyright (c) 2009 Patrick McHardy <kaber@trash.net>
+ * Copyright (c) 2009-2011 Patrick McHardy <kaber@trash.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -28,6 +28,17 @@ static void dect_llme_scan_result_notify(const struct dect_cluster *cl,
 static void dect_llme_mac_info_ind(const struct dect_cluster *cl,
 				   const struct dect_idi *idi,
 				   const struct dect_si *si);
+
+u8 dect_b_field_size(enum dect_slot_types slot)
+{
+	static const u8 b_field_size[] = {
+		[DECT_FULL_SLOT]	= 40,
+		[DECT_DOUBLE_SLOT]	= 100,
+		[DECT_LONG_SLOT_640]	= 80,
+	};
+	return b_field_size[slot];
+}
+EXPORT_SYMBOL_GPL(dect_b_field_size);
 
 static struct dect_cluster *dect_cluster_get_by_name(const struct nlattr *nla)
 {
@@ -376,7 +387,7 @@ static void dect_mbc_normal_tx_timer(struct dect_cluster *cl, void *data)
 		}
 	}
 
-	if (mbc->service != DECT_SERVICE_IN_MIN_DELAY) {
+	if (mbc->mcp.service != DECT_SERVICE_IN_MIN_DELAY) {
 		list_for_each_entry(tb, &mbc->tbs, list) {
 			ch = tb->ch;
 			skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
@@ -461,7 +472,7 @@ static void dect_mbc_tb_complete_setup(struct dect_cluster *cl, struct dect_tb *
 		dect_timer_add(cl, &tb->handover_timer, DECT_TIMER_RX,
 			       DECT_MBC_TB_HANDOVER_TIMEOUT, tb->rx_slot);
 
-	if (tb->mbc->service == DECT_SERVICE_IN_MIN_DELAY) {
+	if (tb->mbc->mcp.service == DECT_SERVICE_IN_MIN_DELAY) {
 		dect_timer_add(cl, &tb->slot_rx_timer, DECT_TIMER_RX,
 			       0, tb->rx_slot);
 		dect_timer_add(cl, &tb->slot_tx_timer, DECT_TIMER_TX,
@@ -571,15 +582,9 @@ static struct dect_mbc *dect_mbc_init(struct dect_cluster *cl,
 static int dect_mbc_tb_setup(struct dect_mbc *mbc, struct dect_tb *tb)
 {
 	const struct dect_cell_handle *ch = tb->ch;
-	struct dect_channel_desc chd;
 	int err;
 
-	memset(&chd, 0, sizeof(chd));
-	chd.pkt   = DECT_PACKET_P32;
-	chd.b_fmt = DECT_B_UNPROTECTED;
-
-	err = ch->ops->tbc_establish_req(ch, &tb->id, &chd,
-					 DECT_SERVICE_IN_MIN_DELAY,
+	err = ch->ops->tbc_establish_req(ch, &tb->id, &mbc->mcp,
 					 tb->handover);
 	if (err < 0)
 		return err;
@@ -594,7 +599,8 @@ static int dect_mbc_tb_setup(struct dect_mbc *mbc, struct dect_tb *tb)
  * @cl:		DECT cluster
  * @id:		MBC identifier
  */
-int dect_mac_con_req(struct dect_cluster *cl, const struct dect_mbc_id *id)
+int dect_mac_con_req(struct dect_cluster *cl, const struct dect_mbc_id *id,
+		     const struct dect_mac_conn_params *mcp)
 {
 	struct dect_cell_handle *ch;
 	struct dect_mbc *mbc;
@@ -611,6 +617,10 @@ int dect_mac_con_req(struct dect_cluster *cl, const struct dect_mbc_id *id)
 	if (mbc == NULL)
 		goto err1;
 	mbc->state = DECT_MBC_INITIATED;
+	mbc->mcp   = *mcp;
+	if (mcp->service != DECT_SERVICE_IN_MIN_DELAY ||
+	    mcp->slot != DECT_FULL_SLOT)
+		mbc->mcp.type = DECT_MAC_CONN_ADVANCED;
 	mbc_debug(mbc, "MAC_CON-req\n");
 
 	tb = dect_mbc_tb_init(mbc, ch, 0xf);
@@ -656,7 +666,7 @@ void dect_mac_dis_req(struct dect_cluster *cl, u32 mcei)
 static int dect_tbc_establish_ind(const struct dect_cluster_handle *clh,
 				  const struct dect_cell_handle *ch,
 				  const struct dect_tbc_id *id,
-				  enum dect_mac_service_types service,
+				  const struct dect_mac_conn_params *mcp,
 				  bool handover)
 {
 	struct dect_cluster *cl = dect_cluster(clh);
@@ -672,7 +682,6 @@ static int dect_tbc_establish_ind(const struct dect_cluster_handle *clh,
 			return -ENOENT;
 
 		mid.mcei = dect_mbc_alloc_mcei(cl);
-		mid.type = 0;
 		mid.ari  = id->ari;
 		mid.pmid = id->pmid;
 		mid.ecn  = id->ecn;
@@ -681,7 +690,7 @@ static int dect_tbc_establish_ind(const struct dect_cluster_handle *clh,
 		mbc = dect_mbc_init(cl, &mid);
 		if (mbc == NULL)
 			goto err1;
-		mbc->service = service;
+		mbc->mcp = *mcp;
 	} else {
 		if (!handover)
 			return -EEXIST;
@@ -765,13 +774,13 @@ static int dect_tbc_establish_cfm(const struct dect_cluster_handle *clh,
 				return 0;
 			dect_mbc_tb_complete_setup(cl, tb);
 
-			return dect_mac_con_ind(cl, &mbc->id, mbc->service);
+			return dect_mac_con_ind(cl, &mbc->id, &mbc->mcp);
 		case DECT_MBC_INITIATED:
 			if (!dect_mbc_complete_setup(cl, mbc))
 				return 0;
 			dect_mbc_tb_complete_setup(cl, tb);
 
-			return dect_mac_con_cfm(cl, mbc->id.mcei, mbc->service);
+			return dect_mac_con_cfm(cl, mbc->id.mcei, &mbc->mcp);
 		case DECT_MBC_ESTABLISHED:
 			ch = tb->ch;
 			if (mbc->cipher_state == DECT_CIPHER_ENABLED &&
@@ -1128,7 +1137,10 @@ static void dect_fp_init_si(struct dect_cluster *cl)
    		      DECT_FPC_IN_MIN_DELAY |
    		      DECT_FPC_IN_NORM_DELAY |
 		      DECT_FPC_IP_ERROR_DETECTION |
-		      DECT_FPC_IP_ERROR_CORRECTION;
+		      DECT_FPC_IP_ERROR_CORRECTION |
+		      DECT_FPC_EXTENDED_FP_INFO;
+	si->efpc.fpc = DECT_EFPC_EXTENDED_FP_INFO2;
+	si->efpc2.fpc = DECT_EFPC2_LONG_SLOT_J640;
 	si->fpc.hlc = DECT_HLC_ADPCM_G721_VOICE |
 		      DECT_HLC_GAP_PAP_BASIC_SPEECH |
 		      DECT_HLC_CISS_SERVICE |
@@ -1746,7 +1758,7 @@ static int dect_fill_mbc(struct sk_buff *skb, const struct dect_mbc *mbc)
 	if (nest == NULL)
 		goto nla_put_failure;
 	NLA_PUT_U32(skb, DECTA_MBC_MCEI, mbc->id.mcei);
-	NLA_PUT_U8(skb, DECTA_MBC_SERVICE, mbc->service);
+	NLA_PUT_U8(skb, DECTA_MBC_SERVICE, mbc->mcp.service);
 	NLA_PUT_U8(skb, DECTA_MBC_STATE, mbc->state);
 	NLA_PUT_U8(skb, DECTA_MBC_CIPHER_STATE, mbc->cipher_state);
 

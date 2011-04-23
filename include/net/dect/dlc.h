@@ -394,8 +394,8 @@ struct dect_mac_conn {
 
 	u32				mcei;
 	struct dect_mci			mci;
+	struct dect_mac_conn_params	mcp;
 	enum dect_mac_conn_states	state;
-	enum dect_mac_service_types	service;
 	u64				ck;
 
 	u8				use;
@@ -412,13 +412,14 @@ extern struct dect_mac_conn *dect_mac_conn_get_by_mci(const struct dect_cluster 
 
 extern void dect_dlc_mac_conn_bind(struct dect_mac_conn *mc);
 extern void dect_dlc_mac_conn_unbind(struct dect_mac_conn *mc);
-extern int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc);
+extern int dect_dlc_mac_conn_establish(struct dect_mac_conn *mc,
+				       const struct dect_mac_conn_params *mcp);
 
 extern int dect_mac_con_cfm(struct dect_cluster *cl, u32 mcei,
-			    enum dect_mac_service_types service);
+			    const struct dect_mac_conn_params *mcp);
 extern int dect_mac_con_ind(struct dect_cluster *cl,
 			    const struct dect_mbc_id *id,
-			    enum dect_mac_service_types service);
+			    const struct dect_mac_conn_params *mcp);
 
 extern int dect_dlc_mac_conn_enc_key_req(struct dect_mac_conn *mc, u64 key);
 extern int dect_dlc_mac_conn_enc_eks_req(struct dect_mac_conn *mc,

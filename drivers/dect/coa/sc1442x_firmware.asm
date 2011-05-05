@@ -398,7 +398,8 @@ Sync:		JMP	RFInit
 
 SFieldFound:	WNT	23
 		P_SC	0x00
-SyncLock:	JMP	RX_P00
+SyncLock:	JMP	RFInit
+		JMP	RX_P00
 		U_INT0
 		WNT	22
 SyncLoop:	BR	Sync

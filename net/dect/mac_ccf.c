@@ -61,19 +61,9 @@ dect_cluster_get_cell_by_rpn(struct dect_cluster *cl, u8 rpn)
  * MAC CCF layer timers
  */
 
-static u8 dect_slotnum(const struct dect_cluster *cl, enum dect_timer_bases b)
-{
-	return __dect_slotnum(&cl->timer_base[b]);
-}
-
 static u8 dect_framenum(const struct dect_cluster *cl, enum dect_timer_bases b)
 {
 	return __dect_framenum(&cl->timer_base[b]);
-}
-
-static u32 dect_mfn(const struct dect_cluster *cl, enum dect_timer_bases b)
-{
-	return __dect_mfn(&cl->timer_base[b]);
 }
 
 static void dect_run_timers(struct dect_cluster *cl, enum dect_timer_bases b)
@@ -204,18 +194,6 @@ static void dect_mbc_put(struct dect_mbc *mbc)
 	if (--mbc->refcnt > 0)
 		return;
 	kfree(mbc);
-}
-
-static struct dect_tb *dect_mbc_tb_get_by_lbn(const struct dect_mbc *mbc,
-					      const struct dect_tbc_id *id)
-{
-	struct dect_tb *tb;
-
-	list_for_each_entry(tb, &mbc->tbs, list) {
-		if (tb->id.lbn == id->lbn)
-			return tb;
-	}
-	return NULL;
 }
 
 static struct dect_tb *dect_mbc_tb_get_by_tbei(const struct dect_mbc *mbc,

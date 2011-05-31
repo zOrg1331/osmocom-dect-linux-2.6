@@ -117,6 +117,19 @@ enum dect_cipher_states {
 	DECT_CIPHER_ENABLED,
 };
 
+enum dect_mac_service_types {
+	DECT_SERVICE_IN_MIN_DELAY		= 0x0,
+	DECT_SERVICE_IPX_ENCODED_PROTECTED	= 0x1,
+	DECT_SERVICE_IN_NORMAL_DELAY		= 0x2,
+	DECT_SERVICE_UNKNOWN			= 0x4,
+	DECT_SERVICE_C_CHANNEL_ONLY		= 0x5,
+	DECT_SERVICE_IP_ERROR_DETECTION		= 0x10,
+	DECT_SERVICE_IPQ_ERROR_DETECTION	= 0x14,
+	/* Lifetime encoded in low three bits */
+	DECT_SERVICE_IP_ERROR_CORRECTION	= 0x18,
+	DECT_SERVICE_IPQ_ERROR_CORRECTION	= 0x38,
+};
+
 /**
  * struct dect_dl_encrypt - DL_ENCRYPT primitive arguments
  *

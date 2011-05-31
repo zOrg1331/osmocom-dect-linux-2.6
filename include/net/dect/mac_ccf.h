@@ -49,13 +49,6 @@ struct dect_cs_skb_cb {
 };
 #define DECT_CS_CB(skb)			((struct dect_cs_skb_cb *)(skb)->cb)
 
-enum dect_mbc_state {
-	DECT_MBC_NONE,
-	DECT_MBC_INITIATED,
-	DECT_MBC_ESTABLISHED,
-	DECT_MBC_RELEASED,
-};
-
 /**
  * struct dect_tb - DECT Traffic Bearer
  *
@@ -89,6 +82,14 @@ struct dect_tb {
 
 	/* I channel data */
 	struct sk_buff			*b_rx_skb;
+};
+
+struct dect_mbc_stats {
+	unsigned int			cs_rx_bytes;
+	unsigned int			cs_tx_bytes;
+	unsigned int			i_rx_bytes;
+	unsigned int			i_tx_bytes;
+	unsigned int			handovers;
 };
 
 /**
@@ -150,6 +151,8 @@ struct dect_mbc {
 	bool				cs_rx_ok;
 	struct sk_buff			*cs_rx_skb;
 	struct sk_buff			*cs_tx_skb;
+
+	struct dect_mbc_stats		stats;
 };
 
 #define DECT_MBC_SETUP_TIMEOUT		(5 * HZ)	/* T200: 5 seconds */

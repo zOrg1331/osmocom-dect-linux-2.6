@@ -280,6 +280,7 @@ static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
 	if (mbc->cs_rx_skb != NULL) {
 		skb = mbc->cs_rx_skb;
 		mbc->cs_rx_skb = NULL;
+		mbc->stats.cs_rx_bytes += skb->len;
 		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_C_S, skb);
 
 		/* C-channel reception might trigger release of the MBC in case
@@ -289,6 +290,7 @@ static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
 	}
 
 	if (mbc->cs_tx_ok && mbc->cs_rx_ok) {
+		mbc->stats.cs_tx_bytes += mbc->cs_tx_skb->len;
 		kfree_skb(mbc->cs_tx_skb);
 		mbc->cs_tx_skb = NULL;
 	}
@@ -299,6 +301,7 @@ static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
 			continue;
 		skb = tb->b_rx_skb;
 		tb->b_rx_skb = NULL;
+		mbc->stats.i_rx_bytes += skb->len;
 		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_I_N, skb);
 	}
 
@@ -325,6 +328,7 @@ static void dect_mbc_slot_rx_timer(struct dect_cluster *cl, void *data)
 	if (tb->b_rx_skb != NULL) {
 		skb = tb->b_rx_skb;
 		tb->b_rx_skb = NULL;
+		mbc->stats.i_rx_bytes += skb->len;
 		dect_mac_co_data_ind(cl, mbc->id.mcei, DECT_MC_I_N, skb);
 	}
 
@@ -375,8 +379,10 @@ static void dect_mbc_normal_tx_timer(struct dect_cluster *cl, void *data)
 		list_for_each_entry(tb, &mbc->tbs, list) {
 			ch = tb->ch;
 			skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
-			if (skb != NULL)
+			if (skb != NULL) {
+				mbc->stats.i_tx_bytes += skb->len;
 				ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_I_N, skb);
+			}
 		}
 	}
 
@@ -400,9 +406,10 @@ static void dect_mbc_slot_tx_timer(struct dect_cluster *cl, void *data)
 		  tb->id.tbei, tb->id.lbn, tb->tx_slot);
 
 	skb = dect_mac_co_dtr_ind(cl, mbc->id.mcei, DECT_MC_I_N);
-	if (skb != NULL)
+	if (skb != NULL) {
+		mbc->stats.i_tx_bytes += skb->len;
 		ch->ops->tbc_data_req(ch, &tb->id, DECT_MC_I_N, skb);
-
+	}
 	dect_timer_add(cl, &tb->slot_tx_timer, DECT_TIMER_TX, 1, tb->tx_slot);
 }
 
@@ -444,6 +451,7 @@ static void dect_mbc_tb_handover_timer(struct dect_cluster *cl, void *data)
 				  DECT_REASON_BEARER_HANDOVER_COMPLETED);
 	list_del(&tb1->list);
 	dect_mbc_tb_release(tb1);
+	mbc->stats.handovers++;
 }
 
 static void dect_mbc_tb_complete_setup(struct dect_cluster *cl, struct dect_tb *tb)
@@ -1708,6 +1716,65 @@ static int dect_cluster_alloc_index(void)
 	}
 }
 
+static int dect_fill_tb(struct sk_buff *skb, const struct dect_tb *tb)
+{
+	struct nlattr *nest;
+
+	nest = nla_nest_start(skb, DECTA_LIST_ELEM);
+	if (nest == NULL)
+		goto nla_put_failure;
+	NLA_PUT_U8(skb, DECTA_MBC_TB_LBN, tb->id.lbn);
+	NLA_PUT_U8(skb, DECTA_MBC_TB_ECN, tb->id.ecn);
+	NLA_PUT_U8(skb, DECTA_MBC_TB_CELL, tb->ch->rpn);
+	NLA_PUT_U8(skb, DECTA_MBC_TB_RX_SLOT, tb->rx_slot);
+	NLA_PUT_U8(skb, DECTA_MBC_TB_TX_SLOT, tb->tx_slot);
+	nla_nest_end(skb, nest);
+	return 0;
+
+nla_put_failure:
+	return -EMSGSIZE;
+}
+
+static int dect_fill_mbc(struct sk_buff *skb, const struct dect_mbc *mbc)
+{
+	struct nlattr *nest, *stats, *tbs;
+	struct dect_tb *tb;
+	int err;
+
+	nest = nla_nest_start(skb, DECTA_LIST_ELEM);
+	if (nest == NULL)
+		goto nla_put_failure;
+	NLA_PUT_U32(skb, DECTA_MBC_MCEI, mbc->id.mcei);
+	NLA_PUT_U8(skb, DECTA_MBC_SERVICE, mbc->service);
+	NLA_PUT_U8(skb, DECTA_MBC_STATE, mbc->state);
+	NLA_PUT_U8(skb, DECTA_MBC_CIPHER_STATE, mbc->cipher_state);
+
+	stats = nla_nest_start(skb, DECTA_MBC_STATS);
+	if (stats == NULL)
+		goto nla_put_failure;
+	NLA_PUT_U32(skb, DECTA_MBC_STATS_CS_RX_BYTES, mbc->stats.cs_rx_bytes);
+	NLA_PUT_U32(skb, DECTA_MBC_STATS_CS_TX_BYTES, mbc->stats.cs_tx_bytes);
+	NLA_PUT_U32(skb, DECTA_MBC_STATS_I_RX_BYTES, mbc->stats.i_rx_bytes);
+	NLA_PUT_U32(skb, DECTA_MBC_STATS_I_TX_BYTES, mbc->stats.i_tx_bytes);
+	NLA_PUT_U32(skb, DECTA_MBC_STATS_HANDOVERS, mbc->stats.handovers);
+	nla_nest_end(skb, stats);
+
+	tbs = nla_nest_start(skb, DECTA_MBC_TBS);
+	if (tbs == NULL)
+		goto nla_put_failure;
+	list_for_each_entry(tb, &mbc->tbs, list) {
+		err = dect_fill_tb(skb, tb);
+		if (err < 0)
+			goto nla_put_failure;
+	}
+	nla_nest_end(skb, tbs);
+	nla_nest_end(skb, nest);
+	return 0;
+
+nla_put_failure:
+	return -EMSGSIZE;
+}
+
 static int dect_fill_cluster(struct sk_buff *skb,
 			     const struct dect_cluster *cl,
 			     u16 type, u32 pid, u32 seq, u16 flags)
@@ -1716,6 +1783,7 @@ static int dect_fill_cluster(struct sk_buff *skb,
 	struct dectmsg *dm;
 	struct nlattr *nest;
 	struct dect_cell_handle *ch;
+	struct dect_mbc *mbc;
 
 	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*dm), flags);
 	if (nlh == NULL)
@@ -1734,6 +1802,18 @@ static int dect_fill_cluster(struct sk_buff *skb,
 			goto nla_put_failure;
 		list_for_each_entry(ch, &cl->cells, list)
 			NLA_PUT_U8(skb, DECTA_LIST_ELEM, ch->rpn);
+		nla_nest_end(skb, nest);
+	}
+
+	if (!list_empty(&cl->mbcs)) {
+		nest = nla_nest_start(skb, DECTA_CLUSTER_MBCS);
+		if (nest == NULL)
+			goto nla_put_failure;
+
+		list_for_each_entry(mbc, &cl->mbcs, list)
+			if (dect_fill_mbc(skb, mbc) < 0)
+				goto nla_put_failure;
+
 		nla_nest_end(skb, nest);
 	}
 

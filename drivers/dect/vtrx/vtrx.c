@@ -83,7 +83,7 @@ static void dect_vtrx_process_slot(struct dect_vtrx_group *group,
 	struct dect_transceiver *trx = vtrx->trx;
 	struct sk_buff *skb, *best;
 	u8 slot = group->slot, rcvslot;
-	u8 rssi, best_rssi;
+	u8 rssi, best_rssi = 0;
 
 	event = dect_transceiver_event(trx, slot % 12, slot);
 	if (event == NULL)

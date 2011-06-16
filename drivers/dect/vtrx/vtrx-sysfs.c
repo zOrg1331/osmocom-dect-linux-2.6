@@ -180,7 +180,7 @@ int dect_vtrx_group_register_sysfs(struct dect_vtrx_group *group)
 
 	dev->type   = &dect_vtrx_group_group;
 	dev->class  = dect_class;
-	dev->parent = 0;
+	dev->parent = NULL;
 
 	dev_set_name(dev, "%s", group->name);
 	dev_set_drvdata(dev, group);

@@ -4275,6 +4275,9 @@ static struct sk_buff *dect_a_map(struct dect_cell *cell,
 	case DECT_MODE_FP:
 		skb = dect_rfp_t_mux(cell, bearer);
 		break;
+	default:
+		skb = NULL;
+		break;
 	}
 
 	if (skb == NULL)

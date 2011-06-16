@@ -452,14 +452,14 @@ static struct dect_proto dect_lu1_proto = {
 	.getname		= dect_lu1_getname,
 };
 
-int __init dect_lu1_sap_module_init(void)
+static int __init dect_lu1_sap_module_init(void)
 {
 	BUILD_BUG_ON(sizeof(struct sockaddr_dect_lu) >
 		     sizeof(struct sockaddr));
 	return dect_proto_register(&dect_lu1_proto);
 }
 
-void dect_lu1_sap_module_exit(void)
+static void dect_lu1_sap_module_exit(void)
 {
 	dect_proto_unregister(&dect_lu1_proto);
 }

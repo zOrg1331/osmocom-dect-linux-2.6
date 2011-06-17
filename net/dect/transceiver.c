@@ -375,10 +375,9 @@ void dect_transceiver_enable(struct dect_transceiver *trx)
 {
 	if (trx->mode == DECT_TRANSCEIVER_MASTER)
 		trx->state = DECT_TRANSCEIVER_LOCKED;
-	else {
+	else
 		trx->state = DECT_TRANSCEIVER_UNLOCKED;
-		trx->slots[DECT_SCAN_SLOT].state = DECT_SLOT_SCANNING;
-	}
+
 	trx->ops->enable(trx);
 }
 

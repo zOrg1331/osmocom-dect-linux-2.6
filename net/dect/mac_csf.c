@@ -3661,6 +3661,7 @@ static void dect_initiate_scan(struct dect_transceiver *trx,
 	irc->notify = notify;
 
 	dect_transceiver_enable(trx);
+	dect_set_channel_mode(trx, &trx->slots[DECT_SCAN_SLOT].chd, DECT_SLOT_SCANNING);
 }
 
 static void dect_restart_scan(struct dect_cell *cell,

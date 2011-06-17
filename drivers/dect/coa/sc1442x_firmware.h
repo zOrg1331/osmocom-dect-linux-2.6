@@ -36,7 +36,7 @@ extern const unsigned char sc1442x_firmware[510];
 #define Slot21 0x30
 #define Slot22 0x32
 #define Slot23 0x34
-#define RFStart 0xFF
+#define RFStart 0xFD
 #define RFInit 0xB9
 #define SyncInit 0xDE
 #define Sync 0xDF

@@ -993,7 +993,6 @@ int sc1442x_init_device(struct coa_device *dev)
 	for (i = 1; i < SC1442X_CC_SIZE; i++)
 		sc1442x_dwriteb(dev, DIP_CC_INIT + i, 0);
 
-	sc1442x_write_bmc_config(dev, 0, false);
 	for (slot = 0; slot < DECT_FRAME_SIZE; slot += 2)
 		sc1442x_init_slot(dev, slot);
 

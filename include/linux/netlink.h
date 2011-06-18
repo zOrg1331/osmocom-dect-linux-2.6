@@ -24,7 +24,8 @@
 /* leave room for NETLINK_DM (DM Events) */
 #define NETLINK_SCSITRANSPORT	18	/* SCSI Transports */
 #define NETLINK_ECRYPTFS	19
-#define NETLINK_DECT		20	/* DECT */
+#define NETLINK_RDMA		20
+#define NETLINK_DECT		21	/* DECT */
 
 #define MAX_LINKS 32		
 

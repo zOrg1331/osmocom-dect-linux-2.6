@@ -36,15 +36,15 @@ extern const unsigned char sc1442x_firmware[510];
 #define Slot21 0x30
 #define Slot22 0x32
 #define Slot23 0x34
-#define RFStart 0xFD
-#define RFInit 0xB9
-#define SyncInit 0xDE
-#define Sync 0xDF
-#define SyncLock 0xEF
-#define SyncLoop 0xF3
-#define ClockSyncOn 0x73
-#define ClockSyncOff 0x7B
-#define ClockAdjust 0x77
+#define RFStart 0xDD
+#define RFInit 0x99
+#define SyncInit 0xBE
+#define Sync 0xBF
+#define SyncLock 0xCF
+#define SyncLoop 0xD3
+#define ClockSyncOn 0x60
+#define ClockSyncOff 0x68
+#define ClockAdjust 0x64
 #define PSC_ARPD1 0x80
 #define PSC_S_SYNC 0x40
 #define PSC_S_SYNC_ON 0x20
@@ -52,17 +52,15 @@ extern const unsigned char sc1442x_firmware[510];
 #define RX_P00 0x38
 #define RX_P00_Sync 0x3C
 #define RX_P32U 0x3F
-#define RX_P32P 0x43
 #define RX_P32U_Enc 0x3E
-#define TX_P00 0x4D
-#define TX_P32U 0x51
-#define TX_P32P 0x55
-#define TX_P32U_Enc 0x50
+#define TX_P00 0x43
+#define TX_P32U 0x47
+#define TX_P32U_Enc 0x46
 #define DCS_IV 0x70
 #define DCS_CK 0x78
 #define DCS_STATE 0x70
 #define DCS_STATE_SIZE 0xB
-#define LoadEncKey 0xCC
-#define LoadEncState 0xD9
+#define LoadEncKey 0xAC
+#define LoadEncState 0xB9
 
 #endif /* SC1442X_FIRMWARE */

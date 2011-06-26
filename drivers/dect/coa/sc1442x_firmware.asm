@@ -155,21 +155,6 @@ RX_P32U:	JMP	Receive
 		JMP	RX_P32U_BZ	; Receive B-field				| p: 96		B:  0
 		BR	WriteBMC2
 
-; Receive a P32 packet using the protected full slot B-field format in the
-; D32-field
-;
-RX_P32P:	JMP	Receive
-		B_BRFP	SD_B_FIELD_OFF	; Receive protected full slot B-field data	| p:  95	A:  63
-		JMP	TransferP32P_B	; Receive the B-subfields			| p:  96-411	B:   0-315
-		WT	3		;	 					| p: 412-414	B: 316-318
-		B_XR			; Receive X-CRC					| p: 415	B: 319
-		WT	6		;						| p: 416-419	B: 320-323	X: 0-3
-					;						| p: 420-421	Z:   0-  1
-		JMP	ReceiveEnd	;						| p: 422	Z: 2
-		B_WRS	SD_BASE_OFF	; write status
-		WT	6
-		BR	label_58
-
 ;-------------------------------------------------------------------------------
 ; Transmit a P00 packet
 ;
@@ -185,21 +170,6 @@ TX_P32U:	JMP	Transmit	; Transmit S- and beginning of A-field		|
 		B_BTFU	SD_B_FIELD_OFF	; Transmit unprotected full-slot B-field data	| p: 95		A: 63
 		JMP	TX_P32U_BZ	; Transmit the B- and Z-fields			| p: 96		B: 0
 		BR	label_54	;
-
-; Transmit a P32 packet using the protected full slot B-field format in the
-; D32-field
-;
-TX_P32P:	JMP	Transmit	; Transmit S- and beginning of A-field		|
-		B_BTFP	SD_B_FIELD_OFF	; Transmit protect fulls-slot B-field data	| p:  95	A:  63
-		JMP	TransferP32P_B	; Transmit the B-subfields			| p:  96-411	B:   0-315
-		WT	3		; 						| p: 412-414	B: 316-318
-		B_XT			; Transmit X-CRC				| p: 415	B: 319
-		WT	13		;						| p: 416-419	B: 320-323	X: 0-3
-					;						| p: 420-423	Z: 0-3
-					;						| p: 424-428	???
-		B_RST			;						| p: 429
-		JMP	TransmitEnd	; End transmission				| p: 430
-		BR	label_58	;
 
 ;-------------------------------------------------------------------------------
 WriteBMC1:	B_WRS	SD_BASE_OFF	; write status
@@ -308,29 +278,6 @@ TransmitEnd:	P_LDL	PB_TX_ON	; Disable transmitter				|
 		BR	SaveEncState
 
 ;-------------------------------------------------------------------------------
-; Transfer a protected B-field subfield
-;
-; The X-CRC includes the R-CRC in its calculation, which is contained in the
-; last 16 bits of the subfield.
-;
-TransferBP:  	B_XON			; Enable X-CRC calculation			| p: 159+i*80			  Bi: 63
-		WT	15		; Transfer 15 bits R-CRC, include in X-CRC	| p: 160+i*80-164+i*80		  Bi: 64-78	R_Bi: 0-14
-		B_XOFF			; Disable X-CRC	calculation			| p: 175+i*80			  Bi: 79	R_Bi: 15
-		WT	61		; Transfer first 61 bits of next B-field	| p: 176+i*80-236+i*80		  Bi:  0-60
-		RTN			; Return					| p: 237+i*80			  Bi: 61
-
-; Transfer the B-field subfields of a P32 packet using protected full slot
-; format
-TransferP32P_B:	WT	61		; Transfer 61 bits of B-field			| p:  97-157	B:   1- 61	  B0: 1-61
-		JMP	TransferBP	; End subfield, begin next subfield		| p: 158-237	B:  62-141	  B0: 62-79	B1: 0-61
-		JMP	TransferBP	; End subfield, begin next subfield		| p: 238-317	B: 142-221	  B1: 62-79	B2: 0-61
-		JMP	TransferBP	; End subfield, begin next subfield		| p: 318-397	B: 222-301	  B2: 62-79	B3: 0-61
-		WT	1		;						| p: 398	B: 302		  B3: 62
-		B_XON			; 						| p: 399	B: 303		  B3: 63
-		WT	11		;						| p: 400-410	B: 304-314	R_B3:  0-10
-		RTN			;						| p: 411	B: 315		R_B3: 11
-
-;-------------------------------------------------------------------------------
 
 RFInit:		RFEN			; Enable RF-clock
 		WT	2
@@ -435,8 +382,8 @@ RFStart:	BR	SyncInit
 		SHARED	ClockSyncOn,ClockSyncOff,ClockAdjust
 		SHARED	PSC_ARPD1,PSC_S_SYNC,PSC_S_SYNC_ON,PSC_EOPSM
 
-		SHARED	RX_P00,RX_P00_Sync,RX_P32U,RX_P32P,RX_P32U_Enc
-		SHARED	TX_P00,TX_P32U,TX_P32P,TX_P32U_Enc
+		SHARED	RX_P00,RX_P00_Sync,RX_P32U,RX_P32U_Enc
+		SHARED	TX_P00,TX_P32U,TX_P32U_Enc
 
 		SHARED	DCS_IV,DCS_CK,DCS_STATE,DCS_STATE_SIZE
 		SHARED	LoadEncKey,LoadEncState

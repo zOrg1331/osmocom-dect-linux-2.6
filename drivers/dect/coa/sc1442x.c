@@ -247,12 +247,16 @@ static const u8 sc1442x_rx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1][2][2] = {
 	[DECT_PACKET_P00][DECT_B_NONE][0][1]		= RX_P00_Sync,
 	[DECT_PACKET_P32][DECT_B_UNPROTECTED][0][0]	= RX_P32U,
 	[DECT_PACKET_P32][DECT_B_UNPROTECTED][1][0]	= RX_P32U_Enc,
+	[DECT_PACKET_P640j][DECT_B_UNPROTECTED][0][0]	= RX_P640j,
+	[DECT_PACKET_P640j][DECT_B_UNPROTECTED][1][0]	= RX_P640j_Enc,
 };
 
 static const u8 sc1442x_tx_funcs[DECT_PACKET_MAX + 1][DECT_B_MAX + 1][2] = {
 	[DECT_PACKET_P00][DECT_B_NONE][0]		= TX_P00,
 	[DECT_PACKET_P32][DECT_B_UNPROTECTED][0]	= TX_P32U,
 	[DECT_PACKET_P32][DECT_B_UNPROTECTED][1]	= TX_P32U_Enc,
+	[DECT_PACKET_P640j][DECT_B_UNPROTECTED][0]	= TX_P640j,
+	[DECT_PACKET_P640j][DECT_B_UNPROTECTED][1]	= TX_P640j_Enc,
 };
 
 /*
@@ -524,6 +528,8 @@ static void sc1442x_enable(const struct dect_transceiver *trx)
 
 		sc1442x_write_cmd(dev, TX_P32U_Enc, JMP, LoadEncKey);
 		sc1442x_write_cmd(dev, RX_P32U_Enc, JMP, LoadEncState);
+		sc1442x_write_cmd(dev, TX_P640j_Enc, JMP, LoadEncKey);
+		sc1442x_write_cmd(dev, RX_P640j_Enc, JMP, LoadEncState);
 	} else {
 		sc1442x_write_cmd(dev, ClockSyncOn, P_SC, PSC_S_SYNC_ON);
 		sc1442x_write_cmd(dev, ClockAdjust, EN_SL_ADJ, 1);
@@ -531,6 +537,8 @@ static void sc1442x_enable(const struct dect_transceiver *trx)
 
 		sc1442x_write_cmd(dev, RX_P32U_Enc, JMP, LoadEncKey);
 		sc1442x_write_cmd(dev, TX_P32U_Enc, JMP, LoadEncState);
+		sc1442x_write_cmd(dev, RX_P640j_Enc, JMP, LoadEncKey);
+		sc1442x_write_cmd(dev, TX_P640j_Enc, JMP, LoadEncState);
 	}
 
 	if (trx->mode == DECT_TRANSCEIVER_MASTER)
@@ -723,7 +731,11 @@ static void sc1442x_tx(const struct dect_transceiver *trx, struct sk_buff *skb)
 
 const struct dect_transceiver_ops sc1442x_transceiver_ops = {
 	.name			= "sc1442x",
-	.features		= DECT_TRANSCEIVER_SLOW_HOPPING,
+	.features		= DECT_TRANSCEIVER_SLOW_HOPPING |
+#ifdef CONFIG_DECT_COA_P64
+				  DECT_TRANSCEIVER_PACKET_P64 |
+#endif
+				  0,
 	.eventrate		= 6,
 	.latency		= 6,
 	.disable		= sc1442x_disable,

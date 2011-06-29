@@ -15,13 +15,16 @@ clean-files				+= sc1442x_firmware.h.tmp
 hostprogs-$(CONFIG_DECT_COA_FIRMWARE)	+= bin2c
 
 ifeq ($(CONFIG_DECT_COA_FIRMWARE),y)
+ifeq ($(CONFIG_DECT_COA_P64),y)
+ASL_FLAGS	= -D ENABLE_P64
+endif
 
 ASL		= asl
 P2BIN		= p2bin
 BIN2C		= $(obj)/bin2c
 
 quiet_cmd_asl	= ASL     $<
-      cmd_asl	= $(ASL) -q -c $< -o $(<:.asm=.p) -shareout $(<:.asm=.h.tmp); \
+      cmd_asl	= $(ASL) -q -c $< -o $(<:.asm=.p) $(ASL_FLAGS) -shareout $(<:.asm=.h.tmp); \
 		  $(P2BIN) $(<:.asm=.p) $(<:.asm=.bin) -r 0-509; \
 		  $(BIN2C) $(<:.asm=.bin) $(NAME)_firmware > $@; \
 		  ( \

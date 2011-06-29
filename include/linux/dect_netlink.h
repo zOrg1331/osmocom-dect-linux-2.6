@@ -106,9 +106,11 @@ enum dect_transceiver_stats_attrs {
 
 /**
  * @DECT_TRANSCEIVER_SLOW_HOPPING:	transceiver has slow hopping radio
+ * @DECT_TRANSCEIVER_PACKET_P64:	transceiver supports packet P640j
  */
 enum dect_transceiver_features {
 	DECT_TRANSCEIVER_SLOW_HOPPING	= 0x1,
+	DECT_TRANSCEIVER_PACKET_P64	= 0x2,
 };
 
 enum dect_transceiver_attrs {

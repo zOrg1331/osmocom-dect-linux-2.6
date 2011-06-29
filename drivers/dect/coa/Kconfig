@@ -36,3 +36,10 @@ config DECT_COA_FIRMWARE
 	  is required for this.
 
 	  If unsure, say N.
+
+config DECT_COA_P64
+	depends on DECT_COA_PCI && !DECT_COA_CS && DECT_COA_FIRMWARE
+	bool "Enable P640 (wideband) support"
+	help
+	  This option enables support for P640j packets, which are used for
+	  wideband audio. This does not work with the PCMCIA devices.

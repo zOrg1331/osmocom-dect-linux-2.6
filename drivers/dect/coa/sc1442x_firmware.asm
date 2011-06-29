@@ -155,6 +155,15 @@ RX_P32U:	JMP	Receive
 		JMP	RX_P32U_BZ	; Receive B-field				| p: 96		B:  0
 		BR	WriteBMC2
 
+RX_P640j_Enc:	JMP	LoadEncKey
+RX_P640j:	JMP	Receive
+		B_BR	SD_B_FIELD_OFF
+		JMP	Transfer_P640j
+		WT	14		; 15 - 1 (RTN)
+		B_XR
+		JMP	ReceiveEnd
+		BR	WriteBMC2
+
 ;-------------------------------------------------------------------------------
 ; Transmit a P00 packet
 ;
@@ -170,6 +179,37 @@ TX_P32U:	JMP	Transmit	; Transmit S- and beginning of A-field		|
 		B_BTFU	SD_B_FIELD_OFF	; Transmit unprotected full-slot B-field data	| p: 95		A: 63
 		JMP	TX_P32U_BZ	; Transmit the B- and Z-fields			| p: 96		B: 0
 		BR	label_54	;
+
+TX_P640j_Enc:	JMP	LoadEncKey
+TX_P640j:	JMP	Transmit
+		B_BT	SD_B_FIELD_OFF
+		WT	3		; B_BT has 3 bits of latency
+		JMP	Transfer_P640j
+		WT	11		; 15 - 1 (RTN) - 3 (latency)
+		B_XT
+		WT	13		; 8 (X/Z-Field) + 5
+		B_RST
+		JMP	TransmitEnd
+		BR	label_58
+
+Transfer_B:	WT	45		; 47 - 2 (JMP/JMP, JMP/RTN)
+		B_XON
+		WT	15
+		B_XOFF
+		RTN
+
+Transfer_P640j:	JMP	Transfer_B
+		JMP	Transfer_B
+		JMP	Transfer_B
+		JMP	Transfer_B
+		JMP	Transfer_B
+		JMP	Transfer_B
+		JMP	Transfer_B
+		JMP	Transfer_B
+		JMP	Transfer_B
+		WT	46		; 47 - 1 (RTN)
+		B_XON
+		RTN
 
 ;-------------------------------------------------------------------------------
 WriteBMC1:	B_WRS	SD_BASE_OFF	; write status
@@ -297,10 +337,12 @@ RFInit:		RFEN			; Enable RF-clock
 
 		P_LDL	0x20
 		WT	10
+		IFNDEF	ENABLE_P64
 		MEN2
 		WT	182
 		MEN2N
 		WT	16
+		ENDIF
 		RTN
 ;--------------------------------------------------------------
 ;
@@ -363,7 +405,7 @@ InitDIP:	;B_RST
 		WT	10
 		P_EN
 		P_LD	0x04
-		RCK_INT
+		;RCK_INT
 		RFEN
 RFStart:	BR	SyncInit
 ;-------------------------------------------------------------
@@ -382,8 +424,8 @@ RFStart:	BR	SyncInit
 		SHARED	ClockSyncOn,ClockSyncOff,ClockAdjust
 		SHARED	PSC_ARPD1,PSC_S_SYNC,PSC_S_SYNC_ON,PSC_EOPSM
 
-		SHARED	RX_P00,RX_P00_Sync,RX_P32U,RX_P32U_Enc
-		SHARED	TX_P00,TX_P32U,TX_P32U_Enc
+		SHARED	RX_P00,RX_P00_Sync,RX_P32U,RX_P32U_Enc,RX_P640j,RX_P640j_Enc
+		SHARED	TX_P00,TX_P32U,TX_P32U_Enc,TX_P640j,TX_P640j_Enc
 
 		SHARED	DCS_IV,DCS_CK,DCS_STATE,DCS_STATE_SIZE
 		SHARED	LoadEncKey,LoadEncState

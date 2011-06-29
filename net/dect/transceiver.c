@@ -32,6 +32,7 @@ static const u8 dect_pkt_size[] = {
 	[DECT_PACKET_P08]	= DECT_P08_SIZE,
 	[DECT_PACKET_P32]	= DECT_P32_SIZE,
 	[DECT_PACKET_P640j]	= DECT_P640j_SIZE,
+	[DECT_PACKET_P672j]	= DECT_P672j_SIZE,
 	[DECT_PACKET_P80]	= DECT_P80_SIZE,
 };
 
@@ -451,6 +452,8 @@ bool dect_transceiver_channel_available(const struct dect_transceiver *trx,
 
 	switch ((int)chd->pkt) {
 	case DECT_PACKET_P80:
+	case DECT_PACKET_P640j:
+	case DECT_PACKET_P672j:
 		if (dect_transceiver_slot_blind(trx, slot + 1))
 			return false;
 	case DECT_PACKET_P32:
@@ -510,6 +513,8 @@ bool dect_transceiver_reserve(struct dect_transceiver_group *trg,
 
 	switch ((int)chd->pkt) {
 	case DECT_PACKET_P80:
+	case DECT_PACKET_P640j:
+	case DECT_PACKET_P672j:
 		dect_transceiver_set_blind(trx, slot + 1);
 	case DECT_PACKET_P32:
 	case DECT_PACKET_P08:
@@ -543,6 +548,8 @@ bool dect_transceiver_release(struct dect_transceiver_group *trg,
 
 	switch ((int)chd->pkt) {
 	case DECT_PACKET_P80:
+	case DECT_PACKET_P640j:
+	case DECT_PACKET_P672j:
 		dect_transceiver_set_visible(trx, slot + 1);
 	case DECT_PACKET_P32:
 	case DECT_PACKET_P08:

@@ -202,6 +202,7 @@ enum dect_slot_types {
  * @DECT_PACKET_P08:	low capacity physical packet P08j, 180 bits
  * @DECT_PACKET_P32:	basic physical packet P32, 420 bits
  * @DECT_PACKET_P640j:	variable capacity packet P640j, 712 bits
+ * @DECT_PACKET_P672j:	variable capacity packet P640j, 744 bits
  * @DECT_PACKET_P80:	high capacity physical packet P80, 900 bits
  */
 enum dect_packet_types {
@@ -209,6 +210,7 @@ enum dect_packet_types {
 	DECT_PACKET_P08,
 	DECT_PACKET_P32,
 	DECT_PACKET_P640j,
+	DECT_PACKET_P672j,
 	DECT_PACKET_P80,
 	__DECT_PACKET_MAX
 };
@@ -219,6 +221,7 @@ enum dect_packet_sizes {
 	DECT_P08_SIZE		= 23,
 	DECT_P32_SIZE		= 53,
 	DECT_P640j_SIZE		= 89,
+	DECT_P672j_SIZE		= 93,
 	DECT_P80_SIZE		= 113,
 };
 

@@ -52,6 +52,27 @@ enum dect_slot_flags {
 	DECT_SLOT_CIPHER		= 0x2,
 };
 
+/**
+ * enum dect_packet_types - DECT Physical Packet Types
+ *
+ * @DECT_PACKET_P00:	short physical packet P00, 96 bits, A-field only
+ * @DECT_PACKET_P08:	low capacity physical packet P08j, 180 bits
+ * @DECT_PACKET_P32:	basic physical packet P32, 420 bits
+ * @DECT_PACKET_P80:	high capacity physical packet P80, 900 bits
+ * @DECT_PACKET_P640j:	variable capacity packet P640j, 712 bits
+ * @DECT_PACKET_P672j:	variable capacity packet P640j, 744 bits
+ */
+enum dect_packet_types {
+	DECT_PACKET_P00,
+	DECT_PACKET_P08,
+	DECT_PACKET_P32,
+	DECT_PACKET_P80,
+	DECT_PACKET_P640j,
+	DECT_PACKET_P672j,
+	__DECT_PACKET_MAX
+};
+#define DECT_PACKET_MAX         (__DECT_PACKET_MAX - 1)
+
 #define DECT_PHASE_OFFSET_SCALE		1024
 
 enum dect_slot_attrs {
@@ -59,6 +80,7 @@ enum dect_slot_attrs {
 	DECTA_SLOT_NUM,
 	DECTA_SLOT_STATE,
 	DECTA_SLOT_FLAGS,
+	DECTA_SLOT_PACKET,
 	DECTA_SLOT_CARRIER,
 	DECTA_SLOT_FREQUENCY,
 	DECTA_SLOT_PHASEOFF,

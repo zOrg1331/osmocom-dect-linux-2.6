@@ -293,6 +293,7 @@ static void dect_mbc_normal_rx_timer(struct dect_cluster *cl, void *data)
 		mbc->stats.cs_tx_bytes += mbc->cs_tx_skb->len;
 		kfree_skb(mbc->cs_tx_skb);
 		mbc->cs_tx_skb = NULL;
+		mbc->cs_tx_ok  = false;
 	}
 	mbc->cs_rx_ok = false;
 

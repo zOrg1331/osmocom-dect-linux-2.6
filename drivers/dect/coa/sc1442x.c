@@ -372,8 +372,7 @@ static void sc1442x_toggle_led(struct coa_device *dev)
 static void sc1442x_write_cmd(const struct coa_device *dev, u16 label,
 			      u8 opcode, u8 operand)
 {
-	sc1442x_writeb(dev, dev->code_base + 2 * label + 0, opcode);
-	sc1442x_writeb(dev, dev->code_base + 2 * label + 1, operand);
+	sc1442x_writew(dev, dev->code_base + 2 * label, operand << 8 | opcode);
 }
 
 static void sc1442x_to_cmem(const struct coa_device *dev,

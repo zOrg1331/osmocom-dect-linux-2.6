@@ -4058,6 +4058,7 @@ static void dect_lock_fp(struct dect_cell *cell, struct dect_transceiver *trx,
 
 		/* Lock to the primary dummy bearer to keep the radio synchronized */
 		/* FIXME: do this cleanly */
+		dect_channel_reserve(cell, trx, &chd);
 		dect_set_channel_mode(trx, &chd, DECT_SLOT_RX);
 		dect_set_flags(trx, chd.slot, DECT_SLOT_SYNC);
 		dect_set_carrier(trx, chd.slot, chd.carrier);

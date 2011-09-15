@@ -103,7 +103,7 @@ static int dect_netlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		if (link->dump == NULL)
 			return -EOPNOTSUPP;
 		return netlink_dump_start(dect_nlsk, skb, nlh, link->dump,
-					  link->done);
+					  link->done, 0);
 	} else {
 		struct nlattr *nla[link->maxtype + 1];
 

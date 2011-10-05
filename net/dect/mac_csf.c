@@ -396,10 +396,6 @@ static u8 dect_channel_delay(const struct dect_cell *cell,
 	frames = ~0;
 	for (i = 0; i < txs; i++) {
 		d = dect_carrier_distance(rfcars, scn, chd->carrier);
-#if 0
-		if (dect_slotnum(cell, DECT_TIMER_TX) >= chd->slot)
-			d--;
-#endif
 		/* More than two frames in the future? */
 		if (d <= DECT_CHANNEL_MIN_DELAY)
 			d += hweight64(rfcars);

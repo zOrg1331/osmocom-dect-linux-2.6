@@ -363,7 +363,6 @@ static void dect_chl_flush(struct dect_cell *cell)
 	}
 }
 
-
 /**
  * dect_channel_delay - calculate delay in frames until a channel is accessible
  *
@@ -4951,6 +4950,7 @@ static void dect_cell_shutdown(struct dect_cell *cell)
 		dect_cell_detach_transceiver(cell, trx);
 	dect_cell_bmc_disable(cell);
 	skb_queue_purge(&cell->raw_tx_queue);
+	dect_chl_flush(cell);
 }
 
 /**

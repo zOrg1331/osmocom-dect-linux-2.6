@@ -326,6 +326,17 @@ out:
 	goto again;
 }
 
+static void dect_transceiver_group_compute_features(struct dect_transceiver_group *grp)
+{
+	struct dect_transceiver *trx;
+	u32 features;
+
+	features = ~0;
+	dect_foreach_transceiver(trx, grp)
+		features &= trx->ops->features;
+	grp->features = features;
+}
+
 int dect_transceiver_group_add(struct dect_transceiver_group *grp,
 			       struct dect_transceiver *trx)
 {
@@ -341,6 +352,8 @@ int dect_transceiver_group_add(struct dect_transceiver_group *grp,
 		grp->latency = trx->ops->latency;
 
 	grp->trxmask |= 1 << index;
+
+	dect_transceiver_group_compute_features(grp);
 	return 0;
 }
 
@@ -351,6 +364,8 @@ void dect_transceiver_group_remove(struct dect_transceiver_group *grp,
 	/* Synchronize with interrupt and softirq processing */
 	synchronize_rcu();
 	grp->trx[trx->index] = NULL;
+
+	dect_transceiver_group_compute_features(grp);
 }
 
 void dect_transceiver_group_init(struct dect_transceiver_group *grp)

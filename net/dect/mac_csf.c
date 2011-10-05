@@ -4695,7 +4695,8 @@ static void dect_cell_state_process(struct dect_cell *cell)
 	if (list_empty(&cell->chanlists) && list_empty(&cell->chl_pending)) {
 		dect_chl_schedule_update(cell, DECT_PACKET_P00);
 		dect_chl_schedule_update(cell, DECT_PACKET_P32);
-		if (cell->si.efpc2.fpc & DECT_EFPC2_LONG_SLOT_J640)
+		if (cell->trg.features & DECT_TRANSCEIVER_PACKET_P64 &&
+		    cell->si.efpc2.fpc & DECT_EFPC2_LONG_SLOT_J640)
 			dect_chl_schedule_update(cell, DECT_PACKET_P640j);
 	}
 

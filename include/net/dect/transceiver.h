@@ -618,6 +618,7 @@ enum dect_transceiver_events {
  * @trx:		Transceiver array
  * @trxmask:		Mask of present transceivers
  * @latency:		Maximum latency of all transceivers
+ * @features:		Combined features of all transceivers
  * @blind_full_slots:	combined blind full slots state of all transceivers
  * @tasklet:		Event processing tasklet
  * @lock:		Event list lock
@@ -631,6 +632,7 @@ struct dect_transceiver_group {
 	struct dect_transceiver			*trx[DECT_TRX_GROUP_MAX];
 	u16					trxmask;
 	u8					latency;
+	u32					features;
 	u32					blind_full_slots;
 
 	struct tasklet_struct			tasklet;

@@ -37,14 +37,14 @@ extern const unsigned char sc1442x_firmware[510];
 #define Slot22 0x32
 #define Slot23 0x34
 #define RFStart 0xFC
-#define RFInit 0xBD
-#define SyncInit 0xDE
-#define Sync 0xDF
-#define SyncLock 0xEF
-#define SyncLoop 0xF3
-#define ClockSyncOn 0x84
-#define ClockSyncOff 0x8C
-#define ClockAdjust 0x88
+#define RFInit 0xB8
+#define SyncInit 0xDD
+#define Sync 0xDE
+#define SyncLock 0xEE
+#define SyncLoop 0xF2
+#define ClockSyncOn 0x86
+#define ClockSyncOff 0x8E
+#define ClockAdjust 0x8A
 #define PSC_ARPD1 0x80
 #define PSC_S_SYNC 0x40
 #define PSC_S_SYNC_ON 0x20
@@ -64,7 +64,7 @@ extern const unsigned char sc1442x_firmware[510];
 #define DCS_CK 0x78
 #define DCS_STATE 0x70
 #define DCS_STATE_SIZE 0xB
-#define LoadEncKey 0xCC
-#define LoadEncState 0xD9
+#define LoadEncKey 0xCB
+#define LoadEncState 0xD8
 
 #endif /* SC1442X_FIRMWARE */

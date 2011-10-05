@@ -353,6 +353,17 @@ static void dect_chl_update_carrier(struct dect_cell *cell, u8 carrier)
 	list_add_tail(&chl->list, &cell->chanlists);
 }
 
+static void dect_chl_flush(struct dect_cell *cell)
+{
+	struct dect_channel_list *chl, *next;
+
+	list_for_each_entry_safe(chl, next, &cell->chanlists, list) {
+		list_del(&chl->list);
+		dect_chl_release(chl);
+	}
+}
+
+
 /**
  * dect_channel_delay - calculate delay in frames until a channel is accessible
  *
@@ -3813,8 +3824,8 @@ static void dect_restart_scan(struct dect_cell *cell,
 {
 	struct dect_irc *irc = trx->irc;
 
-	memset(&irc->si, 0, sizeof(irc->si));
 	dect_transceiver_unlock(trx);
+	memset(&irc->si, 0, sizeof(irc->si));
 	dect_set_channel_mode(trx, &trx->slots[DECT_SCAN_SLOT].chd, DECT_SLOT_SCANNING);
 }
 
@@ -4681,6 +4692,7 @@ static void dect_pp_state_process(struct dect_cell *cell)
 			dect_irc_disable(cell, trx->irc);
 			dect_transceiver_unlock(trx);
 
+			dect_chl_flush(cell);
 			/* Clear system information */
 			memset(&cell->si, 0, sizeof(cell->si));
 			dect_cell_mac_info_ind(cell);

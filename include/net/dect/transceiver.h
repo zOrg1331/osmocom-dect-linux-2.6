@@ -550,16 +550,18 @@ static inline void dect_clear_flags(struct dect_transceiver *trx, u8 slot, u32 f
 }
 
 static inline void dect_enable_cipher(struct dect_transceiver *trx,
-				      u8 slot, u64 ck)
+				      const struct dect_channel_desc *chd,
+				      u64 ck)
 {
-	trx->slots[slot].ck = ck;
-	dect_set_flags(trx, slot, DECT_SLOT_CIPHER);
+	trx->slots[chd->slot].ck = ck;
+	dect_set_flags(trx, chd->slot, DECT_SLOT_CIPHER);
 }
 
-static inline void dect_disable_cipher(struct dect_transceiver *trx, u8 slot)
+static inline void dect_disable_cipher(struct dect_transceiver *trx,
+				       const struct dect_channel_desc *chd)
 {
-	dect_clear_flags(trx, slot, DECT_SLOT_CIPHER);
-	trx->slots[slot].ck = 0;
+	dect_clear_flags(trx, chd->slot, DECT_SLOT_CIPHER);
+	trx->slots[chd->slot].ck = 0;
 }
 
 static inline void dect_transceiver_tx(struct dect_transceiver *trx,

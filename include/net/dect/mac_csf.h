@@ -230,6 +230,10 @@ enum dect_tbc_state {
  * @DECT_TBC_ENC_START_REQ_SENT: Start request sent (PP)
  * @DECT_TBC_ENC_START_CFM_RCVD: Start confirm received (PP)
  * @DECT_TBC_ENC_START_CFM_SENT: Start confirm sent (FP)
+ * @DECT_TBC_ENC_STOP_REQ_RCVD:	 Stop request received (FP)
+ * @DECT_TBC_ENC_STOP_REQ_SENT:	 Stop request sent (PP)
+ * @DECT_TBC_ENC_STOP_CFM_RCVD:	 Stop confirm received (PP)
+ * @DECT_TBC_ENC_STOP_CFM_SENT:  Stop confirm sent (FP)
  * @DECT_TBC_ENC_ENABLED:	 Encryption is enabled
  */
 enum dect_tbc_enc_state {
@@ -238,6 +242,10 @@ enum dect_tbc_enc_state {
 	DECT_TBC_ENC_START_REQ_SENT,
 	DECT_TBC_ENC_START_CFM_RCVD,
 	DECT_TBC_ENC_START_CFM_SENT,
+	DECT_TBC_ENC_STOP_REQ_RCVD,
+	DECT_TBC_ENC_STOP_REQ_SENT,
+	DECT_TBC_ENC_STOP_CFM_RCVD,
+	DECT_TBC_ENC_STOP_CFM_SENT,
 	DECT_TBC_ENC_ENABLED,
 };
 

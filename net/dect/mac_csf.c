@@ -353,6 +353,16 @@ static void dect_chl_update_carrier(struct dect_cell *cell, u8 carrier)
 	list_add_tail(&chl->list, &cell->chanlists);
 }
 
+static void dect_chl_flush(struct dect_cell *cell)
+{
+	struct dect_channel_list *chl, *next;
+
+	list_for_each_entry_safe(chl, next, &cell->chanlists, list) {
+		list_del(&chl->list);
+		dect_chl_release(chl);
+	}
+}
+
 /**
  * dect_channel_delay - calculate delay in frames until a channel is accessible
  *
@@ -386,10 +396,6 @@ static u8 dect_channel_delay(const struct dect_cell *cell,
 	frames = ~0;
 	for (i = 0; i < txs; i++) {
 		d = dect_carrier_distance(rfcars, scn, chd->carrier);
-#if 0
-		if (dect_slotnum(cell, DECT_TIMER_TX) >= chd->slot)
-			d--;
-#endif
 		/* More than two frames in the future? */
 		if (d <= DECT_CHANNEL_MIN_DELAY)
 			d += hweight64(rfcars);
@@ -1393,7 +1399,7 @@ static void dect_bearer_release(struct dect_cell *cell,
 	__skb_queue_purge(&bearer->m_tx_queue);
 	dect_timer_del(&bearer->tx_timer);
 	dect_bearer_disable(bearer);
-	dect_disable_cipher(trx, bearer->chd.slot);
+	dect_disable_cipher(trx, &bearer->chd);
 
 	if (trx->index < 3 &&
 	    ((slot >= dect_normal_receive_base(cell->mode) &&
@@ -2730,7 +2736,7 @@ static void dect_tbc_enc_timer(struct dect_cell *cell, void *data)
 	switch (tbc->enc_state) {
 	case DECT_TBC_ENC_START_REQ_RCVD:
 		tbc_debug(tbc, "TX encryption enabled\n");
-		dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot, tbc->ck);
+		dect_enable_cipher(tbc->txb.trx, &tbc->txb.chd, tbc->ck);
 		/* fall through */
 	case DECT_TBC_ENC_START_CFM_SENT:
 		tbc->enc_state = DECT_TBC_ENC_START_CFM_SENT;
@@ -2738,6 +2744,17 @@ static void dect_tbc_enc_timer(struct dect_cell *cell, void *data)
 		break;
 	case DECT_TBC_ENC_START_REQ_SENT:
 		cmd = DECT_ENCCTRL_START_REQUEST;
+		break;
+	case DECT_TBC_ENC_STOP_REQ_RCVD:
+		tbc_debug(tbc, "TX encryption disabled\n");
+		dect_disable_cipher(tbc->txb.trx, &tbc->txb.chd);
+		/* fall through */
+	case DECT_TBC_ENC_STOP_CFM_SENT:
+		tbc->enc_state = DECT_TBC_ENC_STOP_CFM_SENT;
+		cmd = DECT_ENCCTRL_STOP_CONFIRM;
+		break;
+	case DECT_TBC_ENC_STOP_REQ_SENT:
+		cmd = DECT_ENCCTRL_STOP_REQUEST;
 		break;
 	default:
 		return;
@@ -2776,8 +2793,7 @@ static int dect_tbc_enc_state_process(struct dect_cell *cell,
 
 			dect_timer_del(&tbc->enc_timer);
 			tbc_debug(tbc, "TX encryption enabled\n");
-			dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot,
-					   tbc->ck);
+			dect_enable_cipher(tbc->txb.trx, &tbc->txb.chd, tbc->ck);
 		}
 		if (tbc->enc_state == DECT_TBC_ENC_START_CFM_RCVD) {
 			skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_START_GRANT);
@@ -2792,14 +2808,43 @@ static int dect_tbc_enc_state_process(struct dect_cell *cell,
 
 		dect_timer_del(&tbc->enc_timer);
 		tbc_debug(tbc, "RX encryption enabled\n");
-		dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
+		dect_enable_cipher(tbc->rxb.trx, &tbc->rxb.chd, tbc->ck);
 		dect_tbc_event(tbc, DECT_TBC_CIPHER_ENABLED);
 		break;
+
 	case DECT_ENCCTRL_STOP_REQUEST:
+		if (cell->mode != DECT_MODE_FP)
+			break;
+
+		tbc->enc_state = DECT_TBC_ENC_STOP_REQ_RCVD;
+		tbc->enc_msg_cnt = 0;
+
+		dect_bearer_timer_add(cell, &tbc->txb, &tbc->enc_timer, 0);
 		break;
 	case DECT_ENCCTRL_STOP_CONFIRM:
+		if (tbc->enc_state == DECT_TBC_ENC_STOP_REQ_SENT) {
+			tbc->enc_state = DECT_TBC_ENC_STOP_CFM_RCVD;
+			tbc->enc_msg_cnt = 0;
+
+			dect_timer_del(&tbc->enc_timer);
+			tbc_debug(tbc, "TX encryption disabled\n");
+			dect_disable_cipher(tbc->txb.trx, &tbc->txb.chd);
+		}
+		if (tbc->enc_state == DECT_TBC_ENC_STOP_CFM_RCVD) {
+			skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_STOP_GRANT);
+			if (skb != NULL)
+				dect_tbc_queue_mac_control(tbc, skb);
+		}
 		break;
 	case DECT_ENCCTRL_STOP_GRANT:
+		if (tbc->enc_state != DECT_TBC_ENC_STOP_CFM_SENT)
+			break;
+		tbc->enc_state = DECT_TBC_CIPHER_DISABLED;
+
+		dect_timer_del(&tbc->enc_timer);
+		tbc_debug(tbc, "RX encryption disabled\n");
+		dect_disable_cipher(tbc->txb.trx, &tbc->txb.chd);
+		dect_tbc_event(tbc, DECT_TBC_CIPHER_DISABLED);
 		break;
 	default:
 		return 0;
@@ -3015,8 +3060,8 @@ static int dect_tbc_enc_req(const struct dect_cell_handle *ch,
 		  (unsigned long long)ck);
 
 	tbc->ck = ck;
-	dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
-	dect_enable_cipher(tbc->txb.trx, tbc->txb.chd.slot, tbc->ck);
+	dect_enable_cipher(tbc->rxb.trx, &tbc->rxb.chd, tbc->ck);
+	dect_enable_cipher(tbc->txb.trx, &tbc->txb.chd, tbc->ck);
 	return 0;
 }
 
@@ -3033,16 +3078,23 @@ static int dect_tbc_enc_eks_req(const struct dect_cell_handle *ch,
 		return -ENOENT;
 
 	tbc_debug(tbc, "TBC_ENC_EKS-req: status: %u\n", status);
-	skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_START_REQUEST);
-	if (skb != NULL)
-		dect_tbc_queue_mac_control(tbc, skb);
+	if (status == DECT_CIPHER_ENABLED) {
+		skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_START_REQUEST);
+		if (skb != NULL)
+			dect_tbc_queue_mac_control(tbc, skb);
+		tbc->enc_state = DECT_TBC_ENC_START_REQ_SENT;
 
-	tbc->enc_state = DECT_TBC_ENC_START_REQ_SENT;
+		tbc_debug(tbc, "RX encryption enabled\n");
+		dect_enable_cipher(tbc->rxb.trx, &tbc->rxb.chd, tbc->ck);
+	} else {
+		skb = dect_tbc_build_encctrl(tbc, DECT_ENCCTRL_STOP_REQUEST);
+		if (skb != NULL)
+			dect_tbc_queue_mac_control(tbc, skb);
+		tbc->enc_state = DECT_TBC_ENC_STOP_REQ_SENT;
+	}
+
 	tbc->enc_msg_cnt = 0;
 	dect_bearer_timer_add(cell, &tbc->txb, &tbc->enc_timer, 0);
-
-	tbc_debug(tbc, "RX encryption enabled\n");
-	dect_enable_cipher(tbc->rxb.trx, tbc->rxb.chd.slot, tbc->ck);
 	return 0;
 }
 
@@ -3813,8 +3865,8 @@ static void dect_restart_scan(struct dect_cell *cell,
 {
 	struct dect_irc *irc = trx->irc;
 
-	memset(&irc->si, 0, sizeof(irc->si));
 	dect_transceiver_unlock(trx);
+	memset(&irc->si, 0, sizeof(irc->si));
 	dect_set_channel_mode(trx, &trx->slots[DECT_SCAN_SLOT].chd, DECT_SLOT_SCANNING);
 }
 
@@ -4681,6 +4733,7 @@ static void dect_pp_state_process(struct dect_cell *cell)
 			dect_irc_disable(cell, trx->irc);
 			dect_transceiver_unlock(trx);
 
+			dect_chl_flush(cell);
 			/* Clear system information */
 			memset(&cell->si, 0, sizeof(cell->si));
 			dect_cell_mac_info_ind(cell);
@@ -4695,7 +4748,8 @@ static void dect_cell_state_process(struct dect_cell *cell)
 	if (list_empty(&cell->chanlists) && list_empty(&cell->chl_pending)) {
 		dect_chl_schedule_update(cell, DECT_PACKET_P00);
 		dect_chl_schedule_update(cell, DECT_PACKET_P32);
-		if (cell->si.efpc2.fpc & DECT_EFPC2_LONG_SLOT_J640)
+		if (cell->trg.features & DECT_TRANSCEIVER_PACKET_P64 &&
+		    cell->si.efpc2.fpc & DECT_EFPC2_LONG_SLOT_J640)
 			dect_chl_schedule_update(cell, DECT_PACKET_P640j);
 	}
 
@@ -4938,6 +4992,7 @@ static void dect_cell_shutdown(struct dect_cell *cell)
 		dect_cell_detach_transceiver(cell, trx);
 	dect_cell_bmc_disable(cell);
 	skb_queue_purge(&cell->raw_tx_queue);
+	dect_chl_flush(cell);
 }
 
 /**

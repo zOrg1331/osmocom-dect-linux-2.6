@@ -227,18 +227,23 @@ WriteBMC2:	B_WRS	SD_BASE_OFF	; write status
 label_58:	B_RST
 		P_LDL	PB_RX_ON | PB_TX_ON
 		RTN
-;-------------------------------------------------------------------------------
-; Enable the receiver, receive the S-field and the first 61 bits of the D-field
-; (93 bits total)
-;
-Receive:	B_RST
+
+
+ReceiveInit:	B_RST
 		B_RC	BMC_CTRL
 		WT	BMC_CTRL_SIZE + 1
 		P_LDH	PB_RX_ON
 		P_LDL	PB_RSSI		; enable RSSI measurement
 		WT	25
 		WNT	1		; Wait until beginning of slot			|
-		WT	8		;						| p: -33--26
+		WT	7		;						| p: -33--26
+		RTN
+
+;-------------------------------------------------------------------------------
+; Enable the receiver, receive the S-field and the first 61 bits of the D-field
+; (93 bits total)
+;
+Receive:	JMP	ReceiveInit
 		B_XON			;						| p: -25
 ClockSyncOn:	P_SC	PSC_S_SYNC_ON	;						| p: -24
 		P_LDH	PB_DCTHRESHOLD	;						| p: -23
@@ -253,14 +258,7 @@ ClockSyncOff:	P_SC	0x00		;						| p:  30	S: 46
 		WT	62		; Receive first 61 bits of A-field		| p:  32-92	A:  0-60
 		RTN			; Return					| p:  93	A: 61
 
-ReceiveSync:	B_RST
-		B_RC	BMC_CTRL
-		WT	BMC_CTRL_SIZE + 1
-		P_LDH	PB_RX_ON
-		P_LDL	PB_RSSI		; enable RSSI measurement
-		WT	25
-		WNT	1		; Wait until beginning of slot			|
-		WT	8		;						| p: -33--26
+ReceiveSync:	JMP	ReceiveInit
 		B_XON			;						| p: -25
 		P_SC	PSC_S_SYNC_ON	;						| p: -24
 		P_LDH	PB_DCTHRESHOLD	;						| p: -23
@@ -400,12 +398,12 @@ InitDIP:	;B_RST
 		WT	10
 		;B_RC	BMC_CTRL
 		;WT	BMC_CTRL_SIZE + 1
-		B_RST
-		;C_ON
+		;B_RST
+		C_ON
 		WT	10
 		P_EN
 		P_LD	0x04
-		;RCK_INT
+		RCK_INT
 		RFEN
 RFStart:	BR	SyncInit
 ;-------------------------------------------------------------

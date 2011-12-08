@@ -7,6 +7,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/export.h>
 #include <linux/dect.h>
 #include <net/dect/dect.h>
 

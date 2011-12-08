@@ -9,6 +9,8 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/stat.h>
+#include <linux/export.h>
 #include <net/dect/transceiver.h>
 #include "vtrx.h"
 

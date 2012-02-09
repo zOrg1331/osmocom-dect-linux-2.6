@@ -1033,22 +1033,23 @@ static u64 dect_build_cctrl_common(const struct dect_cctrl *cctl)
 
 static int dect_parse_cctrl_attr(struct dect_cctrl *cctl, u64 t)
 {
-	cctl->ecn        = (t & DECT_CCTRL_ATTR_ECN_MASK) >> DECT_CCTRL_ATTR_ECN_SHIFT;
-	cctl->lbn        = (t & DECT_CCTRL_ATTR_LBN_MASK) >> DECT_CCTRL_ATTR_LBN_SHIFT;
-	cctl->type       = (t & DECT_CCTRL_ATTR_TYPE_MASK) >> DECT_CCTRL_ATTR_TYPE_SHIFT;
-	cctl->service    = (t & DECT_CCTRL_ATTR_SERVICE_MASK) >> DECT_CCTRL_ATTR_SERVICE_SHIFT;
-	cctl->slot       = (t & DECT_CCTRL_ATTR_SLOT_MASK) >> DECT_CCTRL_ATTR_SLOT_SHIFT;
-	cctl->cf         = (t & DECT_CCTRL_ATTR_CF_FLAG);
-	cctl->a_mod      = (t & DECT_CCTRL_ATTR_A_MOD_MASK) >> DECT_CCTRL_ATTR_A_MOD_SHIFT;
-	cctl->bz_mod     = (t & DECT_CCTRL_ATTR_BZ_MOD_MASK) >> DECT_CCTRL_ATTR_BZ_MOD_SHIFT;
-	cctl->bz_ext_mod = (t & DECT_CCTRL_ATTR_BZ_EXT_MOD_MASK) >> DECT_CCTRL_ATTR_BZ_EXT_MOD_SHIFT;
-	cctl->acr        = (t & DECT_CCTRL_ATTR_ACR_MASK) >> DECT_CCTRL_ATTR_ACR_SHIFT;
+	cctl->attr.ecn        = (t & DECT_CCTRL_ATTR_ECN_MASK) >> DECT_CCTRL_ATTR_ECN_SHIFT;
+	cctl->attr.lbn        = (t & DECT_CCTRL_ATTR_LBN_MASK) >> DECT_CCTRL_ATTR_LBN_SHIFT;
+	cctl->attr.type       = (t & DECT_CCTRL_ATTR_TYPE_MASK) >> DECT_CCTRL_ATTR_TYPE_SHIFT;
+	cctl->attr.service    = (t & DECT_CCTRL_ATTR_SERVICE_MASK) >> DECT_CCTRL_ATTR_SERVICE_SHIFT;
+	cctl->attr.slot       = (t & DECT_CCTRL_ATTR_SLOT_MASK) >> DECT_CCTRL_ATTR_SLOT_SHIFT;
+	cctl->attr.cf         = (t & DECT_CCTRL_ATTR_CF_FLAG);
+	cctl->attr.a_mod      = (t & DECT_CCTRL_ATTR_A_MOD_MASK) >> DECT_CCTRL_ATTR_A_MOD_SHIFT;
+	cctl->attr.bz_mod     = (t & DECT_CCTRL_ATTR_BZ_MOD_MASK) >> DECT_CCTRL_ATTR_BZ_MOD_SHIFT;
+	cctl->attr.bz_ext_mod = (t & DECT_CCTRL_ATTR_BZ_EXT_MOD_MASK) >> DECT_CCTRL_ATTR_BZ_EXT_MOD_SHIFT;
+	cctl->attr.acr        = (t & DECT_CCTRL_ATTR_ACR_MASK) >> DECT_CCTRL_ATTR_ACR_SHIFT;
 
 	pr_debug("cctrl: cmd: %llx ecn: %x lbn: %x type: %x "
 		 "service: %x slot: %x cf %d a_mod %x bz_mod %x bz_ext_mod %x acr %x\n",
-		 (unsigned long long)cctl->cmd, cctl->ecn, cctl->lbn,
-		 cctl->type, cctl->service, cctl->slot, cctl->cf,
-		 cctl->a_mod, cctl->bz_mod, cctl->bz_ext_mod, cctl->acr);
+		 (unsigned long long)cctl->cmd, cctl->attr.ecn, cctl->attr.lbn,
+		 cctl->attr.type, cctl->attr.service, cctl->attr.slot,
+		 cctl->attr.cf, cctl->attr.a_mod, cctl->attr.bz_mod,
+		 cctl->attr.bz_ext_mod, cctl->attr.acr);
 	return 0;
 }
 
@@ -1057,30 +1058,30 @@ static u64 dect_build_cctrl_attr(const struct dect_cctrl *cctl)
 	u64 t = 0;
 
 	t |= cctl->cmd;
-	t |= (u64)cctl->ecn << DECT_CCTRL_ATTR_ECN_SHIFT;
-	t |= (u64)cctl->lbn << DECT_CCTRL_ATTR_LBN_SHIFT;
-	t |= (u64)cctl->type << DECT_CCTRL_ATTR_TYPE_SHIFT;
-	t |= (u64)cctl->service << DECT_CCTRL_ATTR_SERVICE_SHIFT;
-	t |= (u64)cctl->slot << DECT_CCTRL_ATTR_SLOT_SHIFT;
-	t |= cctl->cf ? DECT_CCTRL_ATTR_CF_FLAG : 0;
-	t |= (u64)cctl->a_mod << DECT_CCTRL_ATTR_A_MOD_SHIFT;
-	t |= (u64)cctl->bz_mod << DECT_CCTRL_ATTR_BZ_MOD_SHIFT;
-	t |= (u64)cctl->bz_ext_mod << DECT_CCTRL_ATTR_BZ_EXT_MOD_SHIFT;
-	t |= (u64)cctl->acr << DECT_CCTRL_ATTR_ACR_SHIFT;
+	t |= (u64)cctl->attr.ecn << DECT_CCTRL_ATTR_ECN_SHIFT;
+	t |= (u64)cctl->attr.lbn << DECT_CCTRL_ATTR_LBN_SHIFT;
+	t |= (u64)cctl->attr.type << DECT_CCTRL_ATTR_TYPE_SHIFT;
+	t |= (u64)cctl->attr.service << DECT_CCTRL_ATTR_SERVICE_SHIFT;
+	t |= (u64)cctl->attr.slot << DECT_CCTRL_ATTR_SLOT_SHIFT;
+	t |= cctl->attr.cf ? DECT_CCTRL_ATTR_CF_FLAG : 0;
+	t |= (u64)cctl->attr.a_mod << DECT_CCTRL_ATTR_A_MOD_SHIFT;
+	t |= (u64)cctl->attr.bz_mod << DECT_CCTRL_ATTR_BZ_MOD_SHIFT;
+	t |= (u64)cctl->attr.bz_ext_mod << DECT_CCTRL_ATTR_BZ_EXT_MOD_SHIFT;
+	t |= (u64)cctl->attr.acr << DECT_CCTRL_ATTR_ACR_SHIFT;
 	return t;
 }
 
 static int dect_parse_cctrl_release(struct dect_cctrl *cctl, u64 t)
 {
-	cctl->lbn    = (t & DECT_CCTRL_RELEASE_LBN_MASK) >>
-		       DECT_CCTRL_RELEASE_LBN_SHIFT;
-	cctl->reason = (t & DECT_CCTRL_RELEASE_REASON_MASK) >>
-		       DECT_CCTRL_RELEASE_REASON_SHIFT;
-	cctl->pmid   = (t & DECT_CCTRL_RELEASE_PMID_MASK) >>
-		       DECT_CCTRL_RELEASE_PMID_SHIFT;
+	cctl->rel.lbn    = (t & DECT_CCTRL_RELEASE_LBN_MASK) >>
+		           DECT_CCTRL_RELEASE_LBN_SHIFT;
+	cctl->rel.reason = (t & DECT_CCTRL_RELEASE_REASON_MASK) >>
+		           DECT_CCTRL_RELEASE_REASON_SHIFT;
+	cctl->pmid       = (t & DECT_CCTRL_RELEASE_PMID_MASK) >>
+		           DECT_CCTRL_RELEASE_PMID_SHIFT;
 
 	pr_debug("cctrl: release: pmid: %.5x lbn: %x reason: %x\n",
-		 cctl->pmid, cctl->lbn, cctl->reason);
+		 cctl->pmid, cctl->rel.lbn, cctl->rel.reason);
 	return 0;
 }
 
@@ -1089,8 +1090,8 @@ static u64 dect_build_cctrl_release(const struct dect_cctrl *cctl)
 	u64 t = 0;
 
 	t |= cctl->cmd;
-	t |= (u64)cctl->lbn << DECT_CCTRL_RELEASE_LBN_SHIFT;
-	t |= (u64)cctl->reason << DECT_CCTRL_RELEASE_REASON_SHIFT;
+	t |= (u64)cctl->rel.lbn << DECT_CCTRL_RELEASE_LBN_SHIFT;
+	t |= (u64)cctl->rel.reason << DECT_CCTRL_RELEASE_REASON_SHIFT;
 	t |= (u64)cctl->pmid << DECT_CCTRL_RELEASE_PMID_SHIFT;
 	return t;
 }
@@ -2307,18 +2308,18 @@ static int dect_tbc_send_attributes(struct dect_tbc *tbc, enum dect_cctrl_cmds c
 	if (skb == NULL)
 		return -ENOMEM;
 
-	cctl.cmd     = cmd;
-	cctl.ecn     = tbc->id.ecn;
-	cctl.lbn     = tbc->id.lbn;
-	cctl.type    = DECT_CCTRL_TYPE_SYMETRIC_BEARER;
-	cctl.service = tbc->mcp.service;
-	cctl.cf      = false;
+	cctl.cmd          = cmd;
+	cctl.attr.ecn     = tbc->id.ecn;
+	cctl.attr.lbn     = tbc->id.lbn;
+	cctl.attr.type    = DECT_CCTRL_TYPE_SYMETRIC_BEARER;
+	cctl.attr.service = tbc->mcp.service;
+	cctl.attr.cf      = false;
 
-	cctl.slot   = tbc->mcp.slot;
-	cctl.a_mod  = DECT_MODULATION_2_LEVEL;
-	cctl.bz_mod = DECT_MODULATION_2_LEVEL;
-	cctl.bz_ext_mod = 7;
-	cctl.acr    = 0;
+	cctl.attr.slot   = tbc->mcp.slot;
+	cctl.attr.a_mod  = DECT_MODULATION_2_LEVEL;
+	cctl.attr.bz_mod = DECT_MODULATION_2_LEVEL;
+	cctl.attr.bz_ext_mod = 7;
+	cctl.attr.acr    = 0;
 
 	if (tbc->mcp.type == DECT_MAC_CONN_BASIC)
 		dect_build_tail_msg(skb, DECT_TM_TYPE_BCCTRL, &cctl);
@@ -2363,9 +2364,9 @@ static int dect_tbc_send_release(struct dect_tbc *tbc,
 	if (skb == NULL)
 		return -ENOMEM;
 
-	cctl.cmd     = DECT_CCTRL_RELEASE;
-	cctl.pmid    = dect_build_pmid(&tbc->id.pmid);
-	cctl.reason  = reason;
+	cctl.cmd         = DECT_CCTRL_RELEASE;
+	cctl.pmid        = dect_build_pmid(&tbc->id.pmid);
+	cctl.rel.reason  = reason;
 
 	if (tbc->mcp.type == DECT_MAC_CONN_BASIC)
 		dect_build_tail_msg(skb, DECT_TM_TYPE_BCCTRL, &cctl);
@@ -2546,10 +2547,10 @@ static int dect_tbc_check_attributes(struct dect_cell *cell, struct dect_tbc *tb
 	const struct dect_cluster_handle *clh = cell->handle.clh;
 
 	tbc_debug(tbc, "RX ATTRIBUTES_T_REQUEST\n");
-	tbc->id.ecn      = cctl->ecn;
-	tbc->id.lbn      = cctl->lbn;
-	tbc->mcp.service = cctl->service;
-	tbc->mcp.slot    = cctl->slot;
+	tbc->id.ecn      = cctl->attr.ecn;
+	tbc->id.lbn      = cctl->attr.lbn;
+	tbc->mcp.service = cctl->attr.service;
+	tbc->mcp.slot    = cctl->attr.slot;
 
 	if (clh->ops->tbc_establish_ind(clh, &cell->handle, &tbc->id,
 					&tbc->mcp, tbc->handover) < 0)

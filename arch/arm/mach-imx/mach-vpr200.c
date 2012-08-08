@@ -310,7 +310,7 @@ static void __init vpr200_timer_init(void)
 	mx35_clocks_init();
 }
 
-struct sys_timer vpr200_timer = {
+static struct sys_timer vpr200_timer = {
 	.init	= vpr200_timer_init,
 };
 
@@ -322,4 +322,5 @@ MACHINE_START(VPR200, "VPR200")
 	.handle_irq = imx35_handle_irq,
 	.timer = &vpr200_timer,
 	.init_machine = vpr200_board_init,
+	.restart	= mxc_restart,
 MACHINE_END

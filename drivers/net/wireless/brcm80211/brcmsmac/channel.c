@@ -628,6 +628,40 @@ brcms_c_country_aggregate_map(struct brcms_cm_info *wlc_cm, const char *ccode,
 	return false;
 }
 
+/*
+ * Indicates whether the country provided is valid to pass
+ * to cfg80211 or not.
+ *
+ * returns true if valid; false if not.
+ */
+static bool brcms_c_country_valid(const char *ccode)
+{
+	/*
+	 * only allow ascii alpha uppercase for the first 2
+	 * chars.
+	 */
+	if (!((0x80 & ccode[0]) == 0 && ccode[0] >= 0x41 && ccode[0] <= 0x5A &&
+	      (0x80 & ccode[1]) == 0 && ccode[1] >= 0x41 && ccode[1] <= 0x5A &&
+	      ccode[2] == '\0'))
+		return false;
+
+	/*
+	 * do not match ISO 3166-1 user assigned country codes
+	 * that may be in the driver table
+	 */
+	if (!strcmp("AA", ccode) ||        /* AA */
+	    !strcmp("ZZ", ccode) ||        /* ZZ */
+	    ccode[0] == 'X' ||             /* XA - XZ */
+	    (ccode[0] == 'Q' &&            /* QM - QZ */
+	     (ccode[1] >= 'M' && ccode[1] <= 'Z')))
+		return false;
+
+	if (!strcmp("NA", ccode))
+		return false;
+
+	return true;
+}
+
 /* Lookup a country info structure from a null terminated country
  * abbreviation and regrev directly with no translation.
  */
@@ -1076,7 +1110,7 @@ struct brcms_cm_info *brcms_c_channel_mgr_attach(struct brcms_c_info *wlc)
 	char country_abbrev[BRCM_CNTRY_BUF_SZ];
 	const struct country_info *country;
 	struct brcms_pub *pub = wlc->pub;
-	char *ccode;
+	struct ssb_sprom *sprom = &wlc->hw->d11core->bus->sprom;
 
 	BCMMSG(wlc->wiphy, "wl%d\n", wlc->pub->unit);
 
@@ -1088,9 +1122,8 @@ struct brcms_cm_info *brcms_c_channel_mgr_attach(struct brcms_c_info *wlc)
 	wlc->cmi = wlc_cm;
 
 	/* store the country code for passing up as a regulatory hint */
-	ccode = getvar(wlc->hw->sih, BRCMS_SROM_CCODE);
-	if (ccode)
-		strncpy(wlc->pub->srom_ccode, ccode, BRCM_CNTRY_BUF_SZ - 1);
+	if (sprom->alpha2 && brcms_c_country_valid(sprom->alpha2))
+		strncpy(wlc->pub->srom_ccode, sprom->alpha2, sizeof(sprom->alpha2));
 
 	/*
 	 * internal country information which must match
@@ -1152,121 +1185,6 @@ brcms_c_channel_set_chanspec(struct brcms_cm_info *wlc_cm, u16 chanspec,
 			      (brcms_c_quiet_chanspec(wlc_cm, chanspec) != 0),
 			      &txpwr);
 }
-
-#ifdef POWER_DBG
-static void wlc_phy_txpower_limits_dump(struct txpwr_limits *txpwr)
-{
-	int i;
-	char buf[80];
-	char fraction[4][4] = { "   ", ".25", ".5 ", ".75" };
-
-	sprintf(buf, "CCK                ");
-	for (i = 0; i < BRCMS_NUM_RATES_CCK; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->cck[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->cck[i] % BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "20 MHz OFDM SISO   ");
-	for (i = 0; i < BRCMS_NUM_RATES_OFDM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->ofdm[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->ofdm[i] % BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "20 MHz OFDM CDD    ");
-	for (i = 0; i < BRCMS_NUM_RATES_OFDM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->ofdm_cdd[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->ofdm_cdd[i] % BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "40 MHz OFDM SISO   ");
-	for (i = 0; i < BRCMS_NUM_RATES_OFDM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->ofdm_40_siso[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->ofdm_40_siso[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "40 MHz OFDM CDD    ");
-	for (i = 0; i < BRCMS_NUM_RATES_OFDM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->ofdm_40_cdd[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->ofdm_40_cdd[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "20 MHz MCS0-7 SISO ");
-	for (i = 0; i < BRCMS_NUM_RATES_MCS_1_STREAM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->mcs_20_siso[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->mcs_20_siso[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "20 MHz MCS0-7 CDD  ");
-	for (i = 0; i < BRCMS_NUM_RATES_MCS_1_STREAM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->mcs_20_cdd[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->mcs_20_cdd[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "20 MHz MCS0-7 STBC ");
-	for (i = 0; i < BRCMS_NUM_RATES_MCS_1_STREAM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->mcs_20_stbc[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->mcs_20_stbc[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "20 MHz MCS8-15 SDM ");
-	for (i = 0; i < BRCMS_NUM_RATES_MCS_2_STREAM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->mcs_20_mimo[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->mcs_20_mimo[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "40 MHz MCS0-7 SISO ");
-	for (i = 0; i < BRCMS_NUM_RATES_MCS_1_STREAM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->mcs_40_siso[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->mcs_40_siso[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "40 MHz MCS0-7 CDD  ");
-	for (i = 0; i < BRCMS_NUM_RATES_MCS_1_STREAM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->mcs_40_cdd[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->mcs_40_cdd[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "40 MHz MCS0-7 STBC ");
-	for (i = 0; i < BRCMS_NUM_RATES_MCS_1_STREAM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->mcs_40_stbc[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->mcs_40_stbc[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	printk(KERN_DEBUG "%s\n", buf);
-
-	sprintf(buf, "40 MHz MCS8-15 SDM ");
-	for (i = 0; i < BRCMS_NUM_RATES_MCS_2_STREAM; i++)
-		sprintf(buf[strlen(buf)], " %2d%s",
-			txpwr->mcs_40_mimo[i] / BRCMS_TXPWR_DB_FACTOR,
-			fraction[txpwr->mcs_40_mimo[i] %
-							BRCMS_TXPWR_DB_FACTOR]);
-	}
-	printk(KERN_DEBUG "%s\n", buf);
-
-	printk(KERN_DEBUG "MCS32               %2d%s\n",
-	       txpwr->mcs32 / BRCMS_TXPWR_DB_FACTOR,
-	       fraction[txpwr->mcs32 % BRCMS_TXPWR_DB_FACTOR]);
-}
-#endif				/* POWER_DBG */
 
 void
 brcms_c_channel_reg_limits(struct brcms_cm_info *wlc_cm, u16 chanspec,
@@ -1478,9 +1396,6 @@ brcms_c_channel_reg_limits(struct brcms_cm_info *wlc_cm, u16 chanspec,
 			txpwr->mcs_40_stbc[i] = txpwr->mcs_40_cdd[i];
 	}
 
-#ifdef POWER_DBG
-	wlc_phy_txpower_limits_dump(txpwr);
-#endif
 	return;
 }
 

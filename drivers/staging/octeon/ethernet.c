@@ -31,6 +31,7 @@
 #include <linux/etherdevice.h>
 #include <linux/phy.h>
 #include <linux/slab.h>
+#include <linux/interrupt.h>
 
 #include <net/dst.h>
 
@@ -44,14 +45,14 @@
 #include "ethernet-mdio.h"
 #include "ethernet-util.h"
 
-#include "cvmx-pip.h"
-#include "cvmx-pko.h"
-#include "cvmx-fau.h"
-#include "cvmx-ipd.h"
-#include "cvmx-helper.h"
+#include <asm/octeon/cvmx-pip.h>
+#include <asm/octeon/cvmx-pko.h>
+#include <asm/octeon/cvmx-fau.h>
+#include <asm/octeon/cvmx-ipd.h>
+#include <asm/octeon/cvmx-helper.h>
 
-#include "cvmx-gmxx-defs.h"
-#include "cvmx-smix-defs.h"
+#include <asm/octeon/cvmx-gmxx-defs.h>
+#include <asm/octeon/cvmx-smix-defs.h>
 
 #if defined(CONFIG_CAVIUM_OCTEON_NUM_PACKET_BUFFERS) \
 	&& CONFIG_CAVIUM_OCTEON_NUM_PACKET_BUFFERS
@@ -356,7 +357,7 @@ static void cvm_oct_common_set_multicast_list(struct net_device *dev)
 			/* Force accept multicast packets */
 			control.s.mcst = 2;
 		else
-			/* Force reject multicat packets */
+			/* Force reject multicast packets */
 			control.s.mcst = 1;
 
 		if (dev->flags & IFF_PROMISC)

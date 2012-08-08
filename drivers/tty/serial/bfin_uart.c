@@ -1,7 +1,7 @@
 /*
  * Blackfin On-Chip Serial Driver
  *
- * Copyright 2006-2010 Analog Devices Inc.
+ * Copyright 2006-2011 Analog Devices Inc.
  *
  * Enter bugs at http://blackfin.uclinux.org/
  *
@@ -35,10 +35,6 @@
 #include <asm/portmux.h>
 #include <asm/cacheflush.h>
 #include <asm/dma.h>
-
-#define port_membase(uart)     (((struct bfin_serial_port *)(uart))->port.membase)
-#define get_lsr_cache(uart)    (((struct bfin_serial_port *)(uart))->lsr)
-#define put_lsr_cache(uart, v) (((struct bfin_serial_port *)(uart))->lsr = (v))
 #include <asm/bfin_serial.h>
 
 #ifdef CONFIG_SERIAL_BFIN_MODULE
@@ -116,15 +112,22 @@ static void bfin_serial_set_mctrl(struct uart_port *port, unsigned int mctrl)
 static irqreturn_t bfin_serial_mctrl_cts_int(int irq, void *dev_id)
 {
 	struct bfin_serial_port *uart = dev_id;
-	unsigned int status;
-
-	status = bfin_serial_get_mctrl(&uart->port);
-	uart_handle_cts_change(&uart->port, status & TIOCM_CTS);
+	unsigned int status = bfin_serial_get_mctrl(&uart->port);
 #ifdef CONFIG_SERIAL_BFIN_HARD_CTSRTS
-	uart->scts = 1;
+	struct tty_struct *tty = uart->port.state->port.tty;
+
 	UART_CLEAR_SCTS(uart);
-	UART_CLEAR_IER(uart, EDSSI);
+	if (tty->hw_stopped) {
+		if (status) {
+			tty->hw_stopped = 0;
+			uart_write_wakeup(&uart->port);
+		}
+	} else {
+		if (!status)
+			tty->hw_stopped = 1;
+	}
 #endif
+	uart_handle_cts_change(&uart->port, status & TIOCM_CTS);
 
 	return IRQ_HANDLED;
 }
@@ -159,7 +162,7 @@ static void bfin_serial_stop_tx(struct uart_port *port)
 	uart->tx_count = 0;
 	uart->tx_done = 1;
 #else
-#ifdef CONFIG_BF54x
+#if defined(CONFIG_BF54x) || defined(CONFIG_BF60x)
 	/* Clear TFI bit */
 	UART_PUT_LSR(uart, TFI);
 #endif
@@ -174,13 +177,6 @@ static void bfin_serial_start_tx(struct uart_port *port)
 {
 	struct bfin_serial_port *uart = (struct bfin_serial_port *)port;
 	struct tty_struct *tty = uart->port.state->port.tty;
-
-#ifdef CONFIG_SERIAL_BFIN_HARD_CTSRTS
-	if (uart->scts && !(bfin_serial_get_mctrl(&uart->port) & TIOCM_CTS)) {
-		uart->scts = 0;
-		uart_handle_cts_change(&uart->port, uart->scts);
-	}
-#endif
 
 	/*
 	 * To avoid losting RX interrupt, we reset IR function
@@ -337,7 +333,7 @@ static void bfin_serial_tx_chars(struct bfin_serial_port *uart)
 	struct circ_buf *xmit = &uart->port.state->xmit;
 
 	if (uart_circ_empty(xmit) || uart_tx_stopped(&uart->port)) {
-#ifdef CONFIG_BF54x
+#if defined(CONFIG_BF54x) || defined(CONFIG_BF60x)
 		/* Clear TFI bit */
 		UART_PUT_LSR(uart, TFI);
 #endif
@@ -380,12 +376,6 @@ static irqreturn_t bfin_serial_tx_int(int irq, void *dev_id)
 {
 	struct bfin_serial_port *uart = dev_id;
 
-#ifdef CONFIG_SERIAL_BFIN_HARD_CTSRTS
-	if (uart->scts && !(bfin_serial_get_mctrl(&uart->port) & TIOCM_CTS)) {
-		uart->scts = 0;
-		uart_handle_cts_change(&uart->port, uart->scts);
-	}
-#endif
 	spin_lock(&uart->port.lock);
 	if (UART_GET_LSR(uart) & THRE)
 		bfin_serial_tx_chars(uart);
@@ -531,13 +521,6 @@ static irqreturn_t bfin_serial_dma_tx_int(int irq, void *dev_id)
 	struct bfin_serial_port *uart = dev_id;
 	struct circ_buf *xmit = &uart->port.state->xmit;
 
-#ifdef CONFIG_SERIAL_BFIN_HARD_CTSRTS
-	if (uart->scts && !(bfin_serial_get_mctrl(&uart->port)&TIOCM_CTS)) {
-		uart->scts = 0;
-		uart_handle_cts_change(&uart->port, uart->scts);
-	}
-#endif
-
 	spin_lock(&uart->port.lock);
 	if (!(get_dma_curr_irqstat(uart->tx_dma_channel)&DMA_RUN)) {
 		disable_dma(uart->tx_dma_channel);
@@ -548,11 +531,13 @@ static irqreturn_t bfin_serial_dma_tx_int(int irq, void *dev_id)
 		 *		when start a new tx.
 		 */
 		UART_CLEAR_IER(uart, ETBEI);
-		xmit->tail = (xmit->tail + uart->tx_count) & (UART_XMIT_SIZE - 1);
 		uart->port.icount.tx += uart->tx_count;
+		if (!(xmit->tail == 0 && xmit->head == 0)) {
+			xmit->tail = (xmit->tail + uart->tx_count) & (UART_XMIT_SIZE - 1);
 
-		if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
-			uart_write_wakeup(&uart->port);
+			if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+				uart_write_wakeup(&uart->port);
+		}
 
 		bfin_serial_dma_tx_chars(uart);
 	}
@@ -564,7 +549,7 @@ static irqreturn_t bfin_serial_dma_tx_int(int irq, void *dev_id)
 static irqreturn_t bfin_serial_dma_rx_int(int irq, void *dev_id)
 {
 	struct bfin_serial_port *uart = dev_id;
-	unsigned short irqstat;
+	unsigned int irqstat;
 	int x_pos, pos;
 
 	spin_lock(&uart->rx_lock);
@@ -597,7 +582,7 @@ static irqreturn_t bfin_serial_dma_rx_int(int irq, void *dev_id)
 static unsigned int bfin_serial_tx_empty(struct uart_port *port)
 {
 	struct bfin_serial_port *uart = (struct bfin_serial_port *)port;
-	unsigned short lsr;
+	unsigned int lsr;
 
 	lsr = UART_GET_LSR(uart);
 	if (lsr & TEMT)
@@ -609,7 +594,7 @@ static unsigned int bfin_serial_tx_empty(struct uart_port *port)
 static void bfin_serial_break_ctl(struct uart_port *port, int break_state)
 {
 	struct bfin_serial_port *uart = (struct bfin_serial_port *)port;
-	u16 lcr = UART_GET_LCR(uart);
+	u32 lcr = UART_GET_LCR(uart);
 	if (break_state)
 		lcr |= SB;
 	else
@@ -739,20 +724,26 @@ static int bfin_serial_startup(struct uart_port *port)
 			pr_info("Unable to attach BlackFin UART CTS interrupt. So, disable it.\n");
 		}
 	}
-	if (uart->rts_pin >= 0)
-		gpio_direction_output(uart->rts_pin, 0);
+	if (uart->rts_pin >= 0) {
+		if (gpio_request(uart->rts_pin, DRIVER_NAME)) {
+			pr_info("fail to request RTS PIN at GPIO_%d\n", uart->rts_pin);
+			uart->rts_pin = -1;
+		} else
+			gpio_direction_output(uart->rts_pin, 0);
+	}
 #endif
 #ifdef CONFIG_SERIAL_BFIN_HARD_CTSRTS
-	if (uart->cts_pin >= 0 && request_irq(uart->status_irq,
-		bfin_serial_mctrl_cts_int,
-		0, "BFIN_UART_MODEM_STATUS", uart)) {
-		uart->cts_pin = -1;
-		pr_info("Unable to attach BlackFin UART Modem Status interrupt.\n");
-	}
+	if (uart->cts_pin >= 0) {
+		if (request_irq(uart->status_irq, bfin_serial_mctrl_cts_int,
+			IRQF_DISABLED, "BFIN_UART_MODEM_STATUS", uart)) {
+			uart->cts_pin = -1;
+			dev_info(port->dev, "Unable to attach BlackFin UART Modem Status interrupt.\n");
+		}
 
-	/* CTS RTS PINs are negative assertive. */
-	UART_PUT_MCR(uart, ACTS);
-	UART_SET_IER(uart, EDSSI);
+		/* CTS RTS PINs are negative assertive. */
+		UART_PUT_MCR(uart, UART_GET_MCR(uart) | ACTS);
+		UART_SET_IER(uart, EDSSI);
+	}
 #endif
 
 	UART_SET_IER(uart, ERBFI);
@@ -792,6 +783,8 @@ static void bfin_serial_shutdown(struct uart_port *port)
 #ifdef CONFIG_SERIAL_BFIN_CTSRTS
 	if (uart->cts_pin >= 0)
 		free_irq(gpio_to_irq(uart->cts_pin), uart);
+	if (uart->rts_pin >= 0)
+		gpio_free(uart->rts_pin);
 #endif
 #ifdef CONFIG_SERIAL_BFIN_HARD_CTSRTS
 	if (uart->cts_pin >= 0)
@@ -806,7 +799,7 @@ bfin_serial_set_termios(struct uart_port *port, struct ktermios *termios,
 	struct bfin_serial_port *uart = (struct bfin_serial_port *)port;
 	unsigned long flags;
 	unsigned int baud, quot;
-	unsigned short val, ier, lcr = 0;
+	unsigned int ier, lcr = 0;
 
 	switch (termios->c_cflag & CSIZE) {
 	case CS8:
@@ -878,26 +871,23 @@ bfin_serial_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	/* Disable UART */
 	ier = UART_GET_IER(uart);
+	UART_PUT_GCTL(uart, UART_GET_GCTL(uart) & ~UCEN);
 	UART_DISABLE_INTS(uart);
 
-	/* Set DLAB in LCR to Access DLL and DLH */
+	/* Set DLAB in LCR to Access CLK */
 	UART_SET_DLAB(uart);
 
-	UART_PUT_DLL(uart, quot & 0xFF);
-	UART_PUT_DLH(uart, (quot >> 8) & 0xFF);
+	UART_PUT_CLK(uart, quot);
 	SSYNC();
 
 	/* Clear DLAB in LCR to Access THR RBR IER */
 	UART_CLEAR_DLAB(uart);
 
-	UART_PUT_LCR(uart, lcr);
+	UART_PUT_LCR(uart, (UART_GET_LCR(uart) & ~LCR_MASK) | lcr);
 
 	/* Enable UART */
 	UART_ENABLE_INTS(uart, ier);
-
-	val = UART_GET_GCTL(uart);
-	val |= UCEN;
-	UART_PUT_GCTL(uart, val);
+	UART_PUT_GCTL(uart, UART_GET_GCTL(uart) | UCEN);
 
 	/* Port speed changed, update the per-port timeout. */
 	uart_update_timeout(port, termios->c_cflag, baud);
@@ -957,17 +947,17 @@ bfin_serial_verify_port(struct uart_port *port, struct serial_struct *ser)
 static void bfin_serial_set_ldisc(struct uart_port *port, int ld)
 {
 	struct bfin_serial_port *uart = (struct bfin_serial_port *)port;
-	unsigned short val;
+	unsigned int val;
 
 	switch (ld) {
 	case N_IRDA:
 		val = UART_GET_GCTL(uart);
-		val |= (IREN | RPOLC);
+		val |= (UMOD_IRDA | RPOLC);
 		UART_PUT_GCTL(uart, val);
 		break;
 	default:
 		val = UART_GET_GCTL(uart);
-		val &= ~(IREN | RPOLC);
+		val &= ~(UMOD_MASK | RPOLC);
 		UART_PUT_GCTL(uart, val);
 	}
 }
@@ -975,13 +965,13 @@ static void bfin_serial_set_ldisc(struct uart_port *port, int ld)
 static void bfin_serial_reset_irda(struct uart_port *port)
 {
 	struct bfin_serial_port *uart = (struct bfin_serial_port *)port;
-	unsigned short val;
+	unsigned int val;
 
 	val = UART_GET_GCTL(uart);
-	val &= ~(IREN | RPOLC);
+	val &= ~(UMOD_MASK | RPOLC);
 	UART_PUT_GCTL(uart, val);
 	SSYNC();
-	val |= (IREN | RPOLC);
+	val |= (UMOD_IRDA | RPOLC);
 	UART_PUT_GCTL(uart, val);
 	SSYNC();
 }
@@ -1073,12 +1063,12 @@ static void __init
 bfin_serial_console_get_options(struct bfin_serial_port *uart, int *baud,
 			   int *parity, int *bits)
 {
-	unsigned short status;
+	unsigned int status;
 
 	status = UART_GET_IER(uart) & (ERBFI | ETBEI);
 	if (status == (ERBFI | ETBEI)) {
 		/* ok, the port was enabled */
-		u16 lcr, dlh, dll;
+		u32 lcr, clk;
 
 		lcr = UART_GET_LCR(uart);
 
@@ -1089,30 +1079,17 @@ bfin_serial_console_get_options(struct bfin_serial_port *uart, int *baud,
 			else
 				*parity = 'o';
 		}
-		switch (lcr & 0x03) {
-		case 0:
-			*bits = 5;
-			break;
-		case 1:
-			*bits = 6;
-			break;
-		case 2:
-			*bits = 7;
-			break;
-		case 3:
-			*bits = 8;
-			break;
-		}
-		/* Set DLAB in LCR to Access DLL and DLH */
+		*bits = ((lcr & WLS_MASK) >> WLS_OFFSET) + 5;
+
+		/* Set DLAB in LCR to Access CLK */
 		UART_SET_DLAB(uart);
 
-		dll = UART_GET_DLL(uart);
-		dlh = UART_GET_DLH(uart);
+		clk = UART_GET_CLK(uart);
 
 		/* Clear DLAB in LCR to Access THR RBR IER */
 		UART_CLEAR_DLAB(uart);
 
-		*baud = get_sclk() / (16*(dll | dlh << 8));
+		*baud = get_sclk() / (16*clk);
 	}
 	pr_debug("%s:baud = %d, parity = %c, bits= %d\n", __func__, *baud, *parity, *bits);
 }
@@ -1370,18 +1347,18 @@ static int bfin_serial_probe(struct platform_device *pdev)
 		res = platform_get_resource(pdev, IORESOURCE_IO, 0);
 		if (res == NULL)
 			uart->cts_pin = -1;
-		else
+		else {
 			uart->cts_pin = res->start;
+#ifdef CONFIG_SERIAL_BFIN_CTSRTS
+			uart->port.flags |= ASYNC_CTS_FLOW;
+#endif
+		}
 
 		res = platform_get_resource(pdev, IORESOURCE_IO, 1);
 		if (res == NULL)
 			uart->rts_pin = -1;
 		else
 			uart->rts_pin = res->start;
-# if defined(CONFIG_SERIAL_BFIN_CTSRTS)
-		if (uart->rts_pin >= 0)
-			gpio_request(uart->rts_pin, DRIVER_NAME);
-# endif
 #endif
 	}
 
@@ -1421,10 +1398,6 @@ static int __devexit bfin_serial_remove(struct platform_device *pdev)
 
 	if (uart) {
 		uart_remove_one_port(&bfin_serial_reg, &uart->port);
-#ifdef CONFIG_SERIAL_BFIN_CTSRTS
-		if (uart->rts_pin >= 0)
-			gpio_free(uart->rts_pin);
-#endif
 		iounmap(uart->port.membase);
 		peripheral_free_list(
 			(unsigned short *)pdev->dev.platform_data);

@@ -103,11 +103,10 @@ em7210_pci_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 }
 
 static struct hw_pci em7210_pci __initdata = {
-	.swizzle	= pci_std_swizzle,
 	.nr_controllers = 1,
+	.ops		= &iop3xx_ops,
 	.setup		= iop3xx_pci_setup,
 	.preinit	= iop3xx_pci_preinit,
-	.scan		= iop3xx_pci_scan_bus,
 	.map_irq	= em7210_pci_map_irq,
 };
 
@@ -208,4 +207,5 @@ MACHINE_START(EM7210, "Lanner EM7210")
 	.init_irq	= iop32x_init_irq,
 	.timer		= &em7210_timer,
 	.init_machine	= em7210_init_machine,
+	.restart	= iop3xx_restart,
 MACHINE_END

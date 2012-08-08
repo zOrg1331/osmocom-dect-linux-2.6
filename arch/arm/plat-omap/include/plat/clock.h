@@ -59,6 +59,8 @@ struct clkops {
 #define RATE_IN_4430		(1 << 5)
 #define RATE_IN_TI816X		(1 << 6)
 #define RATE_IN_4460		(1 << 7)
+#define RATE_IN_AM33XX		(1 << 8)
+#define RATE_IN_TI814X		(1 << 9)
 
 #define RATE_IN_24XX		(RATE_IN_242X | RATE_IN_243X)
 #define RATE_IN_34XX		(RATE_IN_3430ES1 | RATE_IN_3430ES2PLUS)
@@ -84,7 +86,7 @@ struct clkops {
 struct clksel_rate {
 	u32			val;
 	u8			div;
-	u8			flags;
+	u16			flags;
 };
 
 /**
@@ -270,8 +272,6 @@ struct clk {
 #endif
 };
 
-struct cpufreq_frequency_table;
-
 struct clk_functions {
 	int		(*clk_enable)(struct clk *clk);
 	void		(*clk_disable)(struct clk *clk);
@@ -281,10 +281,6 @@ struct clk_functions {
 	void		(*clk_allow_idle)(struct clk *clk);
 	void		(*clk_deny_idle)(struct clk *clk);
 	void		(*clk_disable_unused)(struct clk *clk);
-#ifdef CONFIG_CPU_FREQ
-	void		(*clk_init_cpufreq_table)(struct cpufreq_frequency_table **);
-	void		(*clk_exit_cpufreq_table)(struct cpufreq_frequency_table **);
-#endif
 };
 
 extern int mpurate;
@@ -299,10 +295,6 @@ extern void recalculate_root_clocks(void);
 extern unsigned long followparent_recalc(struct clk *clk);
 extern void clk_enable_init_clocks(void);
 unsigned long omap_fixed_divisor_recalc(struct clk *clk);
-#ifdef CONFIG_CPU_FREQ
-extern void clk_init_cpufreq_table(struct cpufreq_frequency_table **table);
-extern void clk_exit_cpufreq_table(struct cpufreq_frequency_table **table);
-#endif
 extern struct clk *omap_clk_get_by_name(const char *name);
 extern int omap_clk_enable_autoidle_all(void);
 extern int omap_clk_disable_autoidle_all(void);

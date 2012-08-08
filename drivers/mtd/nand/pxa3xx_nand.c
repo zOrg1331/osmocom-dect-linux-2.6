@@ -185,7 +185,7 @@ struct pxa3xx_nand_info {
 	uint32_t		ndcb2;
 };
 
-static int use_dma = 1;
+static bool use_dma = 1;
 module_param(use_dma, bool, 0444);
 MODULE_PARM_DESC(use_dma, "enable DMA for data transferring to/from NAND HW");
 
@@ -682,14 +682,15 @@ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
 }
 
 static void pxa3xx_nand_write_page_hwecc(struct mtd_info *mtd,
-		struct nand_chip *chip, const uint8_t *buf)
+		struct nand_chip *chip, const uint8_t *buf, int oob_required)
 {
 	chip->write_buf(mtd, buf, mtd->writesize);
 	chip->write_buf(mtd, chip->oob_poi, mtd->oobsize);
 }
 
 static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
-		struct nand_chip *chip, uint8_t *buf, int page)
+		struct nand_chip *chip, uint8_t *buf, int oob_required,
+		int page)
 {
 	struct pxa3xx_nand_host *host = mtd->priv;
 	struct pxa3xx_nand_info *info = host->info_data;
@@ -1002,8 +1003,8 @@ static int pxa3xx_nand_scan(struct mtd_info *mtd)
 KEEP_CONFIG:
 	chip->ecc.mode = NAND_ECC_HW;
 	chip->ecc.size = host->page_size;
+	chip->ecc.strength = 1;
 
-	chip->options = NAND_NO_AUTOINCR;
 	chip->options |= NAND_NO_READRDY;
 	if (host->reg_ndcr & NDCR_DWIDTH_M)
 		chip->options |= NAND_BUSWIDTH_16;
@@ -1228,8 +1229,9 @@ static int pxa3xx_nand_probe(struct platform_device *pdev)
 			continue;
 		}
 
-		ret = mtd_device_parse_register(info->host[cs]->mtd, NULL, 0,
-				pdata->parts[cs], pdata->nr_parts[cs]);
+		ret = mtd_device_parse_register(info->host[cs]->mtd, NULL,
+						NULL, pdata->parts[cs],
+						pdata->nr_parts[cs]);
 		if (!ret)
 			probe_success = 1;
 	}
@@ -1258,7 +1260,7 @@ static int pxa3xx_nand_suspend(struct platform_device *pdev, pm_message_t state)
 
 	for (cs = 0; cs < pdata->num_cs; cs++) {
 		mtd = info->host[cs]->mtd;
-		mtd->suspend(mtd);
+		mtd_suspend(mtd);
 	}
 
 	return 0;
@@ -1291,7 +1293,7 @@ static int pxa3xx_nand_resume(struct platform_device *pdev)
 	nand_writel(info, NDSR, NDSR_MASK);
 	for (cs = 0; cs < pdata->num_cs; cs++) {
 		mtd = info->host[cs]->mtd;
-		mtd->resume(mtd);
+		mtd_resume(mtd);
 	}
 
 	return 0;
@@ -1311,17 +1313,7 @@ static struct platform_driver pxa3xx_nand_driver = {
 	.resume		= pxa3xx_nand_resume,
 };
 
-static int __init pxa3xx_nand_init(void)
-{
-	return platform_driver_register(&pxa3xx_nand_driver);
-}
-module_init(pxa3xx_nand_init);
-
-static void __exit pxa3xx_nand_exit(void)
-{
-	platform_driver_unregister(&pxa3xx_nand_driver);
-}
-module_exit(pxa3xx_nand_exit);
+module_platform_driver(pxa3xx_nand_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("PXA3xx NAND controller driver");

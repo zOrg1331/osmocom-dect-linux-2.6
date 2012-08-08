@@ -32,7 +32,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/include/ "p3060si.dtsi"
+/include/ "fsl/p3060si-pre.dtsi"
 
 / {
 	model = "fsl,P3060QDS";
@@ -50,6 +50,8 @@
 	};
 
 	soc: soc@ffe000000 {
+		ranges = <0x00000000 0xf 0xfe000000 0x1000000>;
+		reg = <0xf 0xfe000000 0 0x00001000>;
 		spi@110000 {
 			flash@0 {
 				#address-cells = <1>;
@@ -138,7 +140,7 @@
 		};
 	};
 
-	rapidio@ffe0c0000 {
+	rio: rapidio@ffe0c0000 {
 		reg = <0xf 0xfe0c0000 0 0x11000>;
 
 		port1 {
@@ -149,7 +151,7 @@
 		};
 	};
 
-	localbus@ffe124000 {
+	lbc: localbus@ffe124000 {
 		reg = <0xf 0xfe124000 0 0x1000>;
 		ranges = <0 0 0xf 0xe8000000 0x08000000
 			  2 0 0xf 0xffa00000 0x00040000
@@ -236,3 +238,5 @@
 		};
 	};
 };
+
+/include/ "fsl/p3060si-post.dtsi"

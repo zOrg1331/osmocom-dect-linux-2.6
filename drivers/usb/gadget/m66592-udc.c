@@ -390,7 +390,7 @@ static int alloc_pipe_config(struct m66592_ep *ep,
 	int *counter;
 	int ret;
 
-	ep->desc = desc;
+	ep->ep.desc = desc;
 
 	BUG_ON(ep->pipenum);
 
@@ -558,7 +558,7 @@ static void start_packet_read(struct m66592_ep *ep, struct m66592_request *req)
 
 static void start_packet(struct m66592_ep *ep, struct m66592_request *req)
 {
-	if (ep->desc->bEndpointAddress & USB_DIR_IN)
+	if (ep->ep.desc->bEndpointAddress & USB_DIR_IN)
 		start_packet_write(ep, req);
 	else
 		start_packet_read(ep, req);
@@ -734,7 +734,7 @@ __acquires(m66592->lock)
 
 	if (restart) {
 		req = list_entry(ep->queue.next, struct m66592_request, queue);
-		if (ep->desc)
+		if (ep->ep.desc)
 			start_packet(ep, req);
 	}
 }
@@ -917,7 +917,7 @@ static void irq_pipe_ready(struct m66592 *m66592, u16 status, u16 enb)
 				ep = m66592->pipenum2ep[pipenum];
 				req = list_entry(ep->queue.next,
 						 struct m66592_request, queue);
-				if (ep->desc->bEndpointAddress & USB_DIR_IN)
+				if (ep->ep.desc->bEndpointAddress & USB_DIR_IN)
 					irq_packet_write(ep, req);
 				else
 					irq_packet_read(ep, req);
@@ -1377,7 +1377,7 @@ static int m66592_queue(struct usb_ep *_ep, struct usb_request *_req,
 	req->req.actual = 0;
 	req->req.status = -EINPROGRESS;
 
-	if (ep->desc == NULL)	/* control */
+	if (ep->ep.desc == NULL)	/* control */
 		start_ep0(ep, req);
 	else {
 		if (request && !ep->busy)
@@ -1472,7 +1472,7 @@ static int m66592_start(struct usb_gadget_driver *driver,
 	int retval;
 
 	if (!driver
-			|| driver->speed < USB_SPEED_HIGH
+			|| driver->max_speed < USB_SPEED_HIGH
 			|| !bind
 			|| !driver->setup)
 		return -EINVAL;
@@ -1653,7 +1653,7 @@ static int __init m66592_probe(struct platform_device *pdev)
 	m66592->gadget.ops = &m66592_gadget_ops;
 	device_initialize(&m66592->gadget.dev);
 	dev_set_name(&m66592->gadget.dev, "gadget");
-	m66592->gadget.is_dualspeed = 1;
+	m66592->gadget.max_speed = USB_SPEED_HIGH;
 	m66592->gadget.dev.parent = &pdev->dev;
 	m66592->gadget.dev.dma_mask = pdev->dev.dma_mask;
 	m66592->gadget.dev.release = pdev->dev.release;

@@ -53,6 +53,7 @@
 
 #ifdef __KERNEL__
 #include <linux/err.h>
+#include <linux/bug.h>
 #include <linux/virtio.h>
 
 /**
@@ -73,15 +74,6 @@
  * @set_status: write the status byte
  *	vdev: the virtio_device
  *	status: the new status byte
- * @request_vqs: request the specified number of virtqueues
- *	vdev: the virtio_device
- *	max_vqs: the max number of virtqueues we want
- *      If supplied, must call before any virtqueues are instantiated.
- *      To modify the max number of virtqueues after request_vqs has been
- *      called, call free_vqs and then request_vqs with a new value.
- * @free_vqs: cleanup resources allocated by request_vqs
- *	vdev: the virtio_device
- *      If supplied, must call after all virtqueues have been deleted.
  * @reset: reset the device
  *	vdev: the virtio device
  *	After this, status and feature negotiation must be done again
@@ -102,6 +94,10 @@
  *	vdev: the virtio_device
  *	This gives the final feature bits for the device: it can change
  *	the dev->feature bits if it wants.
+ * @bus_name: return the bus name associated with the device
+ *	vdev: the virtio_device
+ *      This returns a pointer to the bus name a la pci_name from which
+ *      the caller can then copy.
  */
 typedef void vq_callback_t(struct virtqueue *);
 struct virtio_config_ops {
@@ -119,6 +115,7 @@ struct virtio_config_ops {
 	void (*del_vqs)(struct virtio_device *);
 	u32 (*get_features)(struct virtio_device *vdev);
 	void (*finalize_features)(struct virtio_device *vdev);
+	const char *(*bus_name)(struct virtio_device *vdev);
 };
 
 /* If driver didn't advertise the feature, it will never appear. */
@@ -150,7 +147,7 @@ static inline bool virtio_has_feature(const struct virtio_device *vdev,
  * @vdev: the virtio device
  * @fbit: the feature bit
  * @offset: the type to search for.
- * @val: a pointer to the value to fill in.
+ * @v: a pointer to the value to fill in.
  *
  * The return value is -ENOENT if the feature doesn't exist.  Otherwise
  * the config value is copied into whatever is pointed to by v. */
@@ -184,5 +181,14 @@ struct virtqueue *virtio_find_single_vq(struct virtio_device *vdev,
 		return ERR_PTR(err);
 	return vq;
 }
+
+static inline
+const char *virtio_bus_name(struct virtio_device *vdev)
+{
+	if (!vdev->config->bus_name)
+		return "virtio";
+	return vdev->config->bus_name(vdev);
+}
+
 #endif /* __KERNEL__ */
 #endif /* _LINUX_VIRTIO_CONFIG_H */

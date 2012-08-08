@@ -33,8 +33,6 @@
 #include "dvb_frontend.h"
 #include "dmxdev.h"
 
-#define TM6000_VERSION KERNEL_VERSION(0, 0, 2)
-
 /* Inputs */
 enum tm6000_itype {
 	TM6000_INPUT_TV	= 1,
@@ -187,6 +185,9 @@ struct tm6000_core {
 
 	/* Device Capabilities*/
 	struct tm6000_capabilities	caps;
+
+	/* Used to load alsa/dvb */
+        struct work_struct		request_module_wk;
 
 	/* Tuner configuration */
 	int				tuner_type;		/* type of the tuner */

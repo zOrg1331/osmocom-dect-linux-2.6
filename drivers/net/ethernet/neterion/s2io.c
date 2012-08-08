@@ -81,7 +81,6 @@
 #include <linux/prefetch.h>
 #include <net/tcp.h>
 
-#include <asm/system.h>
 #include <asm/div64.h>
 #include <asm/irq.h>
 
@@ -2524,7 +2523,7 @@ static int fill_rx_buffers(struct s2io_nic *nic, struct ring_info *ring,
 			size = ring->mtu + ALIGN_SIZE + BUF0_LEN + 4;
 
 		/* allocate skb */
-		skb = dev_alloc_skb(size);
+		skb = netdev_alloc_skb(nic->dev, size);
 		if (!skb) {
 			DBG_PRINT(INFO_DBG, "%s: Could not allocate skb\n",
 				  ring->dev->name);
@@ -2847,6 +2846,7 @@ static int s2io_poll_inta(struct napi_struct *napi, int budget)
 static void s2io_netpoll(struct net_device *dev)
 {
 	struct s2io_nic *nic = netdev_priv(dev);
+	const int irq = nic->pdev->irq;
 	struct XENA_dev_config __iomem *bar0 = nic->bar0;
 	u64 val64 = 0xFFFFFFFFFFFFFFFFULL;
 	int i;
@@ -2856,7 +2856,7 @@ static void s2io_netpoll(struct net_device *dev)
 	if (pci_channel_offline(nic->pdev))
 		return;
 
-	disable_irq(dev->irq);
+	disable_irq(irq);
 
 	writeq(val64, &bar0->rx_traffic_int);
 	writeq(val64, &bar0->tx_traffic_int);
@@ -2885,7 +2885,7 @@ static void s2io_netpoll(struct net_device *dev)
 			break;
 		}
 	}
-	enable_irq(dev->irq);
+	enable_irq(irq);
 }
 #endif
 
@@ -3898,9 +3898,7 @@ static void remove_msix_isr(struct s2io_nic *sp)
 
 static void remove_inta_isr(struct s2io_nic *sp)
 {
-	struct net_device *dev = sp->dev;
-
-	free_irq(sp->pdev->irq, dev);
+	free_irq(sp->pdev->irq, sp->dev);
 }
 
 /* ********************************************************* *
@@ -5248,7 +5246,7 @@ static int s2io_set_mac_addr(struct net_device *dev, void *p)
 	struct sockaddr *addr = p;
 
 	if (!is_valid_ether_addr(addr->sa_data))
-		return -EINVAL;
+		return -EADDRNOTAVAIL;
 
 	memcpy(dev->dev_addr, addr->sa_data, dev->addr_len);
 
@@ -5391,10 +5389,9 @@ static void s2io_ethtool_gdrvinfo(struct net_device *dev,
 {
 	struct s2io_nic *sp = netdev_priv(dev);
 
-	strncpy(info->driver, s2io_driver_name, sizeof(info->driver));
-	strncpy(info->version, s2io_driver_version, sizeof(info->version));
-	strncpy(info->fw_version, "", sizeof(info->fw_version));
-	strncpy(info->bus_info, pci_name(sp->pdev), sizeof(info->bus_info));
+	strlcpy(info->driver, s2io_driver_name, sizeof(info->driver));
+	strlcpy(info->version, s2io_driver_version, sizeof(info->version));
+	strlcpy(info->bus_info, pci_name(sp->pdev), sizeof(info->bus_info));
 	info->regdump_len = XENA_REG_SPACE;
 	info->eedump_len = XENA_EEPROM_SPACE;
 }
@@ -6616,10 +6613,10 @@ static void s2io_ethtool_get_strings(struct net_device *dev,
 	}
 }
 
-static int s2io_set_features(struct net_device *dev, u32 features)
+static int s2io_set_features(struct net_device *dev, netdev_features_t features)
 {
 	struct s2io_nic *sp = netdev_priv(dev);
-	u32 changed = (features ^ dev->features) & NETIF_F_LRO;
+	netdev_features_t changed = (features ^ dev->features) & NETIF_F_LRO;
 
 	if (changed && netif_running(dev)) {
 		int rc;
@@ -6821,7 +6818,7 @@ static int set_rxd_buffer_pointer(struct s2io_nic *sp, struct RxD_t *rxdp,
 			 */
 			rxdp1->Buffer0_ptr = *temp0;
 		} else {
-			*skb = dev_alloc_skb(size);
+			*skb = netdev_alloc_skb(dev, size);
 			if (!(*skb)) {
 				DBG_PRINT(INFO_DBG,
 					  "%s: Out of memory to allocate %s\n",
@@ -6850,7 +6847,7 @@ static int set_rxd_buffer_pointer(struct s2io_nic *sp, struct RxD_t *rxdp,
 			rxdp3->Buffer0_ptr = *temp0;
 			rxdp3->Buffer1_ptr = *temp1;
 		} else {
-			*skb = dev_alloc_skb(size);
+			*skb = netdev_alloc_skb(dev, size);
 			if (!(*skb)) {
 				DBG_PRINT(INFO_DBG,
 					  "%s: Out of memory to allocate %s\n",
@@ -7048,7 +7045,7 @@ static int s2io_add_isr(struct s2io_nic *sp)
 		}
 	}
 	if (sp->config.intr_type == INTA) {
-		err = request_irq((int)sp->pdev->irq, s2io_isr, IRQF_SHARED,
+		err = request_irq(sp->pdev->irq, s2io_isr, IRQF_SHARED,
 				  sp->name, dev);
 		if (err) {
 			DBG_PRINT(ERR_DBG, "%s: ISR registration failed\n",
@@ -7761,7 +7758,6 @@ s2io_init_nic(struct pci_dev *pdev, const struct pci_device_id *pre)
 	else
 		dev = alloc_etherdev(sizeof(struct s2io_nic));
 	if (dev == NULL) {
-		DBG_PRINT(ERR_DBG, "Device allocation failed\n");
 		pci_disable_device(pdev);
 		pci_release_regions(pdev);
 		return -ENODEV;
@@ -7910,9 +7906,6 @@ s2io_init_nic(struct pci_dev *pdev, const struct pci_device_id *pre)
 		ret = -ENOMEM;
 		goto bar1_remap_failed;
 	}
-
-	dev->irq = pdev->irq;
-	dev->base_addr = (unsigned long)sp->bar0;
 
 	/* Initializing the BAR1 address as the start of the FIFO pointer. */
 	for (j = 0; j < MAX_TX_FIFOS; j++) {

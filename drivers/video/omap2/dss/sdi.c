@@ -24,6 +24,7 @@
 #include <linux/err.h>
 #include <linux/regulator/consumer.h>
 #include <linux/export.h>
+#include <linux/platform_device.h>
 
 #include <video/omapdss.h>
 #include "dss.h"
@@ -71,10 +72,6 @@ int omapdss_sdi_display_enable(struct omap_dss_device *dssdev)
 	if (r)
 		goto err_reg_enable;
 
-	r = dss_runtime_get();
-	if (r)
-		goto err_get_dss;
-
 	r = dispc_runtime_get();
 	if (r)
 		goto err_get_dispc;
@@ -107,7 +104,7 @@ int omapdss_sdi_display_enable(struct omap_dss_device *dssdev)
 	}
 
 
-	dispc_mgr_set_lcd_timings(dssdev->manager->id, t);
+	dss_mgr_set_timings(dssdev->manager, t);
 
 	r = dss_set_clock_div(&dss_cinfo);
 	if (r)
@@ -123,18 +120,20 @@ int omapdss_sdi_display_enable(struct omap_dss_device *dssdev)
 		goto err_sdi_enable;
 	mdelay(2);
 
-	dssdev->manager->enable(dssdev->manager);
+	r = dss_mgr_enable(dssdev->manager);
+	if (r)
+		goto err_mgr_enable;
 
 	return 0;
 
+err_mgr_enable:
+	dss_sdi_disable();
 err_sdi_enable:
 err_set_dispc_clock_div:
 err_set_dss_clock_div:
 err_calc_clock_div:
 	dispc_runtime_put();
 err_get_dispc:
-	dss_runtime_put();
-err_get_dss:
 	regulator_disable(sdi.vdds_sdi_reg);
 err_reg_enable:
 	omap_dss_stop_device(dssdev);
@@ -145,12 +144,11 @@ EXPORT_SYMBOL(omapdss_sdi_display_enable);
 
 void omapdss_sdi_display_disable(struct omap_dss_device *dssdev)
 {
-	dssdev->manager->disable(dssdev->manager);
+	dss_mgr_disable(dssdev->manager);
 
 	dss_sdi_disable();
 
 	dispc_runtime_put();
-	dss_runtime_put();
 
 	regulator_disable(sdi.vdds_sdi_reg);
 
@@ -158,7 +156,7 @@ void omapdss_sdi_display_disable(struct omap_dss_device *dssdev)
 }
 EXPORT_SYMBOL(omapdss_sdi_display_disable);
 
-int sdi_init_display(struct omap_dss_device *dssdev)
+static int __init sdi_init_display(struct omap_dss_device *dssdev)
 {
 	DSSDBG("SDI init\n");
 
@@ -178,11 +176,58 @@ int sdi_init_display(struct omap_dss_device *dssdev)
 	return 0;
 }
 
-int sdi_init(void)
+static void __init sdi_probe_pdata(struct platform_device *pdev)
 {
+	struct omap_dss_board_info *pdata = pdev->dev.platform_data;
+	int i, r;
+
+	for (i = 0; i < pdata->num_devices; ++i) {
+		struct omap_dss_device *dssdev = pdata->devices[i];
+
+		if (dssdev->type != OMAP_DISPLAY_TYPE_SDI)
+			continue;
+
+		r = sdi_init_display(dssdev);
+		if (r) {
+			DSSERR("device %s init failed: %d\n", dssdev->name, r);
+			continue;
+		}
+
+		r = omap_dss_register_device(dssdev, &pdev->dev, i);
+		if (r)
+			DSSERR("device %s register failed: %d\n",
+					dssdev->name, r);
+	}
+}
+
+static int __init omap_sdi_probe(struct platform_device *pdev)
+{
+	sdi_probe_pdata(pdev);
+
 	return 0;
 }
 
-void sdi_exit(void)
+static int __exit omap_sdi_remove(struct platform_device *pdev)
 {
+	omap_dss_unregister_child_devices(&pdev->dev);
+
+	return 0;
+}
+
+static struct platform_driver omap_sdi_driver = {
+	.remove         = __exit_p(omap_sdi_remove),
+	.driver         = {
+		.name   = "omapdss_sdi",
+		.owner  = THIS_MODULE,
+	},
+};
+
+int __init sdi_init_platform_driver(void)
+{
+	return platform_driver_probe(&omap_sdi_driver, omap_sdi_probe);
+}
+
+void __exit sdi_uninit_platform_driver(void)
+{
+	platform_driver_unregister(&omap_sdi_driver);
 }

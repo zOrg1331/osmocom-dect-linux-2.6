@@ -52,9 +52,9 @@ MODULE_SUPPORTED_DEVICE("{{S3,SonicVibes PCI}}");
 
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
-static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
-static int reverb[SNDRV_CARDS];
-static int mge[SNDRV_CARDS];
+static bool enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
+static bool reverb[SNDRV_CARDS];
+static bool mge[SNDRV_CARDS];
 static unsigned int dmaio = 0x7a00;	/* DDMA i/o address */
 
 module_param_array(index, int, NULL, 0444);
@@ -1530,22 +1530,11 @@ static void __devexit snd_sonic_remove(struct pci_dev *pci)
 	pci_set_drvdata(pci, NULL);
 }
 
-static struct pci_driver driver = {
+static struct pci_driver sonicvibes_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = snd_sonic_ids,
 	.probe = snd_sonic_probe,
 	.remove = __devexit_p(snd_sonic_remove),
 };
 
-static int __init alsa_card_sonicvibes_init(void)
-{
-	return pci_register_driver(&driver);
-}
-
-static void __exit alsa_card_sonicvibes_exit(void)
-{
-	pci_unregister_driver(&driver);
-}
-
-module_init(alsa_card_sonicvibes_init)
-module_exit(alsa_card_sonicvibes_exit)
+module_pci_driver(sonicvibes_driver);

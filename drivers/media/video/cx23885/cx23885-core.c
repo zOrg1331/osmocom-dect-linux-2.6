@@ -206,12 +206,12 @@ static struct sram_channel cx23887_sram_channels[] = {
 		.cnt2_reg	= DMA1_CNT2,
 	},
 	[SRAM_CH02] = {
-		.name		= "ch2",
-		.cmds_start	= 0x0,
-		.ctrl_start	= 0x0,
-		.cdt		= 0x0,
-		.fifo_start	= 0x0,
-		.fifo_size	= 0x0,
+		.name		= "VID A (VBI)",
+		.cmds_start	= 0x10050,
+		.ctrl_start	= 0x105F0,
+		.cdt		= 0x10810,
+		.fifo_start	= 0x3000,
+		.fifo_size	= 0x1000,
 		.ptr1_reg	= DMA2_PTR1,
 		.ptr2_reg	= DMA2_PTR2,
 		.cnt1_reg	= DMA2_CNT1,
@@ -266,12 +266,12 @@ static struct sram_channel cx23887_sram_channels[] = {
 		.cnt2_reg	= DMA5_CNT2,
 	},
 	[SRAM_CH07] = {
-		.name		= "ch7",
-		.cmds_start	= 0x0,
-		.ctrl_start	= 0x0,
-		.cdt		= 0x0,
-		.fifo_start	= 0x0,
-		.fifo_size	= 0x0,
+		.name		= "TV Audio",
+		.cmds_start	= 0x10190,
+		.ctrl_start	= 0x106B0,
+		.cdt		= 0x10930,
+		.fifo_start	= 0x7000,
+		.fifo_size	= 0x1000,
 		.ptr1_reg	= DMA6_PTR1,
 		.ptr2_reg	= DMA6_PTR2,
 		.cnt1_reg	= DMA6_CNT1,
@@ -1045,6 +1045,13 @@ static int cx23885_dev_setup(struct cx23885_dev *dev)
 	/* disable MSI for NetUP cards, otherwise CI is not working */
 	if (cx23885_boards[dev->board].ci_type > 0)
 		cx_clear(RDR_RDRCTL1, 1 << 8);
+
+	switch (dev->board) {
+	case CX23885_BOARD_TEVII_S470:
+	case CX23885_BOARD_TEVII_S471:
+		cx_clear(RDR_RDRCTL1, 1 << 8);
+		break;
+	}
 
 	return 0;
 }

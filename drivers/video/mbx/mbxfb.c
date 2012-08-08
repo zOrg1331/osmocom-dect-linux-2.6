@@ -950,7 +950,7 @@ static int __devinit mbxfb_probe(struct platform_device *dev)
 
 	mfbi->fb_virt_addr = ioremap_nocache(mfbi->fb_phys_addr,
 					     res_size(mfbi->fb_req));
-	if (!mfbi->reg_virt_addr) {
+	if (!mfbi->fb_virt_addr) {
 		dev_err(&dev->dev, "failed to ioremap frame buffer\n");
 		ret = -EINVAL;
 		goto err4;
@@ -1045,7 +1045,7 @@ static int __devexit mbxfb_remove(struct platform_device *dev)
 
 static struct platform_driver mbxfb_driver = {
 	.probe = mbxfb_probe,
-	.remove = mbxfb_remove,
+	.remove = __devexit_p(mbxfb_remove),
 	.suspend = mbxfb_suspend,
 	.resume = mbxfb_resume,
 	.driver = {
@@ -1053,18 +1053,7 @@ static struct platform_driver mbxfb_driver = {
 	},
 };
 
-int __devinit mbxfb_init(void)
-{
-	return platform_driver_register(&mbxfb_driver);
-}
-
-static void __devexit mbxfb_exit(void)
-{
-	platform_driver_unregister(&mbxfb_driver);
-}
-
-module_init(mbxfb_init);
-module_exit(mbxfb_exit);
+module_platform_driver(mbxfb_driver);
 
 MODULE_DESCRIPTION("loadable framebuffer driver for Marathon device");
 MODULE_AUTHOR("Mike Rapoport, Compulab");

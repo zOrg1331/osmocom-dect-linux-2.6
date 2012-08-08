@@ -18,7 +18,7 @@
  *
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  */
-#define _GNU_SOURCE
+#include "util.h"
 #include <dirent.h>
 #include <mntent.h>
 #include <stdio.h>
@@ -31,7 +31,6 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <ctype.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <linux/list.h>
@@ -43,10 +42,6 @@
 #include "evsel.h"
 
 #define VERSION "0.5"
-
-#define _STR(x) #x
-#define STR(x) _STR(x)
-#define MAX_PATH 256
 
 #define TRACE_CTRL	"tracing_on"
 #define TRACE		"trace"
@@ -73,27 +68,7 @@ struct events {
 };
 
 
-
-static void die(const char *fmt, ...)
-{
-	va_list ap;
-	int ret = errno;
-
-	if (errno)
-		perror("perf");
-	else
-		ret = -1;
-
-	va_start(ap, fmt);
-	fprintf(stderr, "  ");
-	vfprintf(stderr, fmt, ap);
-	va_end(ap);
-
-	fprintf(stderr, "\n");
-	exit(ret);
-}
-
-void *malloc_or_die(unsigned int size)
+static void *malloc_or_die(unsigned int size)
 {
 	void *data;
 
@@ -472,6 +447,8 @@ static void tracing_data_header(void)
 		buf[0] = 1;
 	else
 		buf[0] = 0;
+
+	read_trace_init(buf[0], buf[0]);
 
 	write_or_die(buf, 1);
 

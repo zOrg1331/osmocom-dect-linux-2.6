@@ -14,7 +14,8 @@
 
     You should have received a copy of the GNU General Public License
     along with this program; if not, write to the Free Software
-    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.		     */
+    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+    MA 02110-1301 USA.							     */
 /* ------------------------------------------------------------------------- */
 
 /* With some changes from Kyösti Mälkki <kmalkki@cc.hut.fi>.
@@ -771,6 +772,23 @@ struct device_type i2c_adapter_type = {
 };
 EXPORT_SYMBOL_GPL(i2c_adapter_type);
 
+/**
+ * i2c_verify_adapter - return parameter as i2c_adapter or NULL
+ * @dev: device, probably from some driver model iterator
+ *
+ * When traversing the driver model tree, perhaps using driver model
+ * iterators like @device_for_each_child(), you can't assume very much
+ * about the nodes you find.  Use this function to avoid oopses caused
+ * by wrongly treating some non-I2C device as an i2c_adapter.
+ */
+struct i2c_adapter *i2c_verify_adapter(struct device *dev)
+{
+	return (dev->type == &i2c_adapter_type)
+			? to_i2c_adapter(dev)
+			: NULL;
+}
+EXPORT_SYMBOL(i2c_verify_adapter);
+
 #ifdef CONFIG_I2C_COMPAT
 static struct class_compat *i2c_adapter_compat_class;
 #endif
@@ -1386,8 +1404,10 @@ int i2c_master_send(const struct i2c_client *client, const char *buf, int count)
 
 	ret = i2c_transfer(adap, &msg, 1);
 
-	/* If everything went ok (i.e. 1 msg transmitted), return #bytes
-	   transmitted, else error code. */
+	/*
+	 * If everything went ok (i.e. 1 msg transmitted), return #bytes
+	 * transmitted, else error code.
+	 */
 	return (ret == 1) ? count : ret;
 }
 EXPORT_SYMBOL(i2c_master_send);
@@ -1414,8 +1434,10 @@ int i2c_master_recv(const struct i2c_client *client, char *buf, int count)
 
 	ret = i2c_transfer(adap, &msg, 1);
 
-	/* If everything went ok (i.e. 1 msg transmitted), return #bytes
-	   transmitted, else error code. */
+	/*
+	 * If everything went ok (i.e. 1 msg received), return #bytes received,
+	 * else error code.
+	 */
 	return (ret == 1) ? count : ret;
 }
 EXPORT_SYMBOL(i2c_master_recv);

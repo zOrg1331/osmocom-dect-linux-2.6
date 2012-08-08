@@ -16,8 +16,9 @@
 #include <linux/interrupt.h>
 #include <linux/module.h>
 
-#include "../iio.h"
-#include "../sysfs.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
+#include <linux/iio/events.h>
 
 #include "ad7280a.h"
 
@@ -383,7 +384,7 @@ static ssize_t ad7280_show_balance_sw(struct device *dev,
 					struct device_attribute *attr,
 					char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad7280_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 
@@ -397,7 +398,7 @@ static ssize_t ad7280_store_balance_sw(struct device *dev,
 					 const char *buf,
 					 size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad7280_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	bool readin;
@@ -428,7 +429,7 @@ static ssize_t ad7280_show_balance_timer(struct device *dev,
 					struct device_attribute *attr,
 					char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad7280_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	int ret;
@@ -452,13 +453,13 @@ static ssize_t ad7280_store_balance_timer(struct device *dev,
 					 const char *buf,
 					 size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad7280_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
-	long val;
+	unsigned long val;
 	int ret;
 
-	ret = strict_strtoul(buf, 10, &val);
+	ret = kstrtoul(buf, 10, &val);
 	if (ret)
 		return ret;
 
@@ -487,8 +488,8 @@ static int ad7280_channel_init(struct ad7280_state *st)
 {
 	int dev, ch, cnt;
 
-	st->channels = kzalloc(sizeof(*st->channels) *
-				((st->slave_num + 1) * 12 + 2), GFP_KERNEL);
+	st->channels = kcalloc((st->slave_num + 1) * 12 + 2,
+			       sizeof(*st->channels), GFP_KERNEL);
 	if (st->channels == NULL)
 		return -ENOMEM;
 
@@ -507,7 +508,8 @@ static int ad7280_channel_init(struct ad7280_state *st)
 			}
 			st->channels[cnt].indexed = 1;
 			st->channels[cnt].info_mask =
-				(1 << IIO_CHAN_INFO_SCALE_SHARED);
+				IIO_CHAN_INFO_RAW_SEPARATE_BIT |
+				IIO_CHAN_INFO_SCALE_SHARED_BIT;
 			st->channels[cnt].address =
 				AD7280A_DEVADDR(dev) << 8 | ch;
 			st->channels[cnt].scan_index = cnt;
@@ -523,7 +525,9 @@ static int ad7280_channel_init(struct ad7280_state *st)
 	st->channels[cnt].channel2 = dev * 6;
 	st->channels[cnt].address = AD7280A_ALL_CELLS;
 	st->channels[cnt].indexed = 1;
-	st->channels[cnt].info_mask = (1 << IIO_CHAN_INFO_SCALE_SHARED);
+	st->channels[cnt].info_mask =
+		IIO_CHAN_INFO_RAW_SEPARATE_BIT |
+		IIO_CHAN_INFO_SCALE_SHARED_BIT;
 	st->channels[cnt].scan_index = cnt;
 	st->channels[cnt].scan_type.sign = 'u';
 	st->channels[cnt].scan_type.realbits = 32;
@@ -595,12 +599,12 @@ static ssize_t ad7280_read_channel_config(struct device *dev,
 					struct device_attribute *attr,
 					char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad7280_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	unsigned val;
 
-	switch (this_attr->address) {
+	switch ((u32) this_attr->address) {
 	case AD7280A_CELL_OVERVOLTAGE:
 		val = 1000 + (st->cell_threshhigh * 1568) / 100;
 		break;
@@ -625,7 +629,7 @@ static ssize_t ad7280_write_channel_config(struct device *dev,
 					 const char *buf,
 					 size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad7280_state *st = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 
@@ -636,7 +640,7 @@ static ssize_t ad7280_write_channel_config(struct device *dev,
 	if (ret)
 		return ret;
 
-	switch (this_attr->address) {
+	switch ((u32) this_attr->address) {
 	case AD7280A_CELL_OVERVOLTAGE:
 	case AD7280A_CELL_UNDERVOLTAGE:
 		val = ((val - 1000) * 100) / 1568; /* LSB 15.68mV */
@@ -652,7 +656,7 @@ static ssize_t ad7280_write_channel_config(struct device *dev,
 	val = clamp(val, 0L, 0xFFL);
 
 	mutex_lock(&indio_dev->mlock);
-	switch (this_attr->address) {
+	switch ((u32) this_attr->address) {
 	case AD7280A_CELL_OVERVOLTAGE:
 		st->cell_threshhigh = val;
 		break;
@@ -682,13 +686,13 @@ static irqreturn_t ad7280_event_handler(int irq, void *private)
 	unsigned *channels;
 	int i, ret;
 
-	channels = kzalloc(sizeof(*channels) * st->scan_cnt, GFP_KERNEL);
+	channels = kcalloc(st->scan_cnt, sizeof(*channels), GFP_KERNEL);
 	if (channels == NULL)
 		return IRQ_HANDLED;
 
 	ret = ad7280_read_all_channels(st, st->scan_cnt, channels);
 	if (ret < 0)
-		return IRQ_HANDLED;
+		goto out;
 
 	for (i = 0; i < st->scan_cnt; i++) {
 		if (((channels[i] >> 23) & 0xF) <= AD7280A_CELL_VOLTAGE_6) {
@@ -731,6 +735,7 @@ static irqreturn_t ad7280_event_handler(int irq, void *private)
 		}
 	}
 
+out:
 	kfree(channels);
 
 	return IRQ_HANDLED;
@@ -786,7 +791,7 @@ static int ad7280_read_raw(struct iio_dev *indio_dev,
 	int ret;
 
 	switch (m) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		mutex_lock(&indio_dev->mlock);
 		if (chan->address == AD7280A_ALL_CELLS)
 			ret = ad7280_read_all_channels(st, st->scan_cnt, NULL);
@@ -801,7 +806,7 @@ static int ad7280_read_raw(struct iio_dev *indio_dev,
 		*val = ret;
 
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_SCALE_SHARED):
+	case IIO_CHAN_INFO_SCALE:
 		if ((chan->address & 0xFF) <= AD7280A_CELL_VOLTAGE_6)
 			scale_uv = (4000 * 1000) >> AD7280A_BITS;
 		else
@@ -834,7 +839,7 @@ static int __devinit ad7280_probe(struct spi_device *spi)
 	int ret;
 	const unsigned short tACQ_ns[4] = {465, 1010, 1460, 1890};
 	const unsigned short nAVG[4] = {1, 2, 4, 8};
-	struct iio_dev *indio_dev = iio_allocate_device(sizeof(*st));
+	struct iio_dev *indio_dev = iio_device_alloc(sizeof(*st));
 
 	if (indio_dev == NULL)
 		return -ENOMEM;
@@ -940,7 +945,7 @@ error_free_channels:
 	kfree(st->channels);
 
 error_free_device:
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 
 	return ret;
 }
@@ -959,7 +964,7 @@ static int __devexit ad7280_remove(struct spi_device *spi)
 
 	kfree(st->channels);
 	kfree(st->iio_attr);
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 
 	return 0;
 }
@@ -968,29 +973,18 @@ static const struct spi_device_id ad7280_id[] = {
 	{"ad7280a", 0},
 	{}
 };
+MODULE_DEVICE_TABLE(spi, ad7280_id);
 
 static struct spi_driver ad7280_driver = {
 	.driver = {
 		.name	= "ad7280",
-		.bus	= &spi_bus_type,
 		.owner	= THIS_MODULE,
 	},
 	.probe		= ad7280_probe,
 	.remove		= __devexit_p(ad7280_remove),
 	.id_table	= ad7280_id,
 };
-
-static int __init ad7280_init(void)
-{
-	return spi_register_driver(&ad7280_driver);
-}
-module_init(ad7280_init);
-
-static void __exit ad7280_exit(void)
-{
-	spi_unregister_driver(&ad7280_driver);
-}
-module_exit(ad7280_exit);
+module_spi_driver(ad7280_driver);
 
 MODULE_AUTHOR("Michael Hennerich <hennerich@blackfin.uclinux.org>");
 MODULE_DESCRIPTION("Analog Devices AD7280A");

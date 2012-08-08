@@ -734,7 +734,6 @@ static int __devinit mpc5121_nfc_probe(struct platform_device *op)
 	chip->write_buf = mpc5121_nfc_write_buf;
 	chip->verify_buf = mpc5121_nfc_verify_buf;
 	chip->select_chip = mpc5121_nfc_select_chip;
-	chip->options = NAND_NO_AUTOINCR;
 	chip->bbt_options = NAND_BBT_USE_FLASH;
 	chip->ecc.mode = NAND_ECC_SOFT;
 
@@ -879,19 +878,7 @@ static struct platform_driver mpc5121_nfc_driver = {
 	},
 };
 
-static int __init mpc5121_nfc_init(void)
-{
-	return platform_driver_register(&mpc5121_nfc_driver);
-}
-
-module_init(mpc5121_nfc_init);
-
-static void __exit mpc5121_nfc_cleanup(void)
-{
-	platform_driver_unregister(&mpc5121_nfc_driver);
-}
-
-module_exit(mpc5121_nfc_cleanup);
+module_platform_driver(mpc5121_nfc_driver);
 
 MODULE_AUTHOR("Freescale Semiconductor, Inc.");
 MODULE_DESCRIPTION("MPC5121 NAND MTD driver");

@@ -373,6 +373,17 @@ qh_completions (struct ehci_hcd *ehci, struct ehci_qh *qh)
  retry_xacterr:
 		if ((token & QTD_STS_ACTIVE) == 0) {
 
+			/* Report Data Buffer Error: non-fatal but useful */
+			if (token & QTD_STS_DBE)
+				ehci_dbg(ehci,
+					"detected DataBufferErr for urb %p ep%d%s len %d, qtd %p [qh %p]\n",
+					urb,
+					usb_endpoint_num(&urb->ep->desc),
+					usb_endpoint_dir_in(&urb->ep->desc) ? "in" : "out",
+					urb->transfer_buffer_length,
+					qtd,
+					qh);
+
 			/* on STALL, error, and short reads this urb must
 			 * complete and all its qtds must be recycled.
 			 */
@@ -647,7 +658,7 @@ qh_urb_transaction (
 	/*
 	 * data transfer stage:  buffer setup
 	 */
-	i = urb->num_sgs;
+	i = urb->num_mapped_sgs;
 	if (len > 0 && i > 0) {
 		sg = urb->sg;
 		buf = sg_dma_address(sg);
@@ -932,7 +943,8 @@ qh_make (
 		}
 		break;
 	default:
-		dbg ("bogus dev %p speed %d", urb->dev, urb->dev->speed);
+		ehci_dbg(ehci, "bogus dev %p speed %d\n", urb->dev,
+			urb->dev->speed);
 done:
 		qh_put (qh);
 		return NULL;
@@ -970,14 +982,12 @@ static void qh_link_async (struct ehci_hcd *ehci, struct ehci_qh *qh)
 	head = ehci->async;
 	timer_action_done (ehci, TIMER_ASYNC_OFF);
 	if (!head->qh_next.qh) {
-		u32	cmd = ehci_readl(ehci, &ehci->regs->command);
-
-		if (!(cmd & CMD_ASE)) {
+		if (!(ehci->command & CMD_ASE)) {
 			/* in case a clear of CMD_ASE didn't take yet */
 			(void)handshake(ehci, &ehci->regs->status,
 					STS_ASS, 0, 150);
-			cmd |= CMD_ASE;
-			ehci_writel(ehci, cmd, &ehci->regs->command);
+			ehci->command |= CMD_ASE;
+			ehci_writel(ehci, ehci->command, &ehci->regs->command);
 			/* posted write need not be known to HC yet ... */
 		}
 	}
@@ -1193,7 +1203,6 @@ static void end_unlink_async (struct ehci_hcd *ehci)
 
 static void start_unlink_async (struct ehci_hcd *ehci, struct ehci_qh *qh)
 {
-	int		cmd = ehci_readl(ehci, &ehci->regs->command);
 	struct ehci_qh	*prev;
 
 #ifdef DEBUG
@@ -1211,8 +1220,8 @@ static void start_unlink_async (struct ehci_hcd *ehci, struct ehci_qh *qh)
 		if (ehci->rh_state != EHCI_RH_HALTED
 				&& !ehci->reclaim) {
 			/* ... and CMD_IAAD clear */
-			ehci_writel(ehci, cmd & ~CMD_ASE,
-				    &ehci->regs->command);
+			ehci->command &= ~CMD_ASE;
+			ehci_writel(ehci, ehci->command, &ehci->regs->command);
 			wmb ();
 			// handshake later, if we need to
 			timer_action_done (ehci, TIMER_ASYNC_OFF);
@@ -1242,8 +1251,7 @@ static void start_unlink_async (struct ehci_hcd *ehci, struct ehci_qh *qh)
 		return;
 	}
 
-	cmd |= CMD_IAAD;
-	ehci_writel(ehci, cmd, &ehci->regs->command);
+	ehci_writel(ehci, ehci->command | CMD_IAAD, &ehci->regs->command);
 	(void)ehci_readl(ehci, &ehci->regs->command);
 	iaa_watchdog_start(ehci);
 }

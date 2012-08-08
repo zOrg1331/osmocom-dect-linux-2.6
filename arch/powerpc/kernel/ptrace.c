@@ -36,7 +36,7 @@
 #include <asm/uaccess.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
-#include <asm/system.h>
+#include <asm/switch_to.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/syscalls.h>
@@ -1432,40 +1432,6 @@ static long ppc_del_hwdebug(struct task_struct *child, long addr, long data)
 #endif
 }
 
-/*
- * Here are the old "legacy" powerpc specific getregs/setregs ptrace calls,
- * we mark them as obsolete now, they will be removed in a future version
- */
-static long arch_ptrace_old(struct task_struct *child, long request,
-			    unsigned long addr, unsigned long data)
-{
-	void __user *datavp = (void __user *) data;
-
-	switch (request) {
-	case PPC_PTRACE_GETREGS:	/* Get GPRs 0 - 31. */
-		return copy_regset_to_user(child, &user_ppc_native_view,
-					   REGSET_GPR, 0, 32 * sizeof(long),
-					   datavp);
-
-	case PPC_PTRACE_SETREGS:	/* Set GPRs 0 - 31. */
-		return copy_regset_from_user(child, &user_ppc_native_view,
-					     REGSET_GPR, 0, 32 * sizeof(long),
-					     datavp);
-
-	case PPC_PTRACE_GETFPREGS:	/* Get FPRs 0 - 31. */
-		return copy_regset_to_user(child, &user_ppc_native_view,
-					   REGSET_FPR, 0, 32 * sizeof(double),
-					   datavp);
-
-	case PPC_PTRACE_SETFPREGS:	/* Set FPRs 0 - 31. */
-		return copy_regset_from_user(child, &user_ppc_native_view,
-					     REGSET_FPR, 0, 32 * sizeof(double),
-					     datavp);
-	}
-
-	return -EPERM;
-}
-
 long arch_ptrace(struct task_struct *child, long request,
 		 unsigned long addr, unsigned long data)
 {
@@ -1687,14 +1653,6 @@ long arch_ptrace(struct task_struct *child, long request,
 					     datavp);
 #endif
 
-	/* Old reverse args ptrace callss */
-	case PPC_PTRACE_GETREGS: /* Get GPRs 0 - 31. */
-	case PPC_PTRACE_SETREGS: /* Set GPRs 0 - 31. */
-	case PPC_PTRACE_GETFPREGS: /* Get FPRs 0 - 31. */
-	case PPC_PTRACE_SETFPREGS: /* Get FPRs 0 - 31. */
-		ret = arch_ptrace_old(child, request, addr, data);
-		break;
-
 	default:
 		ret = ptrace_request(child, request, addr, data);
 		break;
@@ -1710,7 +1668,7 @@ long do_syscall_trace_enter(struct pt_regs *regs)
 {
 	long ret = 0;
 
-	secure_computing(regs->gpr[0]);
+	secure_computing_strict(regs->gpr[0]);
 
 	if (test_thread_flag(TIF_SYSCALL_TRACE) &&
 	    tracehook_report_syscall_entry(regs))
@@ -1724,22 +1682,20 @@ long do_syscall_trace_enter(struct pt_regs *regs)
 	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
 		trace_sys_enter(regs, regs->gpr[0]);
 
-	if (unlikely(current->audit_context)) {
 #ifdef CONFIG_PPC64
-		if (!is_32bit_task())
-			audit_syscall_entry(AUDIT_ARCH_PPC64,
-					    regs->gpr[0],
-					    regs->gpr[3], regs->gpr[4],
-					    regs->gpr[5], regs->gpr[6]);
-		else
+	if (!is_32bit_task())
+		audit_syscall_entry(AUDIT_ARCH_PPC64,
+				    regs->gpr[0],
+				    regs->gpr[3], regs->gpr[4],
+				    regs->gpr[5], regs->gpr[6]);
+	else
 #endif
-			audit_syscall_entry(AUDIT_ARCH_PPC,
-					    regs->gpr[0],
-					    regs->gpr[3] & 0xffffffff,
-					    regs->gpr[4] & 0xffffffff,
-					    regs->gpr[5] & 0xffffffff,
-					    regs->gpr[6] & 0xffffffff);
-	}
+		audit_syscall_entry(AUDIT_ARCH_PPC,
+				    regs->gpr[0],
+				    regs->gpr[3] & 0xffffffff,
+				    regs->gpr[4] & 0xffffffff,
+				    regs->gpr[5] & 0xffffffff,
+				    regs->gpr[6] & 0xffffffff);
 
 	return ret ?: regs->gpr[0];
 }
@@ -1748,9 +1704,7 @@ void do_syscall_trace_leave(struct pt_regs *regs)
 {
 	int step;
 
-	if (unlikely(current->audit_context))
-		audit_syscall_exit((regs->ccr&0x10000000)?AUDITSC_FAILURE:AUDITSC_SUCCESS,
-				   regs->result);
+	audit_syscall_exit(regs);
 
 	if (unlikely(test_thread_flag(TIF_SYSCALL_TRACEPOINT)))
 		trace_sys_exit(regs, regs->result);

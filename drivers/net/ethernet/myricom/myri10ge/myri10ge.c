@@ -1491,7 +1491,7 @@ myri10ge_clean_rx_done(struct myri10ge_slice_state *ss, int budget)
 	 * access to avoid theoretical race condition with functions that
 	 * change NETIF_F_LRO flag at runtime.
 	 */
-	bool lro_enabled = ACCESS_ONCE(mgp->dev->features) & NETIF_F_LRO;
+	bool lro_enabled = !!(ACCESS_ONCE(mgp->dev->features) & NETIF_F_LRO);
 
 	while (rx_done->entry[idx].length != 0 && work_done < budget) {
 		length = ntohs(rx_done->entry[idx].length);
@@ -3149,7 +3149,8 @@ static int myri10ge_set_mac_address(struct net_device *dev, void *addr)
 	return 0;
 }
 
-static u32 myri10ge_fix_features(struct net_device *dev, u32 features)
+static netdev_features_t myri10ge_fix_features(struct net_device *dev,
+	netdev_features_t features)
 {
 	if (!(features & NETIF_F_RXCSUM))
 		features &= ~NETIF_F_LRO;
@@ -3909,10 +3910,8 @@ static int myri10ge_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	static int board_number;
 
 	netdev = alloc_etherdev_mq(sizeof(*mgp), MYRI10GE_MAX_SLICES);
-	if (netdev == NULL) {
-		dev_err(dev, "Could not allocate ethernet device\n");
+	if (netdev == NULL)
 		return -ENOMEM;
-	}
 
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 
@@ -4034,7 +4033,6 @@ static int myri10ge_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	netdev->netdev_ops = &myri10ge_netdev_ops;
 	netdev->mtu = myri10ge_initial_mtu;
-	netdev->base_addr = mgp->iomem_base;
 	netdev->hw_features = mgp->features | NETIF_F_LRO | NETIF_F_RXCSUM;
 	netdev->features = netdev->hw_features;
 
@@ -4048,12 +4046,10 @@ static int myri10ge_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		netdev->vlan_features &= ~NETIF_F_TSO;
 
 	/* make sure we can get an irq, and that MSI can be
-	 * setup (if available).  Also ensure netdev->irq
-	 * is set to correct value if MSI is enabled */
+	 * setup (if available). */
 	status = myri10ge_request_irq(mgp);
 	if (status != 0)
 		goto abort_with_firmware;
-	netdev->irq = pdev->irq;
 	myri10ge_free_irq(mgp);
 
 	/* Save configuration space to be restored if the
@@ -4078,7 +4074,7 @@ static int myri10ge_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	else
 		dev_info(dev, "%s IRQ %d, tx bndry %d, fw %s, WC %s\n",
 			 mgp->msi_enabled ? "MSI" : "xPIC",
-			 netdev->irq, mgp->tx_boundary, mgp->fw_name,
+			 pdev->irq, mgp->tx_boundary, mgp->fw_name,
 			 (mgp->wc_enabled ? "Enabled" : "Disabled"));
 
 	board_number++;

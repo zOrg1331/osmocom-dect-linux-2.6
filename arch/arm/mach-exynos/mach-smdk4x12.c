@@ -21,20 +21,23 @@
 #include <linux/serial_core.h>
 
 #include <asm/mach/arch.h>
+#include <asm/hardware/gic.h>
 #include <asm/mach-types.h>
 
 #include <plat/backlight.h>
 #include <plat/clock.h>
 #include <plat/cpu.h>
 #include <plat/devs.h>
-#include <plat/exynos4.h>
 #include <plat/gpio-cfg.h>
 #include <plat/iic.h>
 #include <plat/keypad.h>
+#include <plat/mfc.h>
 #include <plat/regs-serial.h>
 #include <plat/sdhci.h>
 
 #include <mach/map.h>
+
+#include "common.h"
 
 /* Following are default values for UCON, ULCON and UFCON UART registers */
 #define SMDK4X12_UCON_DEFAULT	(S3C2410_UCON_TXILEVEL |	\
@@ -83,7 +86,6 @@ static struct s3c2410_uartcfg smdk4x12_uartcfgs[] __initdata = {
 
 static struct s3c_sdhci_platdata smdk4x12_hsmmc2_pdata __initdata = {
 	.cd_type		= S3C_SDHCI_CD_INTERNAL,
-	.clk_type		= S3C_SDHCI_CLK_DIV_EXTERNAL,
 #ifdef CONFIG_EXYNOS4_SDHCI_CH2_8BIT
 	.max_width		= 8,
 	.host_caps		= MMC_CAP_8_BIT_DATA,
@@ -92,7 +94,6 @@ static struct s3c_sdhci_platdata smdk4x12_hsmmc2_pdata __initdata = {
 
 static struct s3c_sdhci_platdata smdk4x12_hsmmc3_pdata __initdata = {
 	.cd_type		= S3C_SDHCI_CD_INTERNAL,
-	.clk_type		= S3C_SDHCI_CLK_DIV_EXTERNAL,
 };
 
 static struct regulator_consumer_supply max8997_buck1 =
@@ -242,6 +243,14 @@ static struct platform_device *smdk4x12_devices[] __initdata = {
 	&s3c_device_i2c7,
 	&s3c_device_rtc,
 	&s3c_device_wdt,
+	&s5p_device_fimc0,
+	&s5p_device_fimc1,
+	&s5p_device_fimc2,
+	&s5p_device_fimc3,
+	&s5p_device_fimc_md,
+	&s5p_device_mfc,
+	&s5p_device_mfc_l,
+	&s5p_device_mfc_r,
 	&samsung_device_keypad,
 };
 
@@ -249,9 +258,14 @@ static void __init smdk4x12_map_io(void)
 {
 	clk_xusbxti.rate = 24000000;
 
-	s5p_init_io(NULL, 0, S5P_VA_CHIPID);
+	exynos_init_io(NULL, 0);
 	s3c24xx_init_clocks(clk_xusbxti.rate);
 	s3c24xx_init_uarts(smdk4x12_uartcfgs, ARRAY_SIZE(smdk4x12_uartcfgs));
+}
+
+static void __init smdk4x12_reserve(void)
+{
+	s5p_mfc_reserve_mem(0x43000000, 8 << 20, 0x51000000, 8 << 20);
 }
 
 static void __init smdk4x12_machine_init(void)
@@ -287,8 +301,11 @@ MACHINE_START(SMDK4212, "SMDK4212")
 	.atag_offset	= 0x100,
 	.init_irq	= exynos4_init_irq,
 	.map_io		= smdk4x12_map_io,
+	.handle_irq	= gic_handle_irq,
 	.init_machine	= smdk4x12_machine_init,
 	.timer		= &exynos4_timer,
+	.restart	= exynos4_restart,
+	.reserve	= &smdk4x12_reserve,
 MACHINE_END
 
 MACHINE_START(SMDK4412, "SMDK4412")
@@ -297,6 +314,10 @@ MACHINE_START(SMDK4412, "SMDK4412")
 	.atag_offset	= 0x100,
 	.init_irq	= exynos4_init_irq,
 	.map_io		= smdk4x12_map_io,
+	.handle_irq	= gic_handle_irq,
 	.init_machine	= smdk4x12_machine_init,
+	.init_late	= exynos_init_late,
 	.timer		= &exynos4_timer,
+	.restart	= exynos4_restart,
+	.reserve	= &smdk4x12_reserve,
 MACHINE_END

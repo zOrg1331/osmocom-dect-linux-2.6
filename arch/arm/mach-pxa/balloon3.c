@@ -13,6 +13,7 @@
  *  published by the Free Software Foundation.
  */
 
+#include <linux/export.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
 #include <linux/interrupt.h>
@@ -179,7 +180,7 @@ static unsigned long balloon3_ac97_pin_config[] __initdata = {
 };
 
 static struct ucb1400_pdata vpac270_ucb1400_pdata = {
-	.irq		= IRQ_GPIO(BALLOON3_GPIO_CODEC_IRQ),
+	.irq		= PXA_GPIO_TO_IRQ(BALLOON3_GPIO_CODEC_IRQ),
 };
 
 
@@ -678,8 +679,6 @@ static struct mtd_partition balloon3_partition_info[] = {
 	},
 };
 
-static const char *balloon3_part_probes[] = { "cmdlinepart", NULL };
-
 struct platform_nand_data balloon3_nand_pdata = {
 	.chip = {
 		.nr_chips	= 4,
@@ -687,7 +686,6 @@ struct platform_nand_data balloon3_nand_pdata = {
 		.nr_partitions	= ARRAY_SIZE(balloon3_partition_info),
 		.partitions	= balloon3_partition_info,
 		.chip_delay	= 50,
-		.part_probe_types = balloon3_part_probes,
 	},
 	.ctrl = {
 		.hwcontrol	= 0,
@@ -731,9 +729,7 @@ static inline void balloon3_nand_init(void) {}
 #if defined(CONFIG_REGULATOR_MAX1586) || \
     defined(CONFIG_REGULATOR_MAX1586_MODULE)
 static struct regulator_consumer_supply balloon3_max1587a_consumers[] = {
-	{
-		.supply	= "vcc_core",
-	}
+	REGULATOR_SUPPLY("vcc_core", NULL),
 };
 
 static struct regulator_init_data balloon3_max1587a_v3_info = {
@@ -829,4 +825,5 @@ MACHINE_START(BALLOON3, "Balloon3")
 	.timer		= &pxa_timer,
 	.init_machine	= balloon3_init,
 	.atag_offset	= 0x100,
+	.restart	= pxa_restart,
 MACHINE_END

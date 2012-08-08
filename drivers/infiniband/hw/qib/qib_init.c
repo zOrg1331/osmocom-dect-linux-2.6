@@ -102,6 +102,8 @@ void qib_set_ctxtcnt(struct qib_devdata *dd)
 		dd->cfgctxts = qib_cfgctxts;
 	else
 		dd->cfgctxts = dd->ctxtcnt;
+	dd->freectxts = (dd->first_user_ctxt > dd->cfgctxts) ? 0 :
+		dd->cfgctxts - dd->first_user_ctxt;
 }
 
 /*
@@ -402,7 +404,6 @@ static void enable_chip(struct qib_devdata *dd)
 		if (rcd)
 			dd->f_rcvctrl(rcd->ppd, rcvmask, i);
 	}
-	dd->freectxts = dd->cfgctxts - dd->first_user_ctxt;
 }
 
 static void verify_interrupt(unsigned long opaque)
@@ -1015,7 +1016,7 @@ static int __devinit qib_init_one(struct pci_dev *,
 #define DRIVER_LOAD_MSG "QLogic " QIB_DRV_NAME " loaded: "
 #define PFX QIB_DRV_NAME ": "
 
-static const struct pci_device_id qib_pci_tbl[] = {
+static DEFINE_PCI_DEVICE_TABLE(qib_pci_tbl) = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_PATHSCALE, PCI_DEVICE_ID_QLOGIC_IB_6120) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_IB_7220) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_IB_7322) },

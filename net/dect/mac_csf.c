@@ -5102,19 +5102,26 @@ static int dect_fill_cell(struct sk_buff *skb,
 	dm = nlmsg_data(nlh);
 	dm->dm_index = cell->index;
 
-	NLA_PUT_STRING(skb, DECTA_CELL_NAME, cell->name);
-	if (cell->flags != 0)
-		NLA_PUT_U32(skb, DECTA_CELL_FLAGS, cell->flags);
+	if (nla_put_string(skb, DECTA_CELL_NAME, cell->name))
+		goto nla_put_failure;
+	if (cell->flags != 0) {
+		if (nla_put_u32(skb, DECTA_CELL_FLAGS, cell->flags))
+			goto nla_put_failure;
+	}
 	if (cell->trg.trxmask != 0) {
 		nest = nla_nest_start(skb, DECTA_CELL_TRANSCEIVERS);
 		if (nest == NULL)
 			goto nla_put_failure;
 		dect_foreach_transceiver(trx, &cell->trg)
-			NLA_PUT_STRING(skb, DECTA_LIST_ELEM, trx->name);
+			if (nla_put_string(skb, DECTA_LIST_ELEM, trx->name))
+					goto nla_put_failure;
 		nla_nest_end(skb, nest);
 	}
-	if (cell->handle.clh != NULL)
-		NLA_PUT_U8(skb, DECTA_CELL_CLUSTER, cell->handle.clh->index);
+	if (cell->handle.clh != NULL) {
+		if (nla_put_u8(skb, DECTA_CELL_CLUSTER,
+			       cell->handle.clh->index))
+			goto nla_put_failure;
+	}
 
 	return nlmsg_end(skb, nlh);
 

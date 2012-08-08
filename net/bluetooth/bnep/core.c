@@ -56,8 +56,8 @@
 
 #define VERSION "1.3"
 
-static int compress_src = 1;
-static int compress_dst = 1;
+static bool compress_src = true;
+static bool compress_dst = true;
 
 static LIST_HEAD(bnep_session_list);
 static DECLARE_RWSEM(bnep_session_sem);
@@ -65,15 +65,13 @@ static DECLARE_RWSEM(bnep_session_sem);
 static struct bnep_session *__bnep_get_session(u8 *dst)
 {
 	struct bnep_session *s;
-	struct list_head *p;
 
 	BT_DBG("");
 
-	list_for_each(p, &bnep_session_list) {
-		s = list_entry(p, struct bnep_session, list);
-		if (!compare_ether_addr(dst, s->eh.h_source))
+	list_for_each_entry(s, &bnep_session_list, list)
+		if (ether_addr_equal(dst, s->eh.h_source))
 			return s;
-	}
+
 	return NULL;
 }
 
@@ -342,7 +340,7 @@ static inline int bnep_rx_frame(struct bnep_session *s, struct sk_buff *skb)
 	}
 
 	/* Strip 802.1p header */
-	if (ntohs(s->eh.h_proto) == 0x8100) {
+	if (ntohs(s->eh.h_proto) == ETH_P_8021Q) {
 		if (!skb_pull(skb, 4))
 			goto badframe;
 		s->eh.h_proto = get_unaligned((__be16 *) (skb->data - 2));
@@ -424,10 +422,10 @@ static inline int bnep_tx_frame(struct bnep_session *s, struct sk_buff *skb)
 	iv[il++] = (struct kvec) { &type, 1 };
 	len++;
 
-	if (compress_src && !compare_ether_addr(eh->h_dest, s->eh.h_source))
+	if (compress_src && ether_addr_equal(eh->h_dest, s->eh.h_source))
 		type |= 0x01;
 
-	if (compress_dst && !compare_ether_addr(eh->h_source, s->eh.h_dest))
+	if (compress_dst && ether_addr_equal(eh->h_source, s->eh.h_dest))
 		type |= 0x02;
 
 	if (type)
@@ -665,16 +663,13 @@ static void __bnep_copy_ci(struct bnep_conninfo *ci, struct bnep_session *s)
 
 int bnep_get_connlist(struct bnep_connlist_req *req)
 {
-	struct list_head *p;
+	struct bnep_session *s;
 	int err = 0, n = 0;
 
 	down_read(&bnep_session_sem);
 
-	list_for_each(p, &bnep_session_list) {
-		struct bnep_session *s;
+	list_for_each_entry(s, &bnep_session_list, list) {
 		struct bnep_conninfo ci;
-
-		s = list_entry(p, struct bnep_session, list);
 
 		__bnep_copy_ci(&ci, s);
 

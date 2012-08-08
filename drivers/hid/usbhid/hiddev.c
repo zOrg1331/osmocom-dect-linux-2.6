@@ -34,6 +34,7 @@
 #include <linux/hid.h>
 #include <linux/hiddev.h>
 #include <linux/compat.h>
+#include <linux/vmalloc.h>
 #include "usbhid.h"
 
 #ifdef CONFIG_USB_DYNAMIC_MINORS
@@ -250,13 +251,13 @@ static int hiddev_release(struct inode * inode, struct file * file)
 		} else {
 			mutex_unlock(&list->hiddev->existancelock);
 			kfree(list->hiddev);
-			kfree(list);
+			vfree(list);
 			return 0;
 		}
 	}
 
 	mutex_unlock(&list->hiddev->existancelock);
-	kfree(list);
+	vfree(list);
 
 	return 0;
 }
@@ -278,7 +279,7 @@ static int hiddev_open(struct inode *inode, struct file *file)
 	hid = usb_get_intfdata(intf);
 	hiddev = hid->hiddev;
 
-	if (!(list = kzalloc(sizeof(struct hiddev_list), GFP_KERNEL)))
+	if (!(list = vzalloc(sizeof(struct hiddev_list))))
 		return -ENOMEM;
 	mutex_init(&list->thread_lock);
 	list->hiddev = hiddev;
@@ -322,7 +323,7 @@ bail_unlock:
 	mutex_unlock(&hiddev->existancelock);
 bail:
 	file->private_data = NULL;
-	kfree(list);
+	vfree(list);
 	return res;
 }
 
@@ -859,7 +860,7 @@ static const struct file_operations hiddev_fops = {
 	.llseek		= noop_llseek,
 };
 
-static char *hiddev_devnode(struct device *dev, mode_t *mode)
+static char *hiddev_devnode(struct device *dev, umode_t *mode)
 {
 	return kasprintf(GFP_KERNEL, "usb/%s", dev_name(dev));
 }
@@ -922,10 +923,10 @@ void hiddev_disconnect(struct hid_device *hid)
 	struct hiddev *hiddev = hid->hiddev;
 	struct usbhid_device *usbhid = hid->driver_data;
 
+	usb_deregister_dev(usbhid->intf, &hiddev_class);
+
 	mutex_lock(&hiddev->existancelock);
 	hiddev->exist = 0;
-
-	usb_deregister_dev(usbhid->intf, &hiddev_class);
 
 	if (hiddev->open) {
 		mutex_unlock(&hiddev->existancelock);

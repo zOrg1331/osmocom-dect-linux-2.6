@@ -22,7 +22,11 @@
   Author: Giuseppe Cavallaro <peppe.cavallaro@st.com>
 *******************************************************************************/
 
+#include <linux/etherdevice.h>
 #include <linux/netdevice.h>
+#include <linux/phy.h>
+#include <linux/module.h>
+#include <linux/init.h>
 #if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
 #define STMMAC_VLAN_TAG_USED
 #include <linux/if_vlan.h>
@@ -63,6 +67,7 @@ struct stmmac_extra_stats {
 	unsigned long ipc_csum_error;
 	unsigned long rx_collision;
 	unsigned long rx_crc;
+	unsigned long dribbling_bit;
 	unsigned long rx_length;
 	unsigned long rx_mii;
 	unsigned long rx_multicast;
@@ -91,6 +96,16 @@ struct stmmac_extra_stats {
 	unsigned long sched_timer_n;
 	unsigned long normal_irq_n;
 };
+
+/* CSR Frequency Access Defines*/
+#define CSR_F_35M	35000000
+#define CSR_F_60M	60000000
+#define CSR_F_100M	100000000
+#define CSR_F_150M	150000000
+#define CSR_F_250M	250000000
+#define CSR_F_300M	300000000
+
+#define	MAC_CSR_H_FRQ_MASK	0x20
 
 #define HASH_TABLE_SIZE 64
 #define PAUSE_TIME 0x200
@@ -132,6 +147,7 @@ struct stmmac_extra_stats {
 #define DMA_HW_FEAT_FLEXIPPSEN	0x04000000 /* Flexible PPS Output */
 #define DMA_HW_FEAT_SAVLANINS	0x08000000 /* Source Addr or VLAN Insertion */
 #define DMA_HW_FEAT_ACTPHYIF	0x70000000 /* Active/selected PHY interface */
+#define DEFAULT_DMA_PBL		8
 
 enum rx_frame_status { /* IPC status */
 	good_frame = 0,
@@ -223,7 +239,7 @@ struct stmmac_desc_ops {
 	int (*get_rx_owner) (struct dma_desc *p);
 	void (*set_rx_owner) (struct dma_desc *p);
 	/* Get the receive frame size */
-	int (*get_rx_frame_len) (struct dma_desc *p);
+	int (*get_rx_frame_len) (struct dma_desc *p, int rx_coe_type);
 	/* Return the reception status looking at the RDES1 */
 	int (*rx_status) (void *data, struct stmmac_extra_stats *x,
 			  struct dma_desc *p);
@@ -231,7 +247,8 @@ struct stmmac_desc_ops {
 
 struct stmmac_dma_ops {
 	/* DMA core initialization */
-	int (*init) (void __iomem *ioaddr, int pbl, u32 dma_tx, u32 dma_rx);
+	int (*init) (void __iomem *ioaddr, int pbl, int fb, int mb,
+		     int burst_len, u32 dma_tx, u32 dma_rx);
 	/* Dump DMA registers */
 	void (*dump_regs) (void __iomem *ioaddr);
 	/* Set tx/rx threshold in the csr6 register
@@ -256,14 +273,14 @@ struct stmmac_dma_ops {
 struct stmmac_ops {
 	/* MAC core initialization */
 	void (*core_init) (void __iomem *ioaddr) ____cacheline_aligned;
-	/* Support checksum offload engine */
-	int  (*rx_coe) (void __iomem *ioaddr);
+	/* Enable and verify that the IPC module is supported */
+	int (*rx_ipc) (void __iomem *ioaddr);
 	/* Dump MAC registers */
 	void (*dump_regs) (void __iomem *ioaddr);
 	/* Handle extra events on specific interrupts hw dependent */
 	void (*host_irq_status) (void __iomem *ioaddr);
 	/* Multicast filter setting */
-	void (*set_filter) (struct net_device *dev);
+	void (*set_filter) (struct net_device *dev, int id);
 	/* Flow control setting */
 	void (*flow_ctrl) (void __iomem *ioaddr, unsigned int duplex,
 			   unsigned int fc, unsigned int pause_time);
@@ -315,5 +332,8 @@ extern void stmmac_set_mac_addr(void __iomem *ioaddr, u8 addr[6],
 				unsigned int high, unsigned int low);
 extern void stmmac_get_mac_addr(void __iomem *ioaddr, unsigned char *addr,
 				unsigned int high, unsigned int low);
+
+extern void stmmac_set_mac(void __iomem *ioaddr, bool enable);
+
 extern void dwmac_dma_flush_tx_fifo(void __iomem *ioaddr);
 extern const struct stmmac_ring_mode_ops ring_mode_ops;

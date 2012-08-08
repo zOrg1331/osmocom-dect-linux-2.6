@@ -68,9 +68,25 @@ void pstore_set_kmsg_bytes(int bytes)
 /* Tag each group of saved records with a sequence number */
 static int	oopscount;
 
-static char *reason_str[] = {
-	"Oops", "Panic", "Kexec", "Restart", "Halt", "Poweroff", "Emergency"
-};
+static const char *get_reason_str(enum kmsg_dump_reason reason)
+{
+	switch (reason) {
+	case KMSG_DUMP_PANIC:
+		return "Panic";
+	case KMSG_DUMP_OOPS:
+		return "Oops";
+	case KMSG_DUMP_EMERG:
+		return "Emergency";
+	case KMSG_DUMP_RESTART:
+		return "Restart";
+	case KMSG_DUMP_HALT:
+		return "Halt";
+	case KMSG_DUMP_POWEROFF:
+		return "Poweroff";
+	default:
+		return "Unknown";
+	}
+}
 
 /*
  * callback from kmsg_dump. (s2,l2) has the most recently
@@ -78,24 +94,17 @@ static char *reason_str[] = {
  * as we can from the end of the buffer.
  */
 static void pstore_dump(struct kmsg_dumper *dumper,
-	    enum kmsg_dump_reason reason,
-	    const char *s1, unsigned long l1,
-	    const char *s2, unsigned long l2)
+			enum kmsg_dump_reason reason)
 {
-	unsigned long	s1_start, s2_start;
-	unsigned long	l1_cpy, l2_cpy;
-	unsigned long	size, total = 0;
-	char		*dst, *why;
+	unsigned long	total = 0;
+	const char	*why;
 	u64		id;
-	int		hsize, ret;
 	unsigned int	part = 1;
 	unsigned long	flags = 0;
 	int		is_locked = 0;
+	int		ret;
 
-	if (reason < ARRAY_SIZE(reason_str))
-		why = reason_str[reason];
-	else
-		why = "Unknown";
+	why = get_reason_str(reason);
 
 	if (in_nmi()) {
 		is_locked = spin_trylock(&psinfo->buf_lock);
@@ -105,30 +114,25 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 		spin_lock_irqsave(&psinfo->buf_lock, flags);
 	oopscount++;
 	while (total < kmsg_bytes) {
+		char *dst;
+		unsigned long size;
+		int hsize;
+		size_t len;
+
 		dst = psinfo->buf;
 		hsize = sprintf(dst, "%s#%d Part%d\n", why, oopscount, part);
 		size = psinfo->bufsize - hsize;
 		dst += hsize;
 
-		l2_cpy = min(l2, size);
-		l1_cpy = min(l1, size - l2_cpy);
-
-		if (l1_cpy + l2_cpy == 0)
+		if (!kmsg_dump_get_buffer(dumper, true, dst, size, &len))
 			break;
 
-		s2_start = l2 - l2_cpy;
-		s1_start = l1 - l1_cpy;
-
-		memcpy(dst, s1 + s1_start, l1_cpy);
-		memcpy(dst + l1_cpy, s2 + s2_start, l2_cpy);
-
-		ret = psinfo->write(PSTORE_TYPE_DMESG, &id, part,
-				   hsize + l1_cpy + l2_cpy, psinfo);
+		ret = psinfo->write(PSTORE_TYPE_DMESG, reason, &id, part,
+				    hsize + len, psinfo);
 		if (ret == 0 && reason == KMSG_DUMP_OOPS && pstore_is_mounted())
 			pstore_new_entry = 1;
-		l1 -= l1_cpy;
-		l2 -= l2_cpy;
-		total += l1_cpy + l2_cpy;
+
+		total += hsize + len;
 		part++;
 	}
 	if (in_nmi()) {
@@ -207,8 +211,7 @@ void pstore_get_records(int quiet)
 		return;
 
 	mutex_lock(&psi->read_mutex);
-	rc = psi->open(psi);
-	if (rc)
+	if (psi->open && psi->open(psi))
 		goto out;
 
 	while ((size = psi->read(&id, &type, &time, &buf, psi)) > 0) {
@@ -219,7 +222,8 @@ void pstore_get_records(int quiet)
 		if (rc && (rc != -EEXIST || !quiet))
 			failed++;
 	}
-	psi->close(psi);
+	if (psi->close)
+		psi->close(psi);
 out:
 	mutex_unlock(&psi->read_mutex);
 
@@ -242,34 +246,6 @@ static void pstore_timefunc(unsigned long dummy)
 
 	mod_timer(&pstore_timer, jiffies + PSTORE_INTERVAL);
 }
-
-/*
- * Call platform driver to write a record to the
- * persistent store.
- */
-int pstore_write(enum pstore_type_id type, char *buf, size_t size)
-{
-	u64		id;
-	int		ret;
-	unsigned long	flags;
-
-	if (!psinfo)
-		return -ENODEV;
-
-	if (size > psinfo->bufsize)
-		return -EFBIG;
-
-	spin_lock_irqsave(&psinfo->buf_lock, flags);
-	memcpy(psinfo->buf, buf, size);
-	ret = psinfo->write(type, &id, 0, size, psinfo);
-	if (ret == 0 && pstore_is_mounted())
-		pstore_mkfile(PSTORE_TYPE_DMESG, psinfo->name, id, psinfo->buf,
-			      size, CURRENT_TIME, psinfo);
-	spin_unlock_irqrestore(&psinfo->buf_lock, flags);
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(pstore_write);
 
 module_param(backend, charp, 0444);
 MODULE_PARM_DESC(backend, "Pstore backend to use");

@@ -36,6 +36,7 @@
 #include <asm/mach/time.h>
 #include <asm/memory.h>
 #include <asm/mach/map.h>
+#include <asm/memblock.h>
 #include <mach/common.h>
 #include <mach/iomux-mx3.h>
 #include <mach/3ds_debugboard.h>
@@ -155,6 +156,11 @@ static int mx31_3ds_pins[] = {
 	MX31_PIN_CSI_VSYNC__CSI_VSYNC,
 	MX31_PIN_CSI_D5__GPIO3_5, /* CMOS PWDN */
 	IOMUX_MODE(MX31_PIN_RI_DTE1, IOMUX_CONFIG_GPIO), /* CMOS reset */
+	/* SSI */
+	MX31_PIN_STXD4__STXD4,
+	MX31_PIN_SRXD4__SRXD4,
+	MX31_PIN_SCK4__SCK4,
+	MX31_PIN_SFS4__SFS4,
 };
 
 /*
@@ -487,12 +493,23 @@ static struct mc13xxx_regulator_init_data mx31_3ds_regulators[] = {
 };
 
 /* MC13783 */
+static struct mc13xxx_codec_platform_data mx31_3ds_codec = {
+	.dac_ssi_port = MC13783_SSI1_PORT,
+	.adc_ssi_port = MC13783_SSI1_PORT,
+};
+
 static struct mc13xxx_platform_data mc13783_pdata = {
 	.regulators = {
 		.regulators = mx31_3ds_regulators,
 		.num_regulators = ARRAY_SIZE(mx31_3ds_regulators),
 	},
-	.flags  = MC13XXX_USE_TOUCHSCREEN,
+	.codec = &mx31_3ds_codec,
+	.flags  = MC13XXX_USE_TOUCHSCREEN | MC13XXX_USE_RTC | MC13XXX_USE_CODEC,
+
+};
+
+static struct imx_ssi_platform_data mx31_3ds_ssi_pdata = {
+	.flags = IMX_SSI_DMA | IMX_SSI_NET,
 };
 
 /* SPI */
@@ -740,6 +757,10 @@ static void __init mx31_3ds_init(void)
 	}
 
 	mx31_3ds_init_camera();
+
+	imx31_add_imx_ssi(0, &mx31_3ds_ssi_pdata);
+
+	imx_add_platform_device("imx_mc13783", 0, NULL, 0, NULL, 0);
 }
 
 static void __init mx31_3ds_timer_init(void)
@@ -754,10 +775,8 @@ static struct sys_timer mx31_3ds_timer = {
 static void __init mx31_3ds_reserve(void)
 {
 	/* reserve MX31_3DS_CAMERA_BUF_SIZE bytes for mx3-camera */
-	mx3_camera_base = memblock_alloc(MX31_3DS_CAMERA_BUF_SIZE,
+	mx3_camera_base = arm_memblock_steal(MX31_3DS_CAMERA_BUF_SIZE,
 					 MX31_3DS_CAMERA_BUF_SIZE);
-	memblock_free(mx3_camera_base, MX31_3DS_CAMERA_BUF_SIZE);
-	memblock_remove(mx3_camera_base, MX31_3DS_CAMERA_BUF_SIZE);
 }
 
 MACHINE_START(MX31_3DS, "Freescale MX31PDK (3DS)")
@@ -770,4 +789,5 @@ MACHINE_START(MX31_3DS, "Freescale MX31PDK (3DS)")
 	.timer = &mx31_3ds_timer,
 	.init_machine = mx31_3ds_init,
 	.reserve = mx31_3ds_reserve,
+	.restart	= mxc_restart,
 MACHINE_END

@@ -73,7 +73,6 @@
 #include <net/sock.h>
 #include <linux/errno.h>
 #include <linux/timer.h>
-#include <asm/system.h>
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 #include <asm/page.h>
@@ -1459,6 +1458,7 @@ static int packet_sendmsg_spkt(struct kiocb *iocb, struct socket *sock,
 	struct net_device *dev;
 	__be16 proto = 0;
 	int err;
+	int extra_len = 0;
 
 	/*
 	 *	Get and verify the address.
@@ -1493,16 +1493,25 @@ retry:
 	 * raw protocol and you must do your own fragmentation at this level.
 	 */
 
+	if (unlikely(sock_flag(sk, SOCK_NOFCS))) {
+		if (!netif_supports_nofcs(dev)) {
+			err = -EPROTONOSUPPORT;
+			goto out_unlock;
+		}
+		extra_len = 4; /* We're doing our own CRC */
+	}
+
 	err = -EMSGSIZE;
-	if (len > dev->mtu + dev->hard_header_len + VLAN_HLEN)
+	if (len > dev->mtu + dev->hard_header_len + VLAN_HLEN + extra_len)
 		goto out_unlock;
 
 	if (!skb) {
 		size_t reserved = LL_RESERVED_SPACE(dev);
+		int tlen = dev->needed_tailroom;
 		unsigned int hhlen = dev->header_ops ? dev->hard_header_len : 0;
 
 		rcu_read_unlock();
-		skb = sock_wmalloc(sk, len + reserved, 0, GFP_KERNEL);
+		skb = sock_wmalloc(sk, len + reserved + tlen, 0, GFP_KERNEL);
 		if (skb == NULL)
 			return -ENOBUFS;
 		/* FIXME: Save some space for broken drivers that write a hard
@@ -1525,7 +1534,7 @@ retry:
 		goto retry;
 	}
 
-	if (len > (dev->mtu + dev->hard_header_len)) {
+	if (len > (dev->mtu + dev->hard_header_len + extra_len)) {
 		/* Earlier code assumed this would be a VLAN pkt,
 		 * double-check this now that we have the actual
 		 * packet in hand.
@@ -1546,6 +1555,9 @@ retry:
 	err = sock_tx_timestamp(sk, &skb_shinfo(skb)->tx_flags);
 	if (err < 0)
 		goto out_unlock;
+
+	if (unlikely(extra_len == 4))
+		skb->no_fcs = 1;
 
 	dev_queue_xmit(skb);
 	rcu_read_unlock();
@@ -1642,7 +1654,7 @@ static int packet_rcv(struct sk_buff *skb, struct net_device *dev,
 			skb->data = skb_head;
 			skb->len = skb_len;
 		}
-		kfree_skb(skb);
+		consume_skb(skb);
 		skb = nskb;
 	}
 
@@ -1752,7 +1764,7 @@ static int tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
 		macoff = netoff = TPACKET_ALIGN(po->tp_hdrlen) + 16 +
 				  po->tp_reserve;
 	} else {
-		unsigned maclen = skb_network_offset(skb);
+		unsigned int maclen = skb_network_offset(skb);
 		netoff = TPACKET_ALIGN(po->tp_hdrlen +
 				       (maclen < 16 ? 16 : maclen)) +
 			po->tp_reserve;
@@ -1942,7 +1954,7 @@ static void tpacket_destruct_skb(struct sk_buff *skb)
 
 static int tpacket_fill_skb(struct packet_sock *po, struct sk_buff *skb,
 		void *frame, struct net_device *dev, int size_max,
-		__be16 proto, unsigned char *addr)
+		__be16 proto, unsigned char *addr, int hlen)
 {
 	union {
 		struct tpacket_hdr *h1;
@@ -1976,7 +1988,7 @@ static int tpacket_fill_skb(struct packet_sock *po, struct sk_buff *skb,
 		return -EMSGSIZE;
 	}
 
-	skb_reserve(skb, LL_RESERVED_SPACE(dev));
+	skb_reserve(skb, hlen);
 	skb_reset_network_header(skb);
 
 	data = ph.raw + po->tp_hdrlen - sizeof(struct sockaddr_ll);
@@ -2051,6 +2063,7 @@ static int tpacket_snd(struct packet_sock *po, struct msghdr *msg)
 	unsigned char *addr;
 	int len_sum = 0;
 	int status = 0;
+	int hlen, tlen;
 
 	mutex_lock(&po->pg_vec_lock);
 
@@ -2099,16 +2112,17 @@ static int tpacket_snd(struct packet_sock *po, struct msghdr *msg)
 		}
 
 		status = TP_STATUS_SEND_REQUEST;
+		hlen = LL_RESERVED_SPACE(dev);
+		tlen = dev->needed_tailroom;
 		skb = sock_alloc_send_skb(&po->sk,
-				LL_ALLOCATED_SPACE(dev)
-				+ sizeof(struct sockaddr_ll),
+				hlen + tlen + sizeof(struct sockaddr_ll),
 				0, &err);
 
 		if (unlikely(skb == NULL))
 			goto out_status;
 
 		tp_len = tpacket_fill_skb(po, skb, ph, dev, size_max, proto,
-				addr);
+				addr, hlen);
 
 		if (unlikely(tp_len < 0)) {
 			if (po->tp_loss) {
@@ -2205,6 +2219,8 @@ static int packet_snd(struct socket *sock,
 	int vnet_hdr_len;
 	struct packet_sock *po = pkt_sk(sk);
 	unsigned short gso_type = 0;
+	int hlen, tlen;
+	int extra_len = 0;
 
 	/*
 	 *	Get and verify the address.
@@ -2284,13 +2300,22 @@ static int packet_snd(struct socket *sock,
 		}
 	}
 
+	if (unlikely(sock_flag(sk, SOCK_NOFCS))) {
+		if (!netif_supports_nofcs(dev)) {
+			err = -EPROTONOSUPPORT;
+			goto out_unlock;
+		}
+		extra_len = 4; /* We're doing our own CRC */
+	}
+
 	err = -EMSGSIZE;
-	if (!gso_type && (len > dev->mtu + reserve + VLAN_HLEN))
+	if (!gso_type && (len > dev->mtu + reserve + VLAN_HLEN + extra_len))
 		goto out_unlock;
 
 	err = -ENOBUFS;
-	skb = packet_alloc_skb(sk, LL_ALLOCATED_SPACE(dev),
-			       LL_RESERVED_SPACE(dev), len, vnet_hdr.hdr_len,
+	hlen = LL_RESERVED_SPACE(dev);
+	tlen = dev->needed_tailroom;
+	skb = packet_alloc_skb(sk, hlen + tlen, hlen, len, vnet_hdr.hdr_len,
 			       msg->msg_flags & MSG_DONTWAIT, &err);
 	if (skb == NULL)
 		goto out_unlock;
@@ -2310,7 +2335,7 @@ static int packet_snd(struct socket *sock,
 	if (err < 0)
 		goto out_free;
 
-	if (!gso_type && (len > dev->mtu + reserve)) {
+	if (!gso_type && (len > dev->mtu + reserve + extra_len)) {
 		/* Earlier code assumed this would be a VLAN pkt,
 		 * double-check this now that we have the actual
 		 * packet in hand.
@@ -2347,6 +2372,9 @@ static int packet_snd(struct socket *sock,
 
 		len += vnet_hdr_len;
 	}
+
+	if (unlikely(extra_len == 4))
+		skb->no_fcs = 1;
 
 	/*
 	 *	Now send it
@@ -3196,10 +3224,10 @@ static int packet_getsockopt(struct socket *sock, int level, int optname,
 			     char __user *optval, int __user *optlen)
 {
 	int len;
-	int val;
+	int val, lv = sizeof(val);
 	struct sock *sk = sock->sk;
 	struct packet_sock *po = pkt_sk(sk);
-	void *data;
+	void *data = &val;
 	struct tpacket_stats st;
 	union tpacket_stats_u st_u;
 
@@ -3214,21 +3242,17 @@ static int packet_getsockopt(struct socket *sock, int level, int optname,
 
 	switch (optname) {
 	case PACKET_STATISTICS:
-		if (po->tp_version == TPACKET_V3) {
-			len = sizeof(struct tpacket_stats_v3);
-		} else {
-			if (len > sizeof(struct tpacket_stats))
-				len = sizeof(struct tpacket_stats);
-		}
 		spin_lock_bh(&sk->sk_receive_queue.lock);
 		if (po->tp_version == TPACKET_V3) {
+			lv = sizeof(struct tpacket_stats_v3);
 			memcpy(&st_u.stats3, &po->stats,
-			sizeof(struct tpacket_stats));
+			       sizeof(struct tpacket_stats));
 			st_u.stats3.tp_freeze_q_cnt =
-			po->stats_u.stats3.tp_freeze_q_cnt;
+					po->stats_u.stats3.tp_freeze_q_cnt;
 			st_u.stats3.tp_packets += po->stats.tp_drops;
 			data = &st_u.stats3;
 		} else {
+			lv = sizeof(struct tpacket_stats);
 			st = po->stats;
 			st.tp_packets += st.tp_drops;
 			data = &st;
@@ -3237,31 +3261,16 @@ static int packet_getsockopt(struct socket *sock, int level, int optname,
 		spin_unlock_bh(&sk->sk_receive_queue.lock);
 		break;
 	case PACKET_AUXDATA:
-		if (len > sizeof(int))
-			len = sizeof(int);
 		val = po->auxdata;
-
-		data = &val;
 		break;
 	case PACKET_ORIGDEV:
-		if (len > sizeof(int))
-			len = sizeof(int);
 		val = po->origdev;
-
-		data = &val;
 		break;
 	case PACKET_VNET_HDR:
-		if (len > sizeof(int))
-			len = sizeof(int);
 		val = po->has_vnet_hdr;
-
-		data = &val;
 		break;
 	case PACKET_VERSION:
-		if (len > sizeof(int))
-			len = sizeof(int);
 		val = po->tp_version;
-		data = &val;
 		break;
 	case PACKET_HDRLEN:
 		if (len > sizeof(int))
@@ -3281,39 +3290,28 @@ static int packet_getsockopt(struct socket *sock, int level, int optname,
 		default:
 			return -EINVAL;
 		}
-		data = &val;
 		break;
 	case PACKET_RESERVE:
-		if (len > sizeof(unsigned int))
-			len = sizeof(unsigned int);
 		val = po->tp_reserve;
-		data = &val;
 		break;
 	case PACKET_LOSS:
-		if (len > sizeof(unsigned int))
-			len = sizeof(unsigned int);
 		val = po->tp_loss;
-		data = &val;
 		break;
 	case PACKET_TIMESTAMP:
-		if (len > sizeof(int))
-			len = sizeof(int);
 		val = po->tp_tstamp;
-		data = &val;
 		break;
 	case PACKET_FANOUT:
-		if (len > sizeof(int))
-			len = sizeof(int);
 		val = (po->fanout ?
 		       ((u32)po->fanout->id |
 			((u32)po->fanout->type << 16)) :
 		       0);
-		data = &val;
 		break;
 	default:
 		return -ENOPROTOOPT;
 	}
 
+	if (len > lv)
+		len = lv;
 	if (put_user(len, optlen))
 		return -EFAULT;
 	if (copy_to_user(optval, data, len))

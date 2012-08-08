@@ -203,7 +203,7 @@ static int config_ep(struct fusb300_ep *ep,
 	struct fusb300 *fusb300 = ep->fusb300;
 	struct fusb300_ep_info info;
 
-	ep->desc = desc;
+	ep->ep.desc = desc;
 
 	info.interval = 0;
 	info.addrofs = 0;
@@ -443,7 +443,7 @@ static int fusb300_queue(struct usb_ep *_ep, struct usb_request *_req,
 	req->req.actual = 0;
 	req->req.status = -EINPROGRESS;
 
-	if (ep->desc == NULL) /* ep0 */
+	if (ep->ep.desc == NULL) /* ep0 */
 		ep0_queue(ep, req);
 	else if (request && !ep->stall)
 		enable_fifo_int(ep);
@@ -1317,7 +1317,7 @@ static int fusb300_udc_start(struct usb_gadget_driver *driver,
 	int retval;
 
 	if (!driver
-			|| driver->speed < USB_SPEED_FULL
+			|| driver->max_speed < USB_SPEED_FULL
 			|| !bind
 			|| !driver->setup)
 		return -EINVAL;
@@ -1463,7 +1463,7 @@ static int __init fusb300_probe(struct platform_device *pdev)
 
 	dev_set_name(&fusb300->gadget.dev, "gadget");
 
-	fusb300->gadget.is_dualspeed = 1;
+	fusb300->gadget.max_speed = USB_SPEED_HIGH;
 	fusb300->gadget.dev.parent = &pdev->dev;
 	fusb300->gadget.dev.dma_mask = pdev->dev.dma_mask;
 	fusb300->gadget.dev.release = pdev->dev.release;

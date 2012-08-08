@@ -1,19 +1,11 @@
 #include <linux/types.h>
-#include <linux/major.h>
 #include <linux/errno.h>
-#include <linux/signal.h>
-#include <linux/fcntl.h>
+#include <linux/kmod.h>
 #include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
-#include <linux/tty_flip.h>
-#include <linux/devpts_fs.h>
 #include <linux/file.h>
-#include <linux/console.h>
-#include <linux/timer.h>
-#include <linux/ctype.h>
-#include <linux/kd.h>
 #include <linux/mm.h>
 #include <linux/string.h>
 #include <linux/slab.h>
@@ -24,18 +16,8 @@
 #include <linux/device.h>
 #include <linux/wait.h>
 #include <linux/bitops.h>
-#include <linux/delay.h>
 #include <linux/seq_file.h>
-
 #include <linux/uaccess.h>
-#include <asm/system.h>
-
-#include <linux/kbd_kern.h>
-#include <linux/vt_kern.h>
-#include <linux/selection.h>
-
-#include <linux/kmod.h>
-#include <linux/nsproxy.h>
 #include <linux/ratelimit.h>
 
 /*
@@ -46,7 +28,6 @@
 
 static DEFINE_SPINLOCK(tty_ldisc_lock);
 static DECLARE_WAIT_QUEUE_HEAD(tty_ldisc_wait);
-static DECLARE_WAIT_QUEUE_HEAD(tty_ldisc_idle);
 /* Line disc dispatch table */
 static struct tty_ldisc_ops *tty_ldiscs[NR_LDISCS];
 
@@ -83,7 +64,7 @@ static void put_ldisc(struct tty_ldisc *ld)
 		return;
 	}
 	local_irq_restore(flags);
-	wake_up(&tty_ldisc_idle);
+	wake_up(&ld->wq_idle);
 }
 
 /**
@@ -218,6 +199,8 @@ static struct tty_ldisc *tty_ldisc_get(int disc)
 
 	ld->ops = ldops;
 	atomic_set(&ld->users, 1);
+	init_waitqueue_head(&ld->wq_idle);
+
 	return ld;
 }
 
@@ -556,10 +539,8 @@ static void tty_ldisc_flush_works(struct tty_struct *tty)
 static int tty_ldisc_wait_idle(struct tty_struct *tty, long timeout)
 {
 	long ret;
-	ret = wait_event_timeout(tty_ldisc_idle,
+	ret = wait_event_timeout(tty->ldisc->wq_idle,
 			atomic_read(&tty->ldisc->users) == 1, timeout);
-	if (ret < 0)
-		return ret;
 	return ret > 0 ? 0 : -EBUSY;
 }
 

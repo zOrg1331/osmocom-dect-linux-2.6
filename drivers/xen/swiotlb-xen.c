@@ -153,7 +153,7 @@ void __init xen_swiotlb_init(int verbose)
 	char *m = NULL;
 	unsigned int repeat = 3;
 
-	nr_tbl = swioltb_nr_tbl();
+	nr_tbl = swiotlb_nr_tbl();
 	if (nr_tbl)
 		xen_io_tlb_nslabs = nr_tbl;
 	else {
@@ -204,7 +204,8 @@ error:
 
 void *
 xen_swiotlb_alloc_coherent(struct device *hwdev, size_t size,
-			   dma_addr_t *dma_handle, gfp_t flags)
+			   dma_addr_t *dma_handle, gfp_t flags,
+			   struct dma_attrs *attrs)
 {
 	void *ret;
 	int order = get_order(size);
@@ -253,7 +254,7 @@ EXPORT_SYMBOL_GPL(xen_swiotlb_alloc_coherent);
 
 void
 xen_swiotlb_free_coherent(struct device *hwdev, size_t size, void *vaddr,
-			  dma_addr_t dev_addr)
+			  dma_addr_t dev_addr, struct dma_attrs *attrs)
 {
 	int order = get_order(size);
 	phys_addr_t phys;

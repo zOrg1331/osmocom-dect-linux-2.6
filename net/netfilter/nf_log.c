@@ -55,7 +55,7 @@ int nf_log_register(u_int8_t pf, struct nf_logger *logger)
 		llog = rcu_dereference_protected(nf_loggers[pf],
 						 lockdep_is_held(&nf_log_mutex));
 		if (llog == NULL)
-			RCU_INIT_POINTER(nf_loggers[pf], logger);
+			rcu_assign_pointer(nf_loggers[pf], logger);
 	}
 
 	mutex_unlock(&nf_log_mutex);
@@ -92,7 +92,7 @@ int nf_log_bind_pf(u_int8_t pf, const struct nf_logger *logger)
 		mutex_unlock(&nf_log_mutex);
 		return -ENOENT;
 	}
-	RCU_INIT_POINTER(nf_loggers[pf], logger);
+	rcu_assign_pointer(nf_loggers[pf], logger);
 	mutex_unlock(&nf_log_mutex);
 	return 0;
 }
@@ -214,13 +214,6 @@ static const struct file_operations nflog_file_ops = {
 #endif /* PROC_FS */
 
 #ifdef CONFIG_SYSCTL
-static struct ctl_path nf_log_sysctl_path[] = {
-	{ .procname = "net", },
-	{ .procname = "netfilter", },
-	{ .procname = "nf_log", },
-	{ }
-};
-
 static char nf_log_sysctl_fnames[NFPROTO_NUMPROTO-NFPROTO_UNSPEC][3];
 static struct ctl_table nf_log_sysctl_table[NFPROTO_NUMPROTO+1];
 static struct ctl_table_header *nf_log_dir_header;
@@ -250,7 +243,7 @@ static int nf_log_proc_dostring(ctl_table *table, int write,
 			mutex_unlock(&nf_log_mutex);
 			return -ENOENT;
 		}
-		RCU_INIT_POINTER(nf_loggers[tindex], logger);
+		rcu_assign_pointer(nf_loggers[tindex], logger);
 		mutex_unlock(&nf_log_mutex);
 	} else {
 		mutex_lock(&nf_log_mutex);
@@ -283,7 +276,7 @@ static __init int netfilter_log_sysctl_init(void)
 		nf_log_sysctl_table[i].extra1 = (void *)(unsigned long) i;
 	}
 
-	nf_log_dir_header = register_sysctl_paths(nf_log_sysctl_path,
+	nf_log_dir_header = register_net_sysctl(&init_net, "net/netfilter/nf_log",
 				       nf_log_sysctl_table);
 	if (!nf_log_dir_header)
 		return -ENOMEM;

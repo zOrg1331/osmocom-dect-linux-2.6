@@ -223,23 +223,10 @@ static struct platform_driver timbradio_platform_driver = {
 		.owner	= THIS_MODULE,
 	},
 	.probe		= timbradio_probe,
-	.remove		= timbradio_remove,
+	.remove		= __devexit_p(timbradio_remove),
 };
 
-/*--------------------------------------------------------------------------*/
-
-static int __init timbradio_init(void)
-{
-	return platform_driver_register(&timbradio_platform_driver);
-}
-
-static void __exit timbradio_exit(void)
-{
-	platform_driver_unregister(&timbradio_platform_driver);
-}
-
-module_init(timbradio_init);
-module_exit(timbradio_exit);
+module_platform_driver(timbradio_platform_driver);
 
 MODULE_DESCRIPTION("Timberdale Radio driver");
 MODULE_AUTHOR("Mocean Laboratories <info@mocean-labs.com>");

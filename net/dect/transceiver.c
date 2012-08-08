@@ -696,26 +696,32 @@ static int dect_fill_slot(struct sk_buff *skb,
 {
 	const struct dect_transceiver_slot *ts = &trx->slots[slot];
 
-	NLA_PUT_U8(skb, DECTA_SLOT_NUM, slot);
-	NLA_PUT_U8(skb, DECTA_SLOT_STATE, ts->state);
-	NLA_PUT_U32(skb, DECTA_SLOT_FLAGS, ts->flags);
+	if (nla_put_u8(skb, DECTA_SLOT_NUM, slot) ||
+	    nla_put_u8(skb, DECTA_SLOT_STATE, ts->state) ||
+	    nla_put_u32(skb, DECTA_SLOT_FLAGS, ts->flags))
+		goto nla_put_failure;
+
 	if (ts->state != DECT_SLOT_IDLE) {
-		NLA_PUT_U8(skb, DECTA_SLOT_PACKET, ts->chd.pkt);
-		NLA_PUT_U8(skb, DECTA_SLOT_CARRIER, ts->chd.carrier);
-		NLA_PUT_U32(skb, DECTA_SLOT_FREQUENCY, trx->band->frequency[ts->chd.carrier]);
+		if (nla_put_u8(skb, DECTA_SLOT_PACKET, ts->chd.pkt) ||
+		    nla_put_u8(skb, DECTA_SLOT_CARRIER, ts->chd.carrier) ||
+		    nla_put_u32(skb, DECTA_SLOT_FREQUENCY,
+			        trx->band->frequency[ts->chd.carrier]))
+			goto nla_put_failure;
 	}
 	if (ts->state == DECT_SLOT_RX) {
-		NLA_PUT_U32(skb, DECTA_SLOT_PHASEOFF, ts->phaseoff);
-		NLA_PUT_U8(skb, DECTA_SLOT_RSSI,
+		nla_put_u32(skb, DECTA_SLOT_PHASEOFF, ts->phaseoff);
+		nla_put_u8(skb, DECTA_SLOT_RSSI,
 			   ts->rssi >> DECT_RSSI_AVG_SCALE);
 	}
-	NLA_PUT_U32(skb, DECTA_SLOT_RX_BYTES, ts->rx_bytes);
-	NLA_PUT_U32(skb, DECTA_SLOT_RX_PACKETS, ts->rx_packets);
-	NLA_PUT_U32(skb, DECTA_SLOT_RX_A_CRC_ERRORS, ts->rx_a_crc_errors);
-	NLA_PUT_U32(skb, DECTA_SLOT_RX_X_CRC_ERRORS, ts->rx_x_crc_errors);
-	NLA_PUT_U32(skb, DECTA_SLOT_RX_Z_CRC_ERRORS, ts->rx_z_crc_errors);
-	NLA_PUT_U32(skb, DECTA_SLOT_TX_BYTES, ts->tx_bytes);
-	NLA_PUT_U32(skb, DECTA_SLOT_TX_PACKETS, ts->tx_packets);
+	if (nla_put_u32(skb, DECTA_SLOT_RX_BYTES, ts->rx_bytes) ||
+	    nla_put_u32(skb, DECTA_SLOT_RX_PACKETS, ts->rx_packets) ||
+	    nla_put_u32(skb, DECTA_SLOT_RX_A_CRC_ERRORS, ts->rx_a_crc_errors) ||
+	    nla_put_u32(skb, DECTA_SLOT_RX_X_CRC_ERRORS, ts->rx_x_crc_errors) ||
+	    nla_put_u32(skb, DECTA_SLOT_RX_Z_CRC_ERRORS, ts->rx_z_crc_errors) ||
+	    nla_put_u32(skb, DECTA_SLOT_TX_BYTES, ts->tx_bytes) ||
+	    nla_put_u32(skb, DECTA_SLOT_TX_PACKETS, ts->tx_packets))
+		goto nla_put_failure;
+
 	return 0;
 
 nla_put_failure:
@@ -738,20 +744,26 @@ static int dect_fill_transceiver(struct sk_buff *skb,
 
 	dm = nlmsg_data(nlh);
 
-	NLA_PUT_STRING(skb, DECTA_TRANSCEIVER_NAME, trx->name);
-	NLA_PUT_STRING(skb, DECTA_TRANSCEIVER_TYPE, trx->ops->name);
-	NLA_PUT_U32(skb, DECTA_TRANSCEIVER_FEATURES, trx->ops->features);
-	if (trx->cell != NULL)
-		NLA_PUT_U8(skb, DECTA_TRANSCEIVER_LINK, trx->cell->index);
+	if (nla_put_string(skb, DECTA_TRANSCEIVER_NAME, trx->name) ||
+	    nla_put_string(skb, DECTA_TRANSCEIVER_TYPE, trx->ops->name) ||
+	    nla_put_u32(skb, DECTA_TRANSCEIVER_FEATURES, trx->ops->features))
+		goto nla_put_failure;
+	if (trx->cell != NULL &&
+	    nla_put_u8(skb, DECTA_TRANSCEIVER_LINK, trx->cell->index))
+		goto nla_put_failure;
 
 	nest = nla_nest_start(skb, DECTA_TRANSCEIVER_STATS);
 	if (nest == NULL)
 		goto nla_put_failure;
-	NLA_PUT_U32(skb, DECTA_TRANSCEIVER_STATS_EVENT_BUSY, stats->event_busy);
-	NLA_PUT_U32(skb, DECTA_TRANSCEIVER_STATS_EVENT_LATE, stats->event_late);
+	if (nla_put_u32(skb, DECTA_TRANSCEIVER_STATS_EVENT_BUSY,
+			stats->event_busy) ||
+	    nla_put_u32(skb, DECTA_TRANSCEIVER_STATS_EVENT_LATE,
+		        stats->event_late))
+		goto nla_put_failure;
 	nla_nest_end(skb, nest);
 
-	NLA_PUT_U8(skb, DECTA_TRANSCEIVER_BAND, trx->band->band);
+	if (nla_put_u8(skb, DECTA_TRANSCEIVER_BAND, trx->band->band))
+		goto nla_put_failure;
 
 	nest = nla_nest_start(skb, DECTA_TRANSCEIVER_SLOTS);
 	if (nest == NULL)

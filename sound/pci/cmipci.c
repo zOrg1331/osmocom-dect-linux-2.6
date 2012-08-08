@@ -54,10 +54,10 @@ MODULE_SUPPORTED_DEVICE("{{C-Media,CMI8738},"
 
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
-static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable switches */
+static bool enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable switches */
 static long mpu_port[SNDRV_CARDS];
 static long fm_port[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS-1)]=1};
-static int soft_ac3[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS-1)]=1};
+static bool soft_ac3[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS-1)]=1};
 #ifdef SUPPORT_JOYSTICK
 static int joystick_port[SNDRV_CARDS];
 #endif
@@ -3398,7 +3398,7 @@ static int snd_cmipci_resume(struct pci_dev *pci)
 }
 #endif /* CONFIG_PM */
 
-static struct pci_driver driver = {
+static struct pci_driver cmipci_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = snd_cmipci_ids,
 	.probe = snd_cmipci_probe,
@@ -3409,15 +3409,4 @@ static struct pci_driver driver = {
 #endif
 };
 	
-static int __init alsa_card_cmipci_init(void)
-{
-	return pci_register_driver(&driver);
-}
-
-static void __exit alsa_card_cmipci_exit(void)
-{
-	pci_unregister_driver(&driver);
-}
-
-module_init(alsa_card_cmipci_init)
-module_exit(alsa_card_cmipci_exit)
+module_pci_driver(cmipci_driver);

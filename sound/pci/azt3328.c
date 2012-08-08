@@ -301,7 +301,7 @@ static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
 module_param_array(id, charp, NULL, 0444);
 MODULE_PARM_DESC(id, "ID string for AZF3328 soundcard.");
 
-static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
+static bool enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
 module_param_array(enable, bool, NULL, 0444);
 MODULE_PARM_DESC(enable, "Enable AZF3328 soundcard.");
 
@@ -2684,9 +2684,8 @@ snd_azf3328_probe(struct pci_dev *pci, const struct pci_device_id *pci_id)
 		err = snd_opl3_hwdep_new(opl3, 0, 1, NULL);
 		if (err < 0)
 			goto out_err;
+		opl3->private_data = chip;
 	}
-
-	opl3->private_data = chip;
 
 	sprintf(card->longname, "%s at 0x%lx, irq %i",
 		card->shortname, chip->ctrl_io, chip->irq);
@@ -2863,7 +2862,7 @@ snd_azf3328_resume(struct pci_dev *pci)
 #endif /* CONFIG_PM */
 
 
-static struct pci_driver driver = {
+static struct pci_driver azf3328_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = snd_azf3328_ids,
 	.probe = snd_azf3328_probe,
@@ -2874,23 +2873,4 @@ static struct pci_driver driver = {
 #endif
 };
 
-static int __init
-alsa_card_azf3328_init(void)
-{
-	int err;
-	snd_azf3328_dbgcallenter();
-	err = pci_register_driver(&driver);
-	snd_azf3328_dbgcallleave();
-	return err;
-}
-
-static void __exit
-alsa_card_azf3328_exit(void)
-{
-	snd_azf3328_dbgcallenter();
-	pci_unregister_driver(&driver);
-	snd_azf3328_dbgcallleave();
-}
-
-module_init(alsa_card_azf3328_init)
-module_exit(alsa_card_azf3328_exit)
+module_pci_driver(azf3328_driver);

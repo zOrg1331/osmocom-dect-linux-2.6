@@ -206,15 +206,10 @@ static int omap1_videobuf_setup(struct videobuf_queue *vq, unsigned int *count,
 		unsigned int *size)
 {
 	struct soc_camera_device *icd = vq->priv_data;
-	int bytes_per_line = soc_mbus_bytes_per_line(icd->user_width,
-			icd->current_fmt->host_fmt);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
 	struct omap1_cam_dev *pcdev = ici->priv;
 
-	if (bytes_per_line < 0)
-		return bytes_per_line;
-
-	*size = bytes_per_line * icd->user_height;
+	*size = icd->sizeimage;
 
 	if (!*count || *count < OMAP1_CAMERA_MIN_BUF_COUNT(pcdev->vb_mode))
 		*count = OMAP1_CAMERA_MIN_BUF_COUNT(pcdev->vb_mode);
@@ -256,14 +251,9 @@ static int omap1_videobuf_prepare(struct videobuf_queue *vq,
 {
 	struct soc_camera_device *icd = vq->priv_data;
 	struct omap1_cam_buf *buf = container_of(vb, struct omap1_cam_buf, vb);
-	int bytes_per_line = soc_mbus_bytes_per_line(icd->user_width,
-			icd->current_fmt->host_fmt);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
 	struct omap1_cam_dev *pcdev = ici->priv;
 	int ret;
-
-	if (bytes_per_line < 0)
-		return bytes_per_line;
 
 	WARN_ON(!list_empty(&vb->queue));
 
@@ -281,7 +271,7 @@ static int omap1_videobuf_prepare(struct videobuf_queue *vq,
 		vb->state  = VIDEOBUF_NEEDS_INIT;
 	}
 
-	vb->size = bytes_per_line * vb->height;
+	vb->size = icd->sizeimage;
 
 	if (vb->baddr && vb->bsize < vb->size) {
 		ret = -EINVAL;
@@ -999,6 +989,7 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_VYUY8_2X8,
@@ -1008,6 +999,7 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_YUYV8_2X8,
@@ -1017,6 +1009,7 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_YVYU8_2X8,
@@ -1026,6 +1019,7 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB555_2X8_PADHI_BE,
@@ -1035,6 +1029,7 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB555_2X8_PADHI_LE,
@@ -1044,6 +1039,7 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB565_2X8_BE,
@@ -1053,6 +1049,7 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 }, {
 	.code = V4L2_MBUS_FMT_RGB565_2X8_LE,
@@ -1062,6 +1059,7 @@ static const struct soc_mbus_lookup omap1_cam_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_2X8_PADHI,
 		.order			= SOC_MBUS_ORDER_BE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 },
 };
@@ -1436,13 +1434,13 @@ static int omap1_cam_querycap(struct soc_camera_host *ici,
 	return 0;
 }
 
-static int omap1_cam_set_bus_param(struct soc_camera_device *icd,
-		__u32 pixfmt)
+static int omap1_cam_set_bus_param(struct soc_camera_device *icd)
 {
 	struct v4l2_subdev *sd = soc_camera_to_subdev(icd);
 	struct device *dev = icd->parent;
 	struct soc_camera_host *ici = to_soc_camera_host(dev);
 	struct omap1_cam_dev *pcdev = ici->priv;
+	u32 pixfmt = icd->current_fmt->host_fmt->fourcc;
 	const struct soc_camera_format_xlate *xlate;
 	const struct soc_mbus_pixelfmt *fmt;
 	struct v4l2_mbus_config cfg = {.type = V4L2_MBUS_PARALLEL,};
@@ -1713,17 +1711,7 @@ static struct platform_driver omap1_cam_driver = {
 	.remove		= __exit_p(omap1_cam_remove),
 };
 
-static int __init omap1_cam_init(void)
-{
-	return platform_driver_register(&omap1_cam_driver);
-}
-module_init(omap1_cam_init);
-
-static void __exit omap1_cam_exit(void)
-{
-	platform_driver_unregister(&omap1_cam_driver);
-}
-module_exit(omap1_cam_exit);
+module_platform_driver(omap1_cam_driver);
 
 module_param(sg_mode, bool, 0644);
 MODULE_PARM_DESC(sg_mode, "videobuf mode, 0: dma-contig (default), 1: dma-sg");

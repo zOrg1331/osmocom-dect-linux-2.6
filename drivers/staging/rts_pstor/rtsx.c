@@ -466,8 +466,6 @@ static int rtsx_control_thread(void *__dev)
 	struct rtsx_chip *chip = dev->chip;
 	struct Scsi_Host *host = rtsx_to_host(dev);
 
-	current->flags |= PF_NOFREEZE;
-
 	for (;;) {
 		if (wait_for_completion_interruptible(&dev->cmnd_ready))
 			break;
@@ -1001,6 +999,11 @@ static int __devinit rtsx_probe(struct pci_dev *pci,
 	synchronize_irq(dev->irq);
 
 	rtsx_init_chip(dev->chip);
+
+	/* set the supported max_lun and max_id for the scsi host
+	 * NOTE: the minimal value of max_id is 1 */
+	host->max_id = 1;
+	host->max_lun = dev->chip->max_lun;
 
 	/* Start up our control thread */
 	th = kthread_run(rtsx_control_thread, dev, CR_DRIVER_NAME);

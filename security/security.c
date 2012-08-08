@@ -19,6 +19,12 @@
 #include <linux/integrity.h>
 #include <linux/ima.h>
 #include <linux/evm.h>
+#include <linux/fsnotify.h>
+#include <linux/mman.h>
+#include <linux/mount.h>
+#include <linux/personality.h>
+#include <linux/backing-dev.h>
+#include <net/flow.h>
 
 #define MAX_LSM_EVM_XATTR	2
 
@@ -155,35 +161,16 @@ int security_capset(struct cred *new, const struct cred *old,
 				    effective, inheritable, permitted);
 }
 
-int security_capable(struct user_namespace *ns, const struct cred *cred,
+int security_capable(const struct cred *cred, struct user_namespace *ns,
 		     int cap)
 {
-	return security_ops->capable(current, cred, ns, cap,
-				     SECURITY_CAP_AUDIT);
+	return security_ops->capable(cred, ns, cap, SECURITY_CAP_AUDIT);
 }
 
-int security_real_capable(struct task_struct *tsk, struct user_namespace *ns,
-			  int cap)
+int security_capable_noaudit(const struct cred *cred, struct user_namespace *ns,
+			     int cap)
 {
-	const struct cred *cred;
-	int ret;
-
-	cred = get_task_cred(tsk);
-	ret = security_ops->capable(tsk, cred, ns, cap, SECURITY_CAP_AUDIT);
-	put_cred(cred);
-	return ret;
-}
-
-int security_real_capable_noaudit(struct task_struct *tsk,
-				  struct user_namespace *ns, int cap)
-{
-	const struct cred *cred;
-	int ret;
-
-	cred = get_task_cred(tsk);
-	ret = security_ops->capable(tsk, cred, ns, cap, SECURITY_CAP_NOAUDIT);
-	put_cred(cred);
-	return ret;
+	return security_ops->capable(cred, ns, cap, SECURITY_CAP_NOAUDIT);
 }
 
 int security_quotactl(int cmds, int type, int id, struct super_block *sb)
@@ -206,23 +193,9 @@ int security_settime(const struct timespec *ts, const struct timezone *tz)
 	return security_ops->settime(ts, tz);
 }
 
-int security_vm_enough_memory(long pages)
-{
-	WARN_ON(current->mm == NULL);
-	return security_ops->vm_enough_memory(current->mm, pages);
-}
-
 int security_vm_enough_memory_mm(struct mm_struct *mm, long pages)
 {
-	WARN_ON(mm == NULL);
 	return security_ops->vm_enough_memory(mm, pages);
-}
-
-int security_vm_enough_memory_kern(long pages)
-{
-	/* If current->mm is a kernel thread then we will pass NULL,
-	   for this specific case that is fine */
-	return security_ops->vm_enough_memory(current->mm, pages);
 }
 
 int security_bprm_set_creds(struct linux_binprm *bprm)
@@ -388,7 +361,7 @@ int security_old_inode_init_security(struct inode *inode, struct inode *dir,
 EXPORT_SYMBOL(security_old_inode_init_security);
 
 #ifdef CONFIG_SECURITY_PATH
-int security_path_mknod(struct path *dir, struct dentry *dentry, int mode,
+int security_path_mknod(struct path *dir, struct dentry *dentry, umode_t mode,
 			unsigned int dev)
 {
 	if (unlikely(IS_PRIVATE(dir->dentry->d_inode)))
@@ -397,7 +370,7 @@ int security_path_mknod(struct path *dir, struct dentry *dentry, int mode,
 }
 EXPORT_SYMBOL(security_path_mknod);
 
-int security_path_mkdir(struct path *dir, struct dentry *dentry, int mode)
+int security_path_mkdir(struct path *dir, struct dentry *dentry, umode_t mode)
 {
 	if (unlikely(IS_PRIVATE(dir->dentry->d_inode)))
 		return 0;
@@ -454,12 +427,11 @@ int security_path_truncate(struct path *path)
 	return security_ops->path_truncate(path);
 }
 
-int security_path_chmod(struct dentry *dentry, struct vfsmount *mnt,
-			mode_t mode)
+int security_path_chmod(struct path *path, umode_t mode)
 {
-	if (unlikely(IS_PRIVATE(dentry->d_inode)))
+	if (unlikely(IS_PRIVATE(path->dentry->d_inode)))
 		return 0;
-	return security_ops->path_chmod(dentry, mnt, mode);
+	return security_ops->path_chmod(path, mode);
 }
 
 int security_path_chown(struct path *path, uid_t uid, gid_t gid)
@@ -475,7 +447,7 @@ int security_path_chroot(struct path *path)
 }
 #endif
 
-int security_inode_create(struct inode *dir, struct dentry *dentry, int mode)
+int security_inode_create(struct inode *dir, struct dentry *dentry, umode_t mode)
 {
 	if (unlikely(IS_PRIVATE(dir)))
 		return 0;
@@ -506,7 +478,7 @@ int security_inode_symlink(struct inode *dir, struct dentry *dentry,
 	return security_ops->inode_symlink(dir, dentry, old_name);
 }
 
-int security_inode_mkdir(struct inode *dir, struct dentry *dentry, int mode)
+int security_inode_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 {
 	if (unlikely(IS_PRIVATE(dir)))
 		return 0;
@@ -521,7 +493,7 @@ int security_inode_rmdir(struct inode *dir, struct dentry *dentry)
 	return security_ops->inode_rmdir(dir, dentry);
 }
 
-int security_inode_mknod(struct inode *dir, struct dentry *dentry, int mode, dev_t dev)
+int security_inode_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
 {
 	if (unlikely(IS_PRIVATE(dir)))
 		return 0;
@@ -689,16 +661,54 @@ int security_file_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return security_ops->file_ioctl(file, cmd, arg);
 }
 
-int security_file_mmap(struct file *file, unsigned long reqprot,
-			unsigned long prot, unsigned long flags,
-			unsigned long addr, unsigned long addr_only)
+static inline unsigned long mmap_prot(struct file *file, unsigned long prot)
+{
+	/*
+	 * Does we have PROT_READ and does the application expect
+	 * it to imply PROT_EXEC?  If not, nothing to talk about...
+	 */
+	if ((prot & (PROT_READ | PROT_EXEC)) != PROT_READ)
+		return prot;
+	if (!(current->personality & READ_IMPLIES_EXEC))
+		return prot;
+	/*
+	 * if that's an anonymous mapping, let it.
+	 */
+	if (!file)
+		return prot | PROT_EXEC;
+	/*
+	 * ditto if it's not on noexec mount, except that on !MMU we need
+	 * BDI_CAP_EXEC_MMAP (== VM_MAYEXEC) in this case
+	 */
+	if (!(file->f_path.mnt->mnt_flags & MNT_NOEXEC)) {
+#ifndef CONFIG_MMU
+		unsigned long caps = 0;
+		struct address_space *mapping = file->f_mapping;
+		if (mapping && mapping->backing_dev_info)
+			caps = mapping->backing_dev_info->capabilities;
+		if (!(caps & BDI_CAP_EXEC_MAP))
+			return prot;
+#endif
+		return prot | PROT_EXEC;
+	}
+	/* anything on noexec mount won't get PROT_EXEC */
+	return prot;
+}
+
+int security_mmap_file(struct file *file, unsigned long prot,
+			unsigned long flags)
 {
 	int ret;
-
-	ret = security_ops->file_mmap(file, reqprot, prot, flags, addr, addr_only);
+	ret = security_ops->mmap_file(file, prot,
+					mmap_prot(file, prot), flags);
 	if (ret)
 		return ret;
 	return ima_file_mmap(file, prot);
+}
+
+int security_mmap_addr(unsigned long addr)
+{
+	return security_ops->mmap_addr(addr);
 }
 
 int security_file_mprotect(struct vm_area_struct *vma, unsigned long reqprot,
@@ -733,11 +743,11 @@ int security_file_receive(struct file *file)
 	return security_ops->file_receive(file);
 }
 
-int security_dentry_open(struct file *file, const struct cred *cred)
+int security_file_open(struct file *file, const struct cred *cred)
 {
 	int ret;
 
-	ret = security_ops->dentry_open(file, cred);
+	ret = security_ops->file_open(file, cred);
 	if (ret)
 		return ret;
 
@@ -747,6 +757,11 @@ int security_dentry_open(struct file *file, const struct cred *cred)
 int security_task_create(unsigned long clone_flags)
 {
 	return security_ops->task_create(clone_flags);
+}
+
+void security_task_free(struct task_struct *task)
+{
+	security_ops->task_free(task);
 }
 
 int security_cred_alloc_blank(struct cred *cred, gfp_t gfp)
@@ -994,12 +1009,6 @@ int security_netlink_send(struct sock *sk, struct sk_buff *skb)
 {
 	return security_ops->netlink_send(sk, skb);
 }
-
-int security_netlink_recv(struct sk_buff *skb, int cap)
-{
-	return security_ops->netlink_recv(skb, cap);
-}
-EXPORT_SYMBOL(security_netlink_recv);
 
 int security_secid_to_secctx(u32 secid, char **secdata, u32 *seclen)
 {

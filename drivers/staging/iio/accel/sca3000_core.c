@@ -18,9 +18,10 @@
 #include <linux/spi/spi.h>
 #include <linux/sysfs.h>
 #include <linux/module.h>
-#include "../iio.h"
-#include "../sysfs.h"
-#include "../buffer_generic.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
+#include <linux/iio/events.h>
+#include <linux/iio/buffer.h>
 
 #include "sca3000.h"
 
@@ -240,7 +241,7 @@ error_ret:
 static int sca3000_check_status(struct device *dev)
 {
 	int ret;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 
 	mutex_lock(&st->lock);
@@ -267,7 +268,7 @@ static ssize_t sca3000_show_rev(struct device *dev,
 				char *buf)
 {
 	int len = 0, ret;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 
 	mutex_lock(&st->lock);
@@ -295,7 +296,7 @@ sca3000_show_available_measurement_modes(struct device *dev,
 					 struct device_attribute *attr,
 					 char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 	int len = 0;
 
@@ -327,7 +328,7 @@ sca3000_show_measurement_mode(struct device *dev,
 			      struct device_attribute *attr,
 			      char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 	int len = 0, ret;
 
@@ -378,16 +379,20 @@ sca3000_store_measurement_mode(struct device *dev,
 			       const char *buf,
 			       size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 	int ret;
-	int mask = 0x03;
-	long val;
+	u8 mask = 0x03;
+	u8 val;
 
 	mutex_lock(&st->lock);
-	ret = strict_strtol(buf, 10, &val);
+	ret = kstrtou8(buf, 10, &val);
 	if (ret)
 		goto error_ret;
+	if (val > 3) {
+		ret = -EINVAL;
+		goto error_ret;
+	}
 	ret = sca3000_read_data_short(st, SCA3000_REG_ADDR_MODE, 1);
 	if (ret)
 		goto error_ret;
@@ -424,17 +429,31 @@ static IIO_DEVICE_ATTR(measurement_mode, S_IRUGO | S_IWUSR,
 static IIO_DEVICE_ATTR(revision, S_IRUGO, sca3000_show_rev, NULL, 0);
 
 #define SCA3000_INFO_MASK			\
-	(1 << IIO_CHAN_INFO_SCALE_SHARED)
+	IIO_CHAN_INFO_RAW_SEPARATE_BIT | IIO_CHAN_INFO_SCALE_SHARED_BIT
 #define SCA3000_EVENT_MASK					\
 	(IIO_EV_BIT(IIO_EV_TYPE_MAG, IIO_EV_DIR_RISING))
 
+#define SCA3000_CHAN(index, mod)				\
+	{							\
+		.type = IIO_ACCEL,				\
+		.modified = 1,					\
+		.channel2 = mod,				\
+		.info_mask = SCA3000_INFO_MASK,			\
+		.address = index,				\
+		.scan_index = index,				\
+		.scan_type = {					\
+			.sign = 's',				\
+			.realbits = 11,				\
+			.storagebits = 16,			\
+			.shift = 5,				\
+		},						\
+		.event_mask = SCA3000_EVENT_MASK,		\
+	 }
+
 static struct iio_chan_spec sca3000_channels[] = {
-	IIO_CHAN(IIO_ACCEL, 1, 0, 0, NULL, 0, IIO_MOD_X, SCA3000_INFO_MASK,
-		 0, 0, IIO_ST('s', 11, 16, 5), SCA3000_EVENT_MASK),
-	IIO_CHAN(IIO_ACCEL, 1, 0, 0, NULL, 0, IIO_MOD_Y, SCA3000_INFO_MASK,
-		 1, 1, IIO_ST('s', 11, 16, 5), SCA3000_EVENT_MASK),
-	IIO_CHAN(IIO_ACCEL, 1, 0, 0, NULL, 0, IIO_MOD_Z, SCA3000_INFO_MASK,
-		 2, 2, IIO_ST('s', 11, 16, 5), SCA3000_EVENT_MASK),
+	SCA3000_CHAN(0, IIO_MOD_X),
+	SCA3000_CHAN(1, IIO_MOD_Y),
+	SCA3000_CHAN(2, IIO_MOD_Z),
 };
 
 static u8 sca3000_addresses[3][3] = {
@@ -457,7 +476,7 @@ static int sca3000_read_raw(struct iio_dev *indio_dev,
 	u8 address;
 
 	switch (mask) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		mutex_lock(&st->lock);
 		if (st->mo_det_use_count) {
 			mutex_unlock(&st->lock);
@@ -474,7 +493,7 @@ static int sca3000_read_raw(struct iio_dev *indio_dev,
 			(sizeof(*val)*8 - 13);
 		mutex_unlock(&st->lock);
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_SCALE_SHARED):
+	case IIO_CHAN_INFO_SCALE:
 		*val = 0;
 		if (chan->type == IIO_ACCEL)
 			*val2 = st->info->scale;
@@ -498,7 +517,7 @@ static ssize_t sca3000_read_av_freq(struct device *dev,
 			     struct device_attribute *attr,
 			     char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 	int len = 0, ret, val;
 
@@ -569,7 +588,7 @@ static ssize_t sca3000_read_frequency(struct device *dev,
 			       struct device_attribute *attr,
 			       char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 	int ret, len = 0, base_freq = 0, val;
 
@@ -611,7 +630,7 @@ static ssize_t sca3000_set_frequency(struct device *dev,
 			      const char *buf,
 			      size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 	int ret, base_freq = 0;
 	int ctrlval;
@@ -671,7 +690,7 @@ static ssize_t sca3000_read_temp(struct device *dev,
 				 struct device_attribute *attr,
 				 char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 	int ret;
 	int val;
@@ -892,7 +911,7 @@ static ssize_t sca3000_query_free_fall_mode(struct device *dev,
 					    char *buf)
 {
 	int ret, len;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 	int val;
 
@@ -920,7 +939,7 @@ static ssize_t sca3000_set_free_fall_mode(struct device *dev,
 					  const char *buf,
 					  size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct sca3000_state *st = iio_priv(indio_dev);
 	long val;
 	int ret;
@@ -1126,7 +1145,7 @@ static int __devinit sca3000_probe(struct spi_device *spi)
 	struct sca3000_state *st;
 	struct iio_dev *indio_dev;
 
-	indio_dev = iio_allocate_device(sizeof(*st));
+	indio_dev = iio_device_alloc(sizeof(*st));
 	if (indio_dev == NULL) {
 		ret = -ENOMEM;
 		goto error_ret;
@@ -1161,9 +1180,9 @@ static int __devinit sca3000_probe(struct spi_device *spi)
 	if (ret < 0)
 		goto error_unregister_dev;
 	if (indio_dev->buffer) {
-		iio_scan_mask_set(indio_dev->buffer, 0);
-		iio_scan_mask_set(indio_dev->buffer, 1);
-		iio_scan_mask_set(indio_dev->buffer, 2);
+		iio_scan_mask_set(indio_dev, indio_dev->buffer, 0);
+		iio_scan_mask_set(indio_dev, indio_dev->buffer, 1);
+		iio_scan_mask_set(indio_dev, indio_dev->buffer, 2);
 	}
 
 	if (spi->irq) {
@@ -1190,7 +1209,7 @@ error_unregister_ring:
 error_unregister_dev:
 	iio_device_unregister(indio_dev);
 error_free_dev:
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 
 error_ret:
 	return ret;
@@ -1228,7 +1247,7 @@ static int sca3000_remove(struct spi_device *spi)
 	iio_device_unregister(indio_dev);
 	iio_buffer_unregister(indio_dev);
 	sca3000_unconfigure_ring(indio_dev);
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 
 	return 0;
 }
@@ -1240,6 +1259,7 @@ static const struct spi_device_id sca3000_id[] = {
 	{"sca3000_e05", e05},
 	{}
 };
+MODULE_DEVICE_TABLE(spi, sca3000_id);
 
 static struct spi_driver sca3000_driver = {
 	.driver = {
@@ -1250,18 +1270,7 @@ static struct spi_driver sca3000_driver = {
 	.remove = __devexit_p(sca3000_remove),
 	.id_table = sca3000_id,
 };
-
-static __init int sca3000_init(void)
-{
-	return spi_register_driver(&sca3000_driver);
-}
-module_init(sca3000_init);
-
-static __exit void sca3000_exit(void)
-{
-	spi_unregister_driver(&sca3000_driver);
-}
-module_exit(sca3000_exit);
+module_spi_driver(sca3000_driver);
 
 MODULE_AUTHOR("Jonathan Cameron <jic23@cam.ac.uk>");
 MODULE_DESCRIPTION("VTI SCA3000 Series Accelerometers SPI driver");

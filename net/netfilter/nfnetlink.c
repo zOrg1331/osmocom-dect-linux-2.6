@@ -23,7 +23,6 @@
 #include <linux/net.h>
 #include <linux/skbuff.h>
 #include <asm/uaccess.h>
-#include <asm/system.h>
 #include <net/sock.h>
 #include <net/netlink.h>
 #include <linux/init.h>
@@ -59,7 +58,7 @@ int nfnetlink_subsys_register(const struct nfnetlink_subsystem *n)
 		nfnl_unlock();
 		return -EBUSY;
 	}
-	RCU_INIT_POINTER(subsys_table[n->subsys_id], n);
+	rcu_assign_pointer(subsys_table[n->subsys_id], n);
 	nfnl_unlock();
 
 	return 0;
@@ -104,7 +103,7 @@ int nfnetlink_has_listeners(struct net *net, unsigned int group)
 EXPORT_SYMBOL_GPL(nfnetlink_has_listeners);
 
 int nfnetlink_send(struct sk_buff *skb, struct net *net, u32 pid,
-		   unsigned group, int echo, gfp_t flags)
+		   unsigned int group, int echo, gfp_t flags)
 {
 	return nlmsg_notify(net->nfnl, skb, pid, group, echo, flags);
 }
@@ -130,7 +129,7 @@ static int nfnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	const struct nfnetlink_subsystem *ss;
 	int type, err;
 
-	if (security_netlink_recv(skb, CAP_NET_ADMIN))
+	if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
 
 	/* All the messages must at least contain nfgenmsg */
@@ -170,8 +169,10 @@ replay:
 
 		err = nla_parse(cda, ss->cb[cb_id].attr_count,
 				attr, attrlen, ss->cb[cb_id].policy);
-		if (err < 0)
+		if (err < 0) {
+			rcu_read_unlock();
 			return err;
+		}
 
 		if (nc->call_rcu) {
 			err = nc->call_rcu(net->nfnl, skb, nlh,
@@ -210,7 +211,7 @@ static int __net_init nfnetlink_net_init(struct net *net)
 	if (!nfnl)
 		return -ENOMEM;
 	net->nfnl_stash = nfnl;
-	RCU_INIT_POINTER(net->nfnl, nfnl);
+	rcu_assign_pointer(net->nfnl, nfnl);
 	return 0;
 }
 

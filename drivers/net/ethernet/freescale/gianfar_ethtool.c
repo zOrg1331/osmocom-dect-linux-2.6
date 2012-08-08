@@ -1,5 +1,5 @@
 /*
- *  drivers/net/gianfar_ethtool.c
+ *  drivers/net/ethernet/freescale/gianfar_ethtool.c
  *
  *  Gianfar Ethernet Driver
  *  Ethtool support for Gianfar Enet
@@ -26,6 +26,7 @@
 #include <linux/delay.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
+#include <linux/net_tstamp.h>
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
 #include <linux/mm.h>
@@ -58,7 +59,7 @@ static void gfar_gringparam(struct net_device *dev, struct ethtool_ringparam *rv
 static int gfar_sringparam(struct net_device *dev, struct ethtool_ringparam *rvals);
 static void gfar_gdrvinfo(struct net_device *dev, struct ethtool_drvinfo *drvinfo);
 
-static char stat_gstrings[][ETH_GSTRING_LEN] = {
+static const char stat_gstrings[][ETH_GSTRING_LEN] = {
 	"rx-dropped-by-kernel",
 	"rx-large-frame-errors",
 	"rx-short-frame-errors",
@@ -519,12 +520,12 @@ static int gfar_sringparam(struct net_device *dev, struct ethtool_ringparam *rva
 	return err;
 }
 
-int gfar_set_features(struct net_device *dev, u32 features)
+int gfar_set_features(struct net_device *dev, netdev_features_t features)
 {
 	struct gfar_private *priv = netdev_priv(dev);
 	unsigned long flags;
 	int err = 0, i = 0;
-	u32 changed = dev->features ^ features;
+	netdev_features_t changed = dev->features ^ features;
 
 	if (changed & (NETIF_F_HW_VLAN_TX|NETIF_F_HW_VLAN_RX))
 		gfar_vlan_mode(dev, features);
@@ -1410,10 +1411,9 @@ static int gfar_optimize_filer_masks(struct filer_table *tab)
 
 	/* We need a copy of the filer table because
 	 * we want to change its order */
-	temp_table = kmalloc(sizeof(*temp_table), GFP_KERNEL);
+	temp_table = kmemdup(tab, sizeof(*temp_table), GFP_KERNEL);
 	if (temp_table == NULL)
 		return -ENOMEM;
-	memcpy(temp_table, tab, sizeof(*temp_table));
 
 	mask_table = kcalloc(MAX_FILER_CACHE_IDX / 2 + 1,
 			sizeof(struct gfar_mask_entry), GFP_KERNEL);
@@ -1693,8 +1693,9 @@ static int gfar_set_nfc(struct net_device *dev, struct ethtool_rxnfc *cmd)
 		ret = gfar_set_hash_opts(priv, cmd);
 		break;
 	case ETHTOOL_SRXCLSRLINS:
-		if (cmd->fs.ring_cookie != RX_CLS_FLOW_DISC &&
-			cmd->fs.ring_cookie >= priv->num_rx_queues) {
+		if ((cmd->fs.ring_cookie != RX_CLS_FLOW_DISC &&
+		     cmd->fs.ring_cookie >= priv->num_rx_queues) ||
+		    cmd->fs.location >= MAX_FILER_IDX) {
 			ret = -EINVAL;
 			break;
 		}
@@ -1739,6 +1740,34 @@ static int gfar_get_nfc(struct net_device *dev, struct ethtool_rxnfc *cmd,
 	return ret;
 }
 
+int gfar_phc_index = -1;
+
+static int gfar_get_ts_info(struct net_device *dev,
+			    struct ethtool_ts_info *info)
+{
+	struct gfar_private *priv = netdev_priv(dev);
+
+	if (!(priv->device_flags & FSL_GIANFAR_DEV_HAS_TIMER)) {
+		info->so_timestamping =
+			SOF_TIMESTAMPING_RX_SOFTWARE |
+			SOF_TIMESTAMPING_SOFTWARE;
+		info->phc_index = -1;
+		return 0;
+	}
+	info->so_timestamping =
+		SOF_TIMESTAMPING_TX_HARDWARE |
+		SOF_TIMESTAMPING_RX_HARDWARE |
+		SOF_TIMESTAMPING_RAW_HARDWARE;
+	info->phc_index = gfar_phc_index;
+	info->tx_types =
+		(1 << HWTSTAMP_TX_OFF) |
+		(1 << HWTSTAMP_TX_ON);
+	info->rx_filters =
+		(1 << HWTSTAMP_FILTER_NONE) |
+		(1 << HWTSTAMP_FILTER_ALL);
+	return 0;
+}
+
 const struct ethtool_ops gfar_ethtool_ops = {
 	.get_settings = gfar_gsettings,
 	.set_settings = gfar_ssettings,
@@ -1761,4 +1790,5 @@ const struct ethtool_ops gfar_ethtool_ops = {
 #endif
 	.set_rxnfc = gfar_set_nfc,
 	.get_rxnfc = gfar_get_nfc,
+	.get_ts_info = gfar_get_ts_info,
 };

@@ -75,10 +75,18 @@
 	 (fc_hdr)->fh_s_id[1] <<  8 | \
 	 (fc_hdr)->fh_s_id[2])
 
+#define sli4_did_from_fc_hdr(fc_hdr)  \
+	((fc_hdr)->fh_d_id[0] << 16 | \
+	 (fc_hdr)->fh_d_id[1] <<  8 | \
+	 (fc_hdr)->fh_d_id[2])
+
 #define sli4_fctl_from_fc_hdr(fc_hdr)  \
 	((fc_hdr)->fh_f_ctl[0] << 16 | \
 	 (fc_hdr)->fh_f_ctl[1] <<  8 | \
 	 (fc_hdr)->fh_f_ctl[2])
+
+#define sli4_type_from_fc_hdr(fc_hdr)  \
+	((fc_hdr)->fh_type)
 
 #define LPFC_FW_RESET_MAXIMUM_WAIT_10MS_CNT 12000
 
@@ -291,7 +299,7 @@ struct lpfc_bmbx {
 #define LPFC_RQE_SIZE		8
 
 #define LPFC_EQE_DEF_COUNT	1024
-#define LPFC_CQE_DEF_COUNT      256
+#define LPFC_CQE_DEF_COUNT      1024
 #define LPFC_WQE_DEF_COUNT      256
 #define LPFC_MQE_DEF_COUNT      16
 #define LPFC_RQE_DEF_COUNT	512
@@ -420,7 +428,16 @@ struct lpfc_sli4_hba {
 			void __iomem *STATUSregaddr;
 			void __iomem *CTRLregaddr;
 			void __iomem *ERR1regaddr;
+#define SLIPORT_ERR1_REG_ERR_CODE_1		0x1
+#define SLIPORT_ERR1_REG_ERR_CODE_2		0x2
 			void __iomem *ERR2regaddr;
+#define SLIPORT_ERR2_REG_FW_RESTART		0x0
+#define SLIPORT_ERR2_REG_FUNC_PROVISON		0x1
+#define SLIPORT_ERR2_REG_FORCED_DUMP		0x2
+#define SLIPORT_ERR2_REG_FAILURE_EQ		0x3
+#define SLIPORT_ERR2_REG_FAILURE_CQ		0x4
+#define SLIPORT_ERR2_REG_FAILURE_BUS		0x5
+#define SLIPORT_ERR2_REG_FAILURE_RQ		0x6
 		} if_type2;
 	} u;
 
@@ -484,14 +501,12 @@ struct lpfc_sli4_hba {
 	uint16_t next_rpi;
 	uint16_t scsi_xri_max;
 	uint16_t scsi_xri_cnt;
+	uint16_t els_xri_cnt;
 	uint16_t scsi_xri_start;
 	struct list_head lpfc_free_sgl_list;
 	struct list_head lpfc_sgl_list;
-	struct lpfc_sglq **lpfc_els_sgl_array;
 	struct list_head lpfc_abts_els_sgl_list;
-	struct lpfc_scsi_buf **lpfc_scsi_psb_array;
 	struct list_head lpfc_abts_scsi_buf_list;
-	uint32_t total_sglq_bufs;
 	struct lpfc_sglq **lpfc_sglq_active_list;
 	struct list_head lpfc_rpi_hdr_list;
 	unsigned long *rpi_bmask;
@@ -500,7 +515,6 @@ struct lpfc_sli4_hba {
 	struct list_head lpfc_rpi_blk_list;
 	unsigned long *xri_bmask;
 	uint16_t *xri_ids;
-	uint16_t xri_count;
 	struct list_head lpfc_xri_blk_list;
 	unsigned long *vfi_bmask;
 	uint16_t *vfi_ids;
@@ -605,11 +619,7 @@ int lpfc_sli4_post_sgl(struct lpfc_hba *, dma_addr_t, dma_addr_t, uint16_t);
 int lpfc_sli4_repost_scsi_sgl_list(struct lpfc_hba *);
 uint16_t lpfc_sli4_next_xritag(struct lpfc_hba *);
 int lpfc_sli4_post_async_mbox(struct lpfc_hba *);
-int lpfc_sli4_post_els_sgl_list(struct lpfc_hba *phba);
-int lpfc_sli4_post_els_sgl_list_ext(struct lpfc_hba *phba);
 int lpfc_sli4_post_scsi_sgl_block(struct lpfc_hba *, struct list_head *, int);
-int lpfc_sli4_post_scsi_sgl_blk_ext(struct lpfc_hba *, struct list_head *,
-				    int);
 struct lpfc_cq_event *__lpfc_sli4_cq_event_alloc(struct lpfc_hba *);
 struct lpfc_cq_event *lpfc_sli4_cq_event_alloc(struct lpfc_hba *);
 void __lpfc_sli4_cq_event_release(struct lpfc_hba *, struct lpfc_cq_event *);
@@ -624,7 +634,8 @@ void lpfc_sli4_free_rpi(struct lpfc_hba *, int);
 void lpfc_sli4_remove_rpis(struct lpfc_hba *);
 void lpfc_sli4_async_event_proc(struct lpfc_hba *);
 void lpfc_sli4_fcf_redisc_event_proc(struct lpfc_hba *);
-int lpfc_sli4_resume_rpi(struct lpfc_nodelist *);
+int lpfc_sli4_resume_rpi(struct lpfc_nodelist *,
+			void (*)(struct lpfc_hba *, LPFC_MBOXQ_t *), void *);
 void lpfc_sli4_fcp_xri_abort_event_proc(struct lpfc_hba *);
 void lpfc_sli4_els_xri_abort_event_proc(struct lpfc_hba *);
 void lpfc_sli4_fcp_xri_aborted(struct lpfc_hba *,

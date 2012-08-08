@@ -9,7 +9,7 @@
 #include <scsi/iscsi_proto.h>
 #include <target/target_core_base.h>
 
-#define ISCSIT_VERSION			"v4.1.0-rc1"
+#define ISCSIT_VERSION			"v4.1.0-rc2"
 #define ISCSI_MAX_DATASN_MISSING_COUNT	16
 #define ISCSI_TX_THREAD_TCP_TIMEOUT	2
 #define ISCSI_RX_THREAD_TCP_TIMEOUT	2
@@ -296,12 +296,11 @@ struct iscsi_datain_req {
 	u32			runlength;
 	u32			data_length;
 	u32			data_offset;
-	u32			data_offset_end;
 	u32			data_sn;
 	u32			next_burst_len;
 	u32			read_data_done;
 	u32			seq_send_order;
-	struct list_head	dr_list;
+	struct list_head	cmd_datain_node;
 } ____cacheline_aligned;
 
 struct iscsi_ooo_cmdsn {
@@ -381,8 +380,6 @@ struct iscsi_cmd {
 	u32			buf_ptr_size;
 	/* Used to store DataDigest */
 	u32			data_crc;
-	/* Total size in bytes associated with command */
-	u32			data_length;
 	/* Counter for MaxOutstandingR2T */
 	u32			outstanding_r2ts;
 	/* Next R2T Offset when DataSequenceInOrder=Yes */
@@ -464,15 +461,12 @@ struct iscsi_cmd {
 	/* Session the command is part of,  used for connection recovery */
 	struct iscsi_session	*sess;
 	/* list_head for connection list */
-	struct list_head	i_list;
+	struct list_head	i_conn_node;
 	/* The TCM I/O descriptor that is accessed via container_of() */
 	struct se_cmd		se_cmd;
 	/* Sense buffer that will be mapped into outgoing status */
 #define ISCSI_SENSE_BUFFER_LEN          (TRANSPORT_SENSE_BUFFER + 2)
 	unsigned char		sense_buffer[ISCSI_SENSE_BUFFER_LEN];
-
-	struct scatterlist	*t_mem_sg;
-	u32			t_mem_sg_nents;
 
 	u32			padding;
 	u8			pad_bytes[4];
@@ -500,14 +494,13 @@ struct iscsi_conn {
 	u8			network_transport;
 	enum iscsi_timer_flags_table nopin_timer_flags;
 	enum iscsi_timer_flags_table nopin_response_timer_flags;
-	u8			tx_immediate_queue;
-	u8			tx_response_queue;
 	/* Used to know what thread encountered a transport failure */
 	u8			which_thread;
 	/* connection id assigned by the Initiator */
 	u16			cid;
 	/* Remote TCP Port */
 	u16			login_port;
+	u16			local_port;
 	int			net_size;
 	u32			auth_id;
 #define CONNFLAG_SCTP_STRUCT_FILE			0x01
@@ -527,6 +520,7 @@ struct iscsi_conn {
 	unsigned char		bad_hdr[ISCSI_HDR_LEN];
 #define IPV6_ADDRESS_SPACE				48
 	unsigned char		login_ip[IPV6_ADDRESS_SPACE];
+	unsigned char		local_ip[IPV6_ADDRESS_SPACE];
 	int			conn_usage_count;
 	int			conn_waiting_on_uc;
 	atomic_t		check_immediate_queue;
@@ -561,8 +555,8 @@ struct iscsi_conn {
 	struct hash_desc	conn_tx_hash;
 	/* Used for scheduling TX and RX connection kthreads */
 	cpumask_var_t		conn_cpumask;
-	int			conn_rx_reset_cpumask:1;
-	int			conn_tx_reset_cpumask:1;
+	unsigned int		conn_rx_reset_cpumask:1;
+	unsigned int		conn_tx_reset_cpumask:1;
 	/* list_head of struct iscsi_cmd for this connection */
 	struct list_head	conn_cmd_list;
 	struct list_head	immed_queue_list;

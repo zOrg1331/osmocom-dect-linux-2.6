@@ -325,8 +325,7 @@ unsigned int xen_netbk_count_skb_slots(struct xenvif *vif, struct sk_buff *skb)
 	unsigned int count;
 	int i, copy_off;
 
-	count = DIV_ROUND_UP(
-			offset_in_page(skb->data)+skb_headlen(skb), PAGE_SIZE);
+	count = DIV_ROUND_UP(skb_headlen(skb), PAGE_SIZE);
 
 	copy_off = skb_headlen(skb) % PAGE_SIZE;
 
@@ -395,7 +394,7 @@ static void netbk_gop_frag_copy(struct xenvif *vif, struct sk_buff *skb,
 	struct gnttab_copy *copy_gop;
 	struct netbk_rx_meta *meta;
 	/*
-	 * These variables a used iff get_page_ext returns true,
+	 * These variables are used iff get_page_ext returns true,
 	 * in which case they are guaranteed to be initialized.
 	 */
 	unsigned int uninitialized_var(group), uninitialized_var(idx);
@@ -940,8 +939,6 @@ static struct gnttab_copy *xen_netbk_get_requests(struct xen_netbk *netbk,
 		if (!page)
 			return NULL;
 
-		netbk->mmap_pages[pending_idx] = page;
-
 		gop->source.u.ref = txp->gref;
 		gop->source.domid = vif->domid;
 		gop->source.offset = txp->offset;
@@ -1336,8 +1333,6 @@ static unsigned xen_netbk_tx_build_gops(struct xen_netbk *netbk)
 			continue;
 		}
 
-		netbk->mmap_pages[pending_idx] = page;
-
 		gop->source.u.ref = txreq.gref;
 		gop->source.domid = vif->domid;
 		gop->source.offset = txreq.offset;
@@ -1638,15 +1633,13 @@ static int __init netback_init(void)
 	int rc = 0;
 	int group;
 
-	if (!xen_pv_domain())
+	if (!xen_domain())
 		return -ENODEV;
 
 	xen_netbk_group_nr = num_online_cpus();
 	xen_netbk = vzalloc(sizeof(struct xen_netbk) * xen_netbk_group_nr);
-	if (!xen_netbk) {
-		printk(KERN_ALERT "%s: out of memory\n", __func__);
+	if (!xen_netbk)
 		return -ENOMEM;
-	}
 
 	for (group = 0; group < xen_netbk_group_nr; group++) {
 		struct xen_netbk *netbk = &xen_netbk[group];

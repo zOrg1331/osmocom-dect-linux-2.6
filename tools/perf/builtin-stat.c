@@ -173,24 +173,23 @@ static struct perf_event_attr very_very_detailed_attrs[] = {
 
 
 
-struct perf_evlist		*evsel_list;
+static struct perf_evlist	*evsel_list;
 
-static bool			system_wide			=  false;
+static struct perf_target	target = {
+	.uid	= UINT_MAX,
+};
+
 static int			run_idx				=  0;
-
 static int			run_count			=  1;
 static bool			no_inherit			= false;
 static bool			scale				=  true;
 static bool			no_aggr				= false;
-static pid_t			target_pid			= -1;
-static pid_t			target_tid			= -1;
 static pid_t			child_pid			= -1;
 static bool			null_run			=  false;
 static int			detailed_run			=  0;
 static bool			sync_run			=  false;
 static bool			big_num				=  true;
 static int			big_num_opt			=  -1;
-static const char		*cpu_list;
 static const char		*csv_sep			= NULL;
 static bool			csv_output			= false;
 static bool			group				= false;
@@ -265,24 +264,26 @@ static double stddev_stats(struct stats *stats)
 	return sqrt(variance_mean);
 }
 
-struct stats			runtime_nsecs_stats[MAX_NR_CPUS];
-struct stats			runtime_cycles_stats[MAX_NR_CPUS];
-struct stats			runtime_stalled_cycles_front_stats[MAX_NR_CPUS];
-struct stats			runtime_stalled_cycles_back_stats[MAX_NR_CPUS];
-struct stats			runtime_branches_stats[MAX_NR_CPUS];
-struct stats			runtime_cacherefs_stats[MAX_NR_CPUS];
-struct stats			runtime_l1_dcache_stats[MAX_NR_CPUS];
-struct stats			runtime_l1_icache_stats[MAX_NR_CPUS];
-struct stats			runtime_ll_cache_stats[MAX_NR_CPUS];
-struct stats			runtime_itlb_cache_stats[MAX_NR_CPUS];
-struct stats			runtime_dtlb_cache_stats[MAX_NR_CPUS];
-struct stats			walltime_nsecs_stats;
+static struct stats runtime_nsecs_stats[MAX_NR_CPUS];
+static struct stats runtime_cycles_stats[MAX_NR_CPUS];
+static struct stats runtime_stalled_cycles_front_stats[MAX_NR_CPUS];
+static struct stats runtime_stalled_cycles_back_stats[MAX_NR_CPUS];
+static struct stats runtime_branches_stats[MAX_NR_CPUS];
+static struct stats runtime_cacherefs_stats[MAX_NR_CPUS];
+static struct stats runtime_l1_dcache_stats[MAX_NR_CPUS];
+static struct stats runtime_l1_icache_stats[MAX_NR_CPUS];
+static struct stats runtime_ll_cache_stats[MAX_NR_CPUS];
+static struct stats runtime_itlb_cache_stats[MAX_NR_CPUS];
+static struct stats runtime_dtlb_cache_stats[MAX_NR_CPUS];
+static struct stats walltime_nsecs_stats;
 
 static int create_perf_stat_counter(struct perf_evsel *evsel,
 				    struct perf_evsel *first)
 {
 	struct perf_event_attr *attr = &evsel->attr;
 	struct xyarray *group_fd = NULL;
+	bool exclude_guest_missing = false;
+	int ret;
 
 	if (group && evsel != first)
 		group_fd = first->fd;
@@ -293,16 +294,39 @@ static int create_perf_stat_counter(struct perf_evsel *evsel,
 
 	attr->inherit = !no_inherit;
 
-	if (system_wide)
-		return perf_evsel__open_per_cpu(evsel, evsel_list->cpus,
-						group, group_fd);
-	if (target_pid == -1 && target_tid == -1) {
+retry:
+	if (exclude_guest_missing)
+		evsel->attr.exclude_guest = evsel->attr.exclude_host = 0;
+
+	if (perf_target__has_cpu(&target)) {
+		ret = perf_evsel__open_per_cpu(evsel, evsel_list->cpus,
+					       group, group_fd);
+		if (ret)
+			goto check_ret;
+		return 0;
+	}
+
+	if (!perf_target__has_task(&target) && (!group || evsel == first)) {
 		attr->disabled = 1;
 		attr->enable_on_exec = 1;
 	}
 
-	return perf_evsel__open_per_thread(evsel, evsel_list->threads,
-					   group, group_fd);
+	ret = perf_evsel__open_per_thread(evsel, evsel_list->threads,
+					  group, group_fd);
+	if (!ret)
+		return 0;
+	/* fall through */
+check_ret:
+	if (ret && errno == EINVAL) {
+		if (!exclude_guest_missing &&
+		    (evsel->attr.exclude_guest || evsel->attr.exclude_host)) {
+			pr_debug("Old kernel, cannot exclude "
+				 "guest or host samples.\n");
+			exclude_guest_missing = true;
+			goto retry;
+		}
+	}
+	return ret;
 }
 
 /*
@@ -446,7 +470,7 @@ static int run_perf_stat(int argc __used, const char **argv)
 			exit(-1);
 		}
 
-		if (target_tid == -1 && target_pid == -1 && !system_wide)
+		if (perf_target__none(&target))
 			evsel_list->threads->map[0] = child_pid;
 
 		/*
@@ -463,8 +487,13 @@ static int run_perf_stat(int argc __used, const char **argv)
 
 	list_for_each_entry(counter, &evsel_list->entries, node) {
 		if (create_perf_stat_counter(counter, first) < 0) {
+			/*
+			 * PPC returns ENXIO for HW counters until 2.6.37
+			 * (behavior changed with commit b0a873e).
+			 */
 			if (errno == EINVAL || errno == ENOSYS ||
-			    errno == ENOENT || errno == EOPNOTSUPP) {
+			    errno == ENOENT || errno == EOPNOTSUPP ||
+			    errno == ENXIO) {
 				if (verbose)
 					ui__warning("%s event is not supported by the kernel.\n",
 						    event_name(counter));
@@ -476,7 +505,7 @@ static int run_perf_stat(int argc __used, const char **argv)
 				error("You may not have permission to collect %sstats.\n"
 				      "\t Consider tweaking"
 				      " /proc/sys/kernel/perf_event_paranoid or running as root.",
-				      system_wide ? "system-wide " : "");
+				      target.system_wide ? "system-wide " : "");
 			} else {
 				error("open_counter returned with %d (%s). "
 				      "/bin/dmesg may provide additional information.\n",
@@ -576,6 +605,35 @@ static void nsec_printout(int cpu, struct perf_evsel *evsel, double avg)
 	if (perf_evsel__match(evsel, SOFTWARE, SW_TASK_CLOCK))
 		fprintf(output, " # %8.3f CPUs utilized          ",
 			avg / avg_stats(&walltime_nsecs_stats));
+	else
+		fprintf(output, "                                   ");
+}
+
+/* used for get_ratio_color() */
+enum grc_type {
+	GRC_STALLED_CYCLES_FE,
+	GRC_STALLED_CYCLES_BE,
+	GRC_CACHE_MISSES,
+	GRC_MAX_NR
+};
+
+static const char *get_ratio_color(enum grc_type type, double ratio)
+{
+	static const double grc_table[GRC_MAX_NR][3] = {
+		[GRC_STALLED_CYCLES_FE] = { 50.0, 30.0, 10.0 },
+		[GRC_STALLED_CYCLES_BE] = { 75.0, 50.0, 20.0 },
+		[GRC_CACHE_MISSES] 	= { 20.0, 10.0, 5.0 },
+	};
+	const char *color = PERF_COLOR_NORMAL;
+
+	if (ratio > grc_table[type][0])
+		color = PERF_COLOR_RED;
+	else if (ratio > grc_table[type][1])
+		color = PERF_COLOR_MAGENTA;
+	else if (ratio > grc_table[type][2])
+		color = PERF_COLOR_YELLOW;
+
+	return color;
 }
 
 static void print_stalled_cycles_frontend(int cpu, struct perf_evsel *evsel __used, double avg)
@@ -588,13 +646,7 @@ static void print_stalled_cycles_frontend(int cpu, struct perf_evsel *evsel __us
 	if (total)
 		ratio = avg / total * 100.0;
 
-	color = PERF_COLOR_NORMAL;
-	if (ratio > 50.0)
-		color = PERF_COLOR_RED;
-	else if (ratio > 30.0)
-		color = PERF_COLOR_MAGENTA;
-	else if (ratio > 10.0)
-		color = PERF_COLOR_YELLOW;
+	color = get_ratio_color(GRC_STALLED_CYCLES_FE, ratio);
 
 	fprintf(output, " #  ");
 	color_fprintf(output, color, "%6.2f%%", ratio);
@@ -611,13 +663,7 @@ static void print_stalled_cycles_backend(int cpu, struct perf_evsel *evsel __use
 	if (total)
 		ratio = avg / total * 100.0;
 
-	color = PERF_COLOR_NORMAL;
-	if (ratio > 75.0)
-		color = PERF_COLOR_RED;
-	else if (ratio > 50.0)
-		color = PERF_COLOR_MAGENTA;
-	else if (ratio > 20.0)
-		color = PERF_COLOR_YELLOW;
+	color = get_ratio_color(GRC_STALLED_CYCLES_BE, ratio);
 
 	fprintf(output, " #  ");
 	color_fprintf(output, color, "%6.2f%%", ratio);
@@ -634,13 +680,7 @@ static void print_branch_misses(int cpu, struct perf_evsel *evsel __used, double
 	if (total)
 		ratio = avg / total * 100.0;
 
-	color = PERF_COLOR_NORMAL;
-	if (ratio > 20.0)
-		color = PERF_COLOR_RED;
-	else if (ratio > 10.0)
-		color = PERF_COLOR_MAGENTA;
-	else if (ratio > 5.0)
-		color = PERF_COLOR_YELLOW;
+	color = get_ratio_color(GRC_CACHE_MISSES, ratio);
 
 	fprintf(output, " #  ");
 	color_fprintf(output, color, "%6.2f%%", ratio);
@@ -657,13 +697,7 @@ static void print_l1_dcache_misses(int cpu, struct perf_evsel *evsel __used, dou
 	if (total)
 		ratio = avg / total * 100.0;
 
-	color = PERF_COLOR_NORMAL;
-	if (ratio > 20.0)
-		color = PERF_COLOR_RED;
-	else if (ratio > 10.0)
-		color = PERF_COLOR_MAGENTA;
-	else if (ratio > 5.0)
-		color = PERF_COLOR_YELLOW;
+	color = get_ratio_color(GRC_CACHE_MISSES, ratio);
 
 	fprintf(output, " #  ");
 	color_fprintf(output, color, "%6.2f%%", ratio);
@@ -680,13 +714,7 @@ static void print_l1_icache_misses(int cpu, struct perf_evsel *evsel __used, dou
 	if (total)
 		ratio = avg / total * 100.0;
 
-	color = PERF_COLOR_NORMAL;
-	if (ratio > 20.0)
-		color = PERF_COLOR_RED;
-	else if (ratio > 10.0)
-		color = PERF_COLOR_MAGENTA;
-	else if (ratio > 5.0)
-		color = PERF_COLOR_YELLOW;
+	color = get_ratio_color(GRC_CACHE_MISSES, ratio);
 
 	fprintf(output, " #  ");
 	color_fprintf(output, color, "%6.2f%%", ratio);
@@ -703,13 +731,7 @@ static void print_dtlb_cache_misses(int cpu, struct perf_evsel *evsel __used, do
 	if (total)
 		ratio = avg / total * 100.0;
 
-	color = PERF_COLOR_NORMAL;
-	if (ratio > 20.0)
-		color = PERF_COLOR_RED;
-	else if (ratio > 10.0)
-		color = PERF_COLOR_MAGENTA;
-	else if (ratio > 5.0)
-		color = PERF_COLOR_YELLOW;
+	color = get_ratio_color(GRC_CACHE_MISSES, ratio);
 
 	fprintf(output, " #  ");
 	color_fprintf(output, color, "%6.2f%%", ratio);
@@ -726,13 +748,7 @@ static void print_itlb_cache_misses(int cpu, struct perf_evsel *evsel __used, do
 	if (total)
 		ratio = avg / total * 100.0;
 
-	color = PERF_COLOR_NORMAL;
-	if (ratio > 20.0)
-		color = PERF_COLOR_RED;
-	else if (ratio > 10.0)
-		color = PERF_COLOR_MAGENTA;
-	else if (ratio > 5.0)
-		color = PERF_COLOR_YELLOW;
+	color = get_ratio_color(GRC_CACHE_MISSES, ratio);
 
 	fprintf(output, " #  ");
 	color_fprintf(output, color, "%6.2f%%", ratio);
@@ -749,13 +765,7 @@ static void print_ll_cache_misses(int cpu, struct perf_evsel *evsel __used, doub
 	if (total)
 		ratio = avg / total * 100.0;
 
-	color = PERF_COLOR_NORMAL;
-	if (ratio > 20.0)
-		color = PERF_COLOR_RED;
-	else if (ratio > 10.0)
-		color = PERF_COLOR_MAGENTA;
-	else if (ratio > 5.0)
-		color = PERF_COLOR_YELLOW;
+	color = get_ratio_color(GRC_CACHE_MISSES, ratio);
 
 	fprintf(output, " #  ");
 	color_fprintf(output, color, "%6.2f%%", ratio);
@@ -865,12 +875,18 @@ static void abs_printout(int cpu, struct perf_evsel *evsel, double avg)
 
 		fprintf(output, " # %8.3f GHz                    ", ratio);
 	} else if (runtime_nsecs_stats[cpu].n != 0) {
+		char unit = 'M';
+
 		total = avg_stats(&runtime_nsecs_stats[cpu]);
 
 		if (total)
 			ratio = 1000.0 * avg / total;
+		if (ratio < 0.001) {
+			ratio *= 1000;
+			unit = 'K';
+		}
 
-		fprintf(output, " # %8.3f M/sec                  ", ratio);
+		fprintf(output, " # %8.3f %c/sec                  ", ratio, unit);
 	} else {
 		fprintf(output, "                                   ");
 	}
@@ -981,14 +997,14 @@ static void print_stat(int argc, const char **argv)
 	if (!csv_output) {
 		fprintf(output, "\n");
 		fprintf(output, " Performance counter stats for ");
-		if(target_pid == -1 && target_tid == -1) {
+		if (!perf_target__has_task(&target)) {
 			fprintf(output, "\'%s", argv[0]);
 			for (i = 1; i < argc; i++)
 				fprintf(output, " %s", argv[i]);
-		} else if (target_pid != -1)
-			fprintf(output, "process id \'%d", target_pid);
+		} else if (target.pid)
+			fprintf(output, "process id \'%s", target.pid);
 		else
-			fprintf(output, "thread id \'%d", target_tid);
+			fprintf(output, "thread id \'%s", target.tid);
 
 		fprintf(output, "\'");
 		if (run_count > 1)
@@ -1062,11 +1078,11 @@ static const struct option options[] = {
 		     "event filter", parse_filter),
 	OPT_BOOLEAN('i', "no-inherit", &no_inherit,
 		    "child tasks do not inherit counters"),
-	OPT_INTEGER('p', "pid", &target_pid,
-		    "stat events on existing process id"),
-	OPT_INTEGER('t', "tid", &target_tid,
-		    "stat events on existing thread id"),
-	OPT_BOOLEAN('a', "all-cpus", &system_wide,
+	OPT_STRING('p', "pid", &target.pid, "pid",
+		   "stat events on existing process id"),
+	OPT_STRING('t', "tid", &target.tid, "tid",
+		   "stat events on existing thread id"),
+	OPT_BOOLEAN('a', "all-cpus", &target.system_wide,
 		    "system-wide collection from all CPUs"),
 	OPT_BOOLEAN('g', "group", &group,
 		    "put the counters into a counter group"),
@@ -1085,7 +1101,7 @@ static const struct option options[] = {
 	OPT_CALLBACK_NOOPT('B', "big-num", NULL, NULL, 
 			   "print large numbers with thousands\' separators",
 			   stat__set_big_num),
-	OPT_STRING('C', "cpu", &cpu_list, "cpu",
+	OPT_STRING('C', "cpu", &target.cpu_list, "cpu",
 		    "list of cpus to monitor in system-wide"),
 	OPT_BOOLEAN('A', "no-aggr", &no_aggr,
 		    "disable CPU count aggregation"),
@@ -1108,22 +1124,13 @@ static const struct option options[] = {
  */
 static int add_default_attributes(void)
 {
-	struct perf_evsel *pos;
-	size_t attr_nr = 0;
-	size_t c;
-
 	/* Set attrs if no event is selected and !null_run: */
 	if (null_run)
 		return 0;
 
 	if (!evsel_list->nr_entries) {
-		for (c = 0; c < ARRAY_SIZE(default_attrs); c++) {
-			pos = perf_evsel__new(default_attrs + c, c + attr_nr);
-			if (pos == NULL)
-				return -1;
-			perf_evlist__add(evsel_list, pos);
-		}
-		attr_nr += c;
+		if (perf_evlist__add_default_attrs(evsel_list, default_attrs) < 0)
+			return -1;
 	}
 
 	/* Detailed events get appended to the event list: */
@@ -1132,38 +1139,21 @@ static int add_default_attributes(void)
 		return 0;
 
 	/* Append detailed run extra attributes: */
-	for (c = 0; c < ARRAY_SIZE(detailed_attrs); c++) {
-		pos = perf_evsel__new(detailed_attrs + c, c + attr_nr);
-		if (pos == NULL)
-			return -1;
-		perf_evlist__add(evsel_list, pos);
-	}
-	attr_nr += c;
+	if (perf_evlist__add_default_attrs(evsel_list, detailed_attrs) < 0)
+		return -1;
 
 	if (detailed_run < 2)
 		return 0;
 
 	/* Append very detailed run extra attributes: */
-	for (c = 0; c < ARRAY_SIZE(very_detailed_attrs); c++) {
-		pos = perf_evsel__new(very_detailed_attrs + c, c + attr_nr);
-		if (pos == NULL)
-			return -1;
-		perf_evlist__add(evsel_list, pos);
-	}
+	if (perf_evlist__add_default_attrs(evsel_list, very_detailed_attrs) < 0)
+		return -1;
 
 	if (detailed_run < 3)
 		return 0;
 
 	/* Append very, very detailed run extra attributes: */
-	for (c = 0; c < ARRAY_SIZE(very_very_detailed_attrs); c++) {
-		pos = perf_evsel__new(very_very_detailed_attrs + c, c + attr_nr);
-		if (pos == NULL)
-			return -1;
-		perf_evlist__add(evsel_list, pos);
-	}
-
-
-	return 0;
+	return perf_evlist__add_default_attrs(evsel_list, very_very_detailed_attrs);
 }
 
 int cmd_stat(int argc, const char **argv, const char *prefix __used)
@@ -1189,6 +1179,12 @@ int cmd_stat(int argc, const char **argv, const char *prefix __used)
 		fprintf(stderr, "cannot use both --output and --log-fd\n");
 		usage_with_options(stat_usage, options);
 	}
+
+	if (output_fd < 0) {
+		fprintf(stderr, "argument to --log-fd must be a > 0\n");
+		usage_with_options(stat_usage, options);
+	}
+
 	if (!output) {
 		struct timespec tm;
 		mode = append_file ? "a" : "w";
@@ -1200,7 +1196,7 @@ int cmd_stat(int argc, const char **argv, const char *prefix __used)
 		}
 		clock_gettime(CLOCK_REALTIME, &tm);
 		fprintf(output, "# started on %s\n", ctime(&tm.tv_sec));
-	} else if (output_fd != 2) {
+	} else if (output_fd > 0) {
 		mode = append_file ? "a" : "w";
 		output = fdopen(output_fd, mode);
 		if (!output) {
@@ -1229,13 +1225,13 @@ int cmd_stat(int argc, const char **argv, const char *prefix __used)
 	} else if (big_num_opt == 0) /* User passed --no-big-num */
 		big_num = false;
 
-	if (!argc && target_pid == -1 && target_tid == -1)
+	if (!argc && !perf_target__has_task(&target))
 		usage_with_options(stat_usage, options);
 	if (run_count <= 0)
 		usage_with_options(stat_usage, options);
 
 	/* no_aggr, cgroup are for system-wide only */
-	if ((no_aggr || nr_cgroups) && !system_wide) {
+	if ((no_aggr || nr_cgroups) && !perf_target__has_cpu(&target)) {
 		fprintf(stderr, "both cgroup and no-aggregation "
 			"modes only available in system-wide mode\n");
 
@@ -1245,30 +1241,21 @@ int cmd_stat(int argc, const char **argv, const char *prefix __used)
 	if (add_default_attributes())
 		goto out;
 
-	if (target_pid != -1)
-		target_tid = target_pid;
+	perf_target__validate(&target);
 
-	evsel_list->threads = thread_map__new(target_pid, target_tid);
-	if (evsel_list->threads == NULL) {
-		pr_err("Problems finding threads of monitor\n");
-		usage_with_options(stat_usage, options);
-	}
+	if (perf_evlist__create_maps(evsel_list, &target) < 0) {
+		if (perf_target__has_task(&target))
+			pr_err("Problems finding threads of monitor\n");
+		if (perf_target__has_cpu(&target))
+			perror("failed to parse CPUs map");
 
-	if (system_wide)
-		evsel_list->cpus = cpu_map__new(cpu_list);
-	else
-		evsel_list->cpus = cpu_map__dummy_new();
-
-	if (evsel_list->cpus == NULL) {
-		perror("failed to parse CPUs map");
 		usage_with_options(stat_usage, options);
 		return -1;
 	}
 
 	list_for_each_entry(pos, &evsel_list->entries, node) {
 		if (perf_evsel__alloc_stat_priv(pos) < 0 ||
-		    perf_evsel__alloc_counts(pos, evsel_list->cpus->nr) < 0 ||
-		    perf_evsel__alloc_fd(pos, evsel_list->cpus->nr, evsel_list->threads->nr) < 0)
+		    perf_evsel__alloc_counts(pos, evsel_list->cpus->nr) < 0)
 			goto out_free_fd;
 	}
 

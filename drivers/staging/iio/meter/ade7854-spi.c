@@ -12,7 +12,7 @@
 #include <linux/slab.h>
 #include <linux/module.h>
 
-#include "../iio.h"
+#include <linux/iio/iio.h>
 #include "ade7854.h"
 
 static int ade7854_spi_write_reg_8(struct device *dev,
@@ -21,7 +21,7 @@ static int ade7854_spi_write_reg_8(struct device *dev,
 {
 	int ret;
 	struct spi_message msg;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7854_state *st = iio_priv(indio_dev);
 	struct spi_transfer xfer = {
 		.tx_buf = st->tx,
@@ -49,7 +49,7 @@ static int ade7854_spi_write_reg_16(struct device *dev,
 {
 	int ret;
 	struct spi_message msg;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7854_state *st = iio_priv(indio_dev);
 	struct spi_transfer xfer = {
 		.tx_buf = st->tx,
@@ -78,7 +78,7 @@ static int ade7854_spi_write_reg_24(struct device *dev,
 {
 	int ret;
 	struct spi_message msg;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7854_state *st = iio_priv(indio_dev);
 	struct spi_transfer xfer = {
 		.tx_buf = st->tx,
@@ -108,7 +108,7 @@ static int ade7854_spi_write_reg_32(struct device *dev,
 {
 	int ret;
 	struct spi_message msg;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7854_state *st = iio_priv(indio_dev);
 	struct spi_transfer xfer = {
 		.tx_buf = st->tx,
@@ -138,7 +138,7 @@ static int ade7854_spi_read_reg_8(struct device *dev,
 		u8 *val)
 {
 	struct spi_message msg;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7854_state *st = iio_priv(indio_dev);
 	int ret;
 	struct spi_transfer xfers[] = {
@@ -180,7 +180,7 @@ static int ade7854_spi_read_reg_16(struct device *dev,
 		u16 *val)
 {
 	struct spi_message msg;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7854_state *st = iio_priv(indio_dev);
 	int ret;
 	struct spi_transfer xfers[] = {
@@ -221,7 +221,7 @@ static int ade7854_spi_read_reg_24(struct device *dev,
 		u32 *val)
 {
 	struct spi_message msg;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7854_state *st = iio_priv(indio_dev);
 	int ret;
 	struct spi_transfer xfers[] = {
@@ -263,7 +263,7 @@ static int ade7854_spi_read_reg_32(struct device *dev,
 		u32 *val)
 {
 	struct spi_message msg;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ade7854_state *st = iio_priv(indio_dev);
 	int ret;
 	struct spi_transfer xfers[] = {
@@ -306,7 +306,7 @@ static int __devinit ade7854_spi_probe(struct spi_device *spi)
 	struct ade7854_state *st;
 	struct iio_dev *indio_dev;
 
-	indio_dev = iio_allocate_device(sizeof(*st));
+	indio_dev = iio_device_alloc(sizeof(*st));
 	if (indio_dev == NULL)
 		return -ENOMEM;
 	st = iio_priv(indio_dev);
@@ -325,7 +325,7 @@ static int __devinit ade7854_spi_probe(struct spi_device *spi)
 
 	ret = ade7854_probe(indio_dev, &spi->dev);
 	if (ret)
-		iio_free_device(indio_dev);
+		iio_device_free(indio_dev);
 
 	return 0;
 }
@@ -343,6 +343,7 @@ static const struct spi_device_id ade7854_id[] = {
 	{ "ade7878", 0 },
 	{ }
 };
+MODULE_DEVICE_TABLE(spi, ade7854_id);
 
 static struct spi_driver ade7854_driver = {
 	.driver = {
@@ -353,18 +354,7 @@ static struct spi_driver ade7854_driver = {
 	.remove = __devexit_p(ade7854_spi_remove),
 	.id_table = ade7854_id,
 };
-
-static __init int ade7854_init(void)
-{
-	return spi_register_driver(&ade7854_driver);
-}
-module_init(ade7854_init);
-
-static __exit void ade7854_exit(void)
-{
-	spi_unregister_driver(&ade7854_driver);
-}
-module_exit(ade7854_exit);
+module_spi_driver(ade7854_driver);
 
 MODULE_AUTHOR("Barry Song <21cnbao@gmail.com>");
 MODULE_DESCRIPTION("Analog Devices ADE7854/58/68/78 SPI Driver");

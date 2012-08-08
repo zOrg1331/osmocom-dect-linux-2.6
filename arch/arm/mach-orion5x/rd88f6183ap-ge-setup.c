@@ -16,7 +16,6 @@
 #include <linux/mtd/physmap.h>
 #include <linux/mv643xx_eth.h>
 #include <linux/spi/spi.h>
-#include <linux/spi/orion_spi.h>
 #include <linux/spi/flash.h>
 #include <linux/ethtool.h>
 #include <net/dsa.h>
@@ -102,7 +101,6 @@ static void __init rd88f6183ap_ge_init(void)
 
 static struct hw_pci rd88f6183ap_ge_pci __initdata = {
 	.nr_controllers	= 2,
-	.swizzle	= pci_std_swizzle,
 	.setup		= orion5x_pci_sys_setup,
 	.scan		= orion5x_pci_sys_scan_bus,
 	.map_irq	= orion5x_pci_map_irq,
@@ -128,4 +126,5 @@ MACHINE_START(RD88F6183AP_GE, "Marvell Orion-1-90 AP GE Reference Design")
 	.init_irq	= orion5x_init_irq,
 	.timer		= &orion5x_timer,
 	.fixup		= tag_fixup_mem32,
+	.restart	= orion5x_restart,
 MACHINE_END

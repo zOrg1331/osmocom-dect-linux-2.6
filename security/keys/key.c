@@ -253,7 +253,7 @@ struct key *key_alloc(struct key_type *type, const char *desc,
 	quotalen = desclen + type->def_datalen;
 
 	/* get hold of the key tracking for this user */
-	user = key_user_lookup(uid, cred->user->user_ns);
+	user = key_user_lookup(uid, cred->user_ns);
 	if (!user)
 		goto no_memory_1;
 
@@ -291,6 +291,7 @@ struct key *key_alloc(struct key_type *type, const char *desc,
 
 	atomic_set(&key->usage, 1);
 	init_rwsem(&key->sem);
+	lockdep_set_class(&key->sem, &type->lock_class);
 	key->type = type;
 	key->user = user;
 	key->quotalen = quotalen;
@@ -670,6 +671,26 @@ found_kernel_type:
 	return ktype;
 }
 
+void key_set_timeout(struct key *key, unsigned timeout)
+{
+	struct timespec now;
+	time_t expiry = 0;
+
+	/* make the changes with the locks held to prevent races */
+	down_write(&key->sem);
+
+	if (timeout > 0) {
+		now = current_kernel_time();
+		expiry = now.tv_sec + timeout;
+	}
+
+	key->expiry = expiry;
+	key_schedule_gc(key->expiry + key_gc_delay);
+
+	up_write(&key->sem);
+}
+EXPORT_SYMBOL_GPL(key_set_timeout);
+
 /*
  * Unlock a key type locked by key_type_lookup().
  */
@@ -934,6 +955,28 @@ void key_revoke(struct key *key)
 EXPORT_SYMBOL(key_revoke);
 
 /**
+ * key_invalidate - Invalidate a key.
+ * @key: The key to be invalidated.
+ *
+ * Mark a key as being invalidated and have it cleaned up immediately.  The key
+ * is ignored by all searches and other operations from this point.
+ */
+void key_invalidate(struct key *key)
+{
+	kenter("%d", key_serial(key));
+
+	key_check(key);
+
+	if (!test_bit(KEY_FLAG_INVALIDATED, &key->flags)) {
+		down_write_nested(&key->sem, 1);
+		if (!test_and_set_bit(KEY_FLAG_INVALIDATED, &key->flags))
+			key_schedule_gc_links();
+		up_write(&key->sem);
+	}
+}
+EXPORT_SYMBOL(key_invalidate);
+
+/**
  * register_key_type - Register a type of key.
  * @ktype: The new key type.
  *
@@ -946,6 +989,8 @@ int register_key_type(struct key_type *ktype)
 	struct key_type *p;
 	int ret;
 
+	memset(&ktype->lock_class, 0, sizeof(ktype->lock_class));
+
 	ret = -EEXIST;
 	down_write(&key_types_sem);
 
@@ -957,6 +1002,8 @@ int register_key_type(struct key_type *ktype)
 
 	/* store the type */
 	list_add(&ktype->link, &key_types_list);
+
+	pr_notice("Key type %s registered\n", ktype->name);
 	ret = 0;
 
 out:
@@ -979,6 +1026,7 @@ void unregister_key_type(struct key_type *ktype)
 	list_del_init(&ktype->link);
 	downgrade_write(&key_types_sem);
 	key_gc_keytype(ktype);
+	pr_notice("Key type %s unregistered\n", ktype->name);
 	up_read(&key_types_sem);
 }
 EXPORT_SYMBOL(unregister_key_type);
@@ -996,6 +1044,7 @@ void __init key_init(void)
 	list_add_tail(&key_type_keyring.link, &key_types_list);
 	list_add_tail(&key_type_dead.link, &key_types_list);
 	list_add_tail(&key_type_user.link, &key_types_list);
+	list_add_tail(&key_type_logon.link, &key_types_list);
 
 	/* record the root user tracking */
 	rb_link_node(&root_key_user.node,

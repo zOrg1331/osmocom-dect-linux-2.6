@@ -51,6 +51,8 @@
 
 struct omap_dss_device;
 struct omap_overlay_manager;
+struct snd_aes_iec958;
+struct snd_cea_861_aud_if;
 
 enum omap_display_type {
 	OMAP_DISPLAY_TYPE_NONE		= 0,
@@ -158,6 +160,13 @@ enum omap_dss_display_state {
 	OMAP_DSS_DISPLAY_SUSPENDED,
 };
 
+enum omap_dss_audio_state {
+	OMAP_DSS_AUDIO_DISABLED = 0,
+	OMAP_DSS_AUDIO_ENABLED,
+	OMAP_DSS_AUDIO_CONFIGURED,
+	OMAP_DSS_AUDIO_PLAYING,
+};
+
 /* XXX perhaps this should be removed */
 enum omap_dss_overlay_managers {
 	OMAP_DSS_OVL_MGR_LCD,
@@ -166,8 +175,9 @@ enum omap_dss_overlay_managers {
 };
 
 enum omap_dss_rotation_type {
-	OMAP_DSS_ROT_DMA = 0,
-	OMAP_DSS_ROT_VRFB = 1,
+	OMAP_DSS_ROT_DMA	= 1 << 0,
+	OMAP_DSS_ROT_VRFB	= 1 << 1,
+	OMAP_DSS_ROT_TILER	= 1 << 2,
 };
 
 /* clockwise rotation angle */
@@ -198,6 +208,10 @@ enum omap_dss_clk_source {
 						 * OMAP4: PLL1_CLK2 */
 	OMAP_DSS_CLK_SRC_DSI2_PLL_HSDIV_DISPC,	/* OMAP4: PLL2_CLK1 */
 	OMAP_DSS_CLK_SRC_DSI2_PLL_HSDIV_DSI,	/* OMAP4: PLL2_CLK2 */
+};
+
+enum omap_hdmi_flags {
+	OMAP_HDMI_SDA_SCL_EXTERNAL_PULLUP = 1 << 0,
 };
 
 /* RFBI */
@@ -294,8 +308,8 @@ int dsi_vc_set_max_rx_packet_size(struct omap_dss_device *dssdev, int channel,
 		u16 len);
 int dsi_vc_send_null(struct omap_dss_device *dssdev, int channel);
 int dsi_vc_send_bta_sync(struct omap_dss_device *dssdev, int channel);
-int dsi_video_mode_enable(struct omap_dss_device *dssdev, int channel);
-void dsi_video_mode_disable(struct omap_dss_device *dssdev, int channel);
+int dsi_enable_video_output(struct omap_dss_device *dssdev, int channel);
+void dsi_disable_video_output(struct omap_dss_device *dssdev, int channel);
 
 /* Board specific data */
 struct omap_dss_board_info {
@@ -305,15 +319,13 @@ struct omap_dss_board_info {
 	struct omap_dss_device *default_device;
 	int (*dsi_enable_pads)(int dsi_id, unsigned lane_mask);
 	void (*dsi_disable_pads)(int dsi_id, unsigned lane_mask);
+	int (*set_min_bus_tput)(struct device *dev, unsigned long r);
 };
 
 /* Init with the board info */
 extern int omap_display_init(struct omap_dss_board_info *board_data);
-
-struct omap_display_platform_data {
-	struct omap_dss_board_info *board_data;
-	/* TODO: Additional members to be added when PM is considered */
-};
+/* HDMI mux init*/
+extern int omap_hdmi_init(enum omap_hdmi_flags flags);
 
 struct omap_video_timings {
 	/* Unit: pixels */
@@ -352,8 +364,6 @@ struct omap_dss_cpr_coefs {
 };
 
 struct omap_overlay_info {
-	bool enabled;
-
 	u32 paddr;
 	u32 p_uv_addr;  /* for NV12 format */
 	u16 screen_width;
@@ -385,11 +395,21 @@ struct omap_overlay {
 
 	/* dynamic fields */
 	struct omap_overlay_manager *manager;
-	struct omap_overlay_info info;
 
-	bool manager_changed;
-	/* if true, info has been changed, but not applied() yet */
-	bool info_dirty;
+	/*
+	 * The following functions do not block:
+	 *
+	 * is_enabled
+	 * set_overlay_info
+	 * get_overlay_info
+	 *
+	 * The rest of the functions may block and cannot be called from
+	 * interrupt context
+	 */
+
+	int (*enable)(struct omap_overlay *ovl);
+	int (*disable)(struct omap_overlay *ovl);
+	bool (*is_enabled)(struct omap_overlay *ovl);
 
 	int (*set_manager)(struct omap_overlay *ovl,
 		struct omap_overlay_manager *mgr);
@@ -418,23 +438,27 @@ struct omap_overlay_manager_info {
 
 struct omap_overlay_manager {
 	struct kobject kobj;
-	struct list_head list;
 
 	/* static fields */
 	const char *name;
 	enum omap_channel id;
 	enum omap_overlay_manager_caps caps;
-	int num_overlays;
-	struct omap_overlay **overlays;
+	struct list_head overlays;
 	enum omap_display_type supported_displays;
 
 	/* dynamic fields */
 	struct omap_dss_device *device;
-	struct omap_overlay_manager_info info;
 
-	bool device_changed;
-	/* if true, info has been changed but not applied() yet */
-	bool info_dirty;
+	/*
+	 * The following functions do not block:
+	 *
+	 * set_manager_info
+	 * get_manager_info
+	 * apply
+	 *
+	 * The rest of the functions may block and cannot be called from
+	 * interrupt context
+	 */
 
 	int (*set_device)(struct omap_overlay_manager *mgr,
 		struct omap_dss_device *dssdev);
@@ -448,9 +472,21 @@ struct omap_overlay_manager {
 	int (*apply)(struct omap_overlay_manager *mgr);
 	int (*wait_for_go)(struct omap_overlay_manager *mgr);
 	int (*wait_for_vsync)(struct omap_overlay_manager *mgr);
+};
 
-	int (*enable)(struct omap_overlay_manager *mgr);
-	int (*disable)(struct omap_overlay_manager *mgr);
+/* 22 pins means 1 clk lane and 10 data lanes */
+#define OMAP_DSS_MAX_DSI_PINS 22
+
+struct omap_dsi_pin_config {
+	int num_pins;
+	/*
+	 * pin numbers in the following order:
+	 * clk+, clk-
+	 * data1+, data1-
+	 * data2+, data2-
+	 * ...
+	 */
+	int pins[OMAP_DSS_MAX_DSI_PINS];
 };
 
 struct omap_dss_device {
@@ -475,17 +511,6 @@ struct omap_dss_device {
 		} sdi;
 
 		struct {
-			u8 clk_lane;
-			u8 clk_pol;
-			u8 data1_lane;
-			u8 data1_pol;
-			u8 data2_lane;
-			u8 data2_pol;
-			u8 data3_lane;
-			u8 data3_pol;
-			u8 data4_lane;
-			u8 data4_pol;
-
 			int module;
 
 			bool ext_te;
@@ -568,11 +593,23 @@ struct omap_dss_device {
 
 	enum omap_dss_display_state state;
 
+	enum omap_dss_audio_state audio_state;
+
 	/* platform specific  */
 	int (*platform_enable)(struct omap_dss_device *dssdev);
 	void (*platform_disable)(struct omap_dss_device *dssdev);
 	int (*set_backlight)(struct omap_dss_device *dssdev, int level);
 	int (*get_backlight)(struct omap_dss_device *dssdev);
+};
+
+struct omap_dss_hdmi_data
+{
+	int hpd_gpio;
+};
+
+struct omap_dss_audio {
+	struct snd_aes_iec958 *iec;
+	struct snd_cea_861_aud_if *cea;
 };
 
 struct omap_dss_driver {
@@ -622,6 +659,24 @@ struct omap_dss_driver {
 
 	int (*read_edid)(struct omap_dss_device *dssdev, u8 *buf, int len);
 	bool (*detect)(struct omap_dss_device *dssdev);
+
+	/*
+	 * For display drivers that support audio. This encompasses
+	 * HDMI and DisplayPort at the moment.
+	 */
+	/*
+	 * Note: These functions might sleep. Do not call while
+	 * holding a spinlock/readlock.
+	 */
+	int (*audio_enable)(struct omap_dss_device *dssdev);
+	void (*audio_disable)(struct omap_dss_device *dssdev);
+	bool (*audio_supported)(struct omap_dss_device *dssdev);
+	int (*audio_config)(struct omap_dss_device *dssdev,
+		struct omap_dss_audio *audio);
+	/* Note: These functions may not sleep */
+	int (*audio_start)(struct omap_dss_device *dssdev);
+	void (*audio_stop)(struct omap_dss_device *dssdev);
+
 };
 
 int omap_dss_register_driver(struct omap_dss_driver *);
@@ -646,6 +701,8 @@ struct omap_overlay *omap_dss_get_overlay(int num);
 void omapdss_default_get_resolution(struct omap_dss_device *dssdev,
 		u16 *xres, u16 *yres);
 int omapdss_default_get_recommended_bpp(struct omap_dss_device *dssdev);
+void omapdss_default_get_timings(struct omap_dss_device *dssdev,
+		struct omap_video_timings *timings);
 
 typedef void (*omap_dispc_isr_t) (void *arg, u32 mask);
 int omap_dispc_register_isr(omap_dispc_isr_t isr, void *arg, u32 mask);
@@ -662,16 +719,13 @@ void omapdss_dsi_vc_enable_hs(struct omap_dss_device *dssdev, int channel,
 		bool enable);
 int omapdss_dsi_enable_te(struct omap_dss_device *dssdev, bool enable);
 
-int omap_dsi_prepare_update(struct omap_dss_device *dssdev,
-				    u16 *x, u16 *y, u16 *w, u16 *h,
-				    bool enlarge_update_area);
-int omap_dsi_update(struct omap_dss_device *dssdev,
-		int channel,
-		u16 x, u16 y, u16 w, u16 h,
+int omap_dsi_update(struct omap_dss_device *dssdev, int channel,
 		void (*callback)(int, void *), void *data);
 int omap_dsi_request_vc(struct omap_dss_device *dssdev, int *channel);
 int omap_dsi_set_vc_id(struct omap_dss_device *dssdev, int channel, int vc_id);
 void omap_dsi_release_vc(struct omap_dss_device *dssdev, int channel);
+int omapdss_dsi_configure_pins(struct omap_dss_device *dssdev,
+		const struct omap_dsi_pin_config *pin_cfg);
 
 int omapdss_dsi_display_enable(struct omap_dss_device *dssdev);
 void omapdss_dsi_display_disable(struct omap_dss_device *dssdev,

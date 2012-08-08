@@ -174,7 +174,7 @@ static int tegra_periph_clk_enable_refcount[3 * 32];
 #define pmc_readl(reg) \
 	__raw_readl(reg_pmc_base + (reg))
 
-unsigned long clk_measure_input_freq(void)
+static unsigned long clk_measure_input_freq(void)
 {
 	u32 clock_autodetect;
 	clk_writel(OSC_FREQ_DET_TRIG | 1, OSC_FREQ_DET);
@@ -277,18 +277,6 @@ static struct clk_ops tegra_clk_m_ops = {
 	.enable		= tegra2_clk_m_enable,
 	.disable	= tegra2_clk_m_disable,
 };
-
-void tegra2_periph_reset_assert(struct clk *c)
-{
-	BUG_ON(!c->ops->reset);
-	c->ops->reset(c, true);
-}
-
-void tegra2_periph_reset_deassert(struct clk *c)
-{
-	BUG_ON(!c->ops->reset);
-	c->ops->reset(c, false);
-}
 
 /* super clock functions */
 /* "super clocks" on tegra have two-stage muxes and a clock skipping
@@ -732,7 +720,7 @@ static void tegra2_pllx_clk_init(struct clk *c)
 {
 	tegra2_pll_clk_init(c);
 
-	if (tegra_sku_id() == 7)
+	if (tegra_sku_id == 7)
 		c->max_rate = 750000000;
 }
 
@@ -1132,6 +1120,9 @@ static struct clk_ops tegra_periph_clk_ops = {
 void tegra2_sdmmc_tap_delay(struct clk *c, int delay)
 {
 	u32 reg;
+	unsigned long flags;
+
+	spin_lock_irqsave(&c->spinlock, flags);
 
 	delay = clamp(delay, 0, 15);
 	reg = clk_readl(c->reg);
@@ -1139,6 +1130,8 @@ void tegra2_sdmmc_tap_delay(struct clk *c, int delay)
 	reg |= SDMMC_CLK_INT_FB_SEL;
 	reg |= delay << SDMMC_CLK_INT_FB_DLY_SHIFT;
 	clk_writel(reg, c->reg);
+
+	spin_unlock_irqrestore(&c->spinlock, flags);
 }
 
 /* External memory controller clock ops */
@@ -1150,15 +1143,35 @@ static void tegra2_emc_clk_init(struct clk *c)
 
 static long tegra2_emc_clk_round_rate(struct clk *c, unsigned long rate)
 {
-	long new_rate = rate;
+	long emc_rate;
+	long clk_rate;
 
-	new_rate = tegra_emc_round_rate(new_rate);
-	if (new_rate < 0)
+	/*
+	 * The slowest entry in the EMC clock table that is at least as
+	 * fast as rate.
+	 */
+	emc_rate = tegra_emc_round_rate(rate);
+	if (emc_rate < 0)
 		return c->max_rate;
 
-	BUG_ON(new_rate != tegra2_periph_clk_round_rate(c, new_rate));
+	/*
+	 * The fastest rate the PLL will generate that is at most the
+	 * requested rate.
+	 */
+	clk_rate = tegra2_periph_clk_round_rate(c, emc_rate);
 
-	return new_rate;
+	/*
+	 * If this fails, and emc_rate > clk_rate, it's because the maximum
+	 * rate in the EMC tables is larger than the maximum rate of the EMC
+	 * clock. The EMC clock's max rate is the rate it was running when the
+	 * kernel booted. Such a mismatch is probably due to using the wrong
+	 * BCT, i.e. using a Tegra20 BCT with an EMC table written for Tegra25.
+	 */
+	WARN_ONCE(emc_rate != clk_rate,
+		"emc_rate %ld != clk_rate %ld",
+		emc_rate, clk_rate);
+
+	return emc_rate;
 }
 
 static int tegra2_emc_clk_set_rate(struct clk *c, unsigned long rate)
@@ -1473,6 +1486,10 @@ static struct clk tegra_clk_m = {
 };
 
 static struct clk_pll_freq_table tegra_pll_c_freq_table[] = {
+	{ 12000000, 600000000, 600, 12, 1, 8 },
+	{ 13000000, 600000000, 600, 13, 1, 8 },
+	{ 19200000, 600000000, 500, 16, 1, 6 },
+	{ 26000000, 600000000, 600, 26, 1, 8 },
 	{ 0, 0, 0, 0, 0, 0 },
 };
 
@@ -1750,6 +1767,12 @@ static struct clk_pll_freq_table tegra_pll_x_freq_table[] = {
 	{ 13000000, 760000000,  760,  13, 1, 12},
 	{ 19200000, 760000000,  950,  24, 1, 8},
 	{ 26000000, 760000000,  760,  26, 1, 12},
+
+	/* 750 MHz */
+	{ 12000000, 750000000,  750,  12, 1, 12},
+	{ 13000000, 750000000,  750,  13, 1, 12},
+	{ 19200000, 750000000,  625,  16, 1, 8},
+	{ 26000000, 750000000,  750,  26, 1, 12},
 
 	/* 608 MHz */
 	{ 12000000, 608000000,  608,  12, 1, 12},
@@ -2129,8 +2152,8 @@ static struct clk tegra_list_clks[] = {
 	PERIPH_CLK("apbdma",	"tegra-dma",		NULL,	34,	0,	108000000, mux_pclk,			0),
 	PERIPH_CLK("rtc",	"rtc-tegra",		NULL,	4,	0,	32768,     mux_clk_32k,			PERIPH_NO_RESET),
 	PERIPH_CLK("timer",	"timer",		NULL,	5,	0,	26000000,  mux_clk_m,			0),
-	PERIPH_CLK("i2s1",	"tegra-i2s.0",		NULL,	11,	0x100,	26000000,  mux_pllaout0_audio2x_pllp_clkm,	MUX | DIV_U71),
-	PERIPH_CLK("i2s2",	"tegra-i2s.1",		NULL,	18,	0x104,	26000000,  mux_pllaout0_audio2x_pllp_clkm,	MUX | DIV_U71),
+	PERIPH_CLK("i2s1",	"tegra20-i2s.0",	NULL,	11,	0x100,	26000000,  mux_pllaout0_audio2x_pllp_clkm,	MUX | DIV_U71),
+	PERIPH_CLK("i2s2",	"tegra20-i2s.1",	NULL,	18,	0x104,	26000000,  mux_pllaout0_audio2x_pllp_clkm,	MUX | DIV_U71),
 	PERIPH_CLK("spdif_out",	"spdif_out",		NULL,	10,	0x108,	100000000, mux_pllaout0_audio2x_pllp_clkm,	MUX | DIV_U71),
 	PERIPH_CLK("spdif_in",	"spdif_in",		NULL,	10,	0x10c,	100000000, mux_pllp_pllc_pllm,		MUX | DIV_U71),
 	PERIPH_CLK("pwm",	"pwm",			NULL,	17,	0x110,	432000000, mux_pllp_pllc_audio_clkm_clk32,	MUX | DIV_U71),

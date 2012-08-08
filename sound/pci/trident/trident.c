@@ -47,7 +47,7 @@ MODULE_SUPPORTED_DEVICE("{{Trident,4DWave DX},"
 
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
-static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
+static bool enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
 static int pcm_channels[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS - 1)] = 32};
 static int wavetable_size[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS - 1)] = 8192};
 
@@ -172,7 +172,7 @@ static void __devexit snd_trident_remove(struct pci_dev *pci)
 	pci_set_drvdata(pci, NULL);
 }
 
-static struct pci_driver driver = {
+static struct pci_driver trident_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = snd_trident_ids,
 	.probe = snd_trident_probe,
@@ -183,15 +183,4 @@ static struct pci_driver driver = {
 #endif
 };
 
-static int __init alsa_card_trident_init(void)
-{
-	return pci_register_driver(&driver);
-}
-
-static void __exit alsa_card_trident_exit(void)
-{
-	pci_unregister_driver(&driver);
-}
-
-module_init(alsa_card_trident_init)
-module_exit(alsa_card_trident_exit)
+module_pci_driver(trident_driver);

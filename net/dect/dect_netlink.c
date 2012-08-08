@@ -96,14 +96,18 @@ static int dect_netlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	}
 
 	/* dump and get requests don't require privileges */
-	if (link->dump == NULL && security_netlink_recv(skb, CAP_NET_ADMIN))
+	if (link->dump == NULL && !capable(CAP_NET_ADMIN))
 		return -EPERM;
 
 	if (nlh->nlmsg_flags & NLM_F_DUMP) {
+		struct netlink_dump_control c = {
+			.dump	= link->dump,
+			.done	= link->done,
+		};
+
 		if (link->dump == NULL)
 			return -EOPNOTSUPP;
-		return netlink_dump_start(dect_nlsk, skb, nlh, link->dump,
-					  link->done, 0);
+		return netlink_dump_start(dect_nlsk, skb, nlh, &c);
 	} else {
 		struct nlattr *nla[link->maxtype + 1];
 

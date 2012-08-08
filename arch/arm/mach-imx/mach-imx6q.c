@@ -10,21 +10,120 @@
  * http://www.gnu.org/copyleft/gpl.html
  */
 
+#include <linux/clk.h>
+#include <linux/clkdev.h>
+#include <linux/delay.h>
 #include <linux/init.h>
+#include <linux/io.h>
 #include <linux/irq.h>
 #include <linux/irqdomain.h>
 #include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
+#include <linux/pinctrl/machine.h>
+#include <linux/phy.h>
+#include <linux/micrel_phy.h>
+#include <asm/smp_twd.h>
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/hardware/gic.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
+#include <asm/system_misc.h>
 #include <mach/common.h>
 #include <mach/hardware.h>
 
+void imx6q_restart(char mode, const char *cmd)
+{
+	struct device_node *np;
+	void __iomem *wdog_base;
+
+	np = of_find_compatible_node(NULL, NULL, "fsl,imx6q-wdt");
+	wdog_base = of_iomap(np, 0);
+	if (!wdog_base)
+		goto soft;
+
+	imx_src_prepare_restart();
+
+	/* enable wdog */
+	writew_relaxed(1 << 2, wdog_base);
+	/* write twice to ensure the request will not get ignored */
+	writew_relaxed(1 << 2, wdog_base);
+
+	/* wait for reset to assert ... */
+	mdelay(500);
+
+	pr_err("Watchdog reset failed to assert reset\n");
+
+	/* delay to allow the serial port to show the message */
+	mdelay(50);
+
+soft:
+	/* we'll take a jump through zero as a poor second */
+	soft_restart(0);
+}
+
+/* For imx6q sabrelite board: set KSZ9021RN RGMII pad skew */
+static int ksz9021rn_phy_fixup(struct phy_device *phydev)
+{
+	if (IS_ENABLED(CONFIG_PHYLIB)) {
+		/* min rx data delay */
+		phy_write(phydev, 0x0b, 0x8105);
+		phy_write(phydev, 0x0c, 0x0000);
+
+		/* max rx/tx clock delay, min rx/tx control delay */
+		phy_write(phydev, 0x0b, 0x8104);
+		phy_write(phydev, 0x0c, 0xf0f0);
+		phy_write(phydev, 0x0b, 0x104);
+	}
+
+	return 0;
+}
+
+static void __init imx6q_sabrelite_cko1_setup(void)
+{
+	struct clk *cko1_sel, *ahb, *cko1;
+	unsigned long rate;
+
+	cko1_sel = clk_get_sys(NULL, "cko1_sel");
+	ahb = clk_get_sys(NULL, "ahb");
+	cko1 = clk_get_sys(NULL, "cko1");
+	if (IS_ERR(cko1_sel) || IS_ERR(ahb) || IS_ERR(cko1)) {
+		pr_err("cko1 setup failed!\n");
+		goto put_clk;
+	}
+	clk_set_parent(cko1_sel, ahb);
+	rate = clk_round_rate(cko1, 16000000);
+	clk_set_rate(cko1, rate);
+	clk_register_clkdev(cko1, NULL, "0-000a");
+put_clk:
+	if (!IS_ERR(cko1_sel))
+		clk_put(cko1_sel);
+	if (!IS_ERR(ahb))
+		clk_put(ahb);
+	if (!IS_ERR(cko1))
+		clk_put(cko1);
+}
+
+static void __init imx6q_sabrelite_init(void)
+{
+	if (IS_ENABLED(CONFIG_PHYLIB))
+		phy_register_fixup_for_uid(PHY_ID_KSZ9021, MICREL_PHY_ID_MASK,
+				ksz9021rn_phy_fixup);
+	imx6q_sabrelite_cko1_setup();
+}
+
 static void __init imx6q_init_machine(void)
 {
+	/*
+	 * This should be removed when all imx6q boards have pinctrl
+	 * states for devices defined in device tree.
+	 */
+	pinctrl_provide_dummies();
+
+	if (of_machine_is_compatible("fsl,imx6q-sabrelite"))
+		imx6q_sabrelite_init();
+
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
 
 	imx6q_pm_init();
@@ -43,7 +142,8 @@ static int __init imx6q_gpio_add_irq_domain(struct device_node *np,
 	static int gpio_irq_base = MXC_GPIO_IRQ_START + ARCH_NR_GPIOS;
 
 	gpio_irq_base -= 32;
-	irq_domain_add_simple(np, gpio_irq_base);
+	irq_domain_add_legacy(np, 32, gpio_irq_base, 0, &irq_domain_simple_ops,
+			      NULL);
 
 	return 0;
 }
@@ -65,6 +165,7 @@ static void __init imx6q_init_irq(void)
 static void __init imx6q_timer_init(void)
 {
 	mx6q_clocks_init();
+	twd_local_timer_of_register();
 }
 
 static struct sys_timer imx6q_timer = {
@@ -72,7 +173,10 @@ static struct sys_timer imx6q_timer = {
 };
 
 static const char *imx6q_dt_compat[] __initdata = {
-	"fsl,imx6q-sabreauto",
+	"fsl,imx6q-arm2",
+	"fsl,imx6q-sabrelite",
+	"fsl,imx6q-sabresd",
+	"fsl,imx6q",
 	NULL,
 };
 
@@ -83,4 +187,5 @@ DT_MACHINE_START(IMX6Q, "Freescale i.MX6 Quad (Device Tree)")
 	.timer		= &imx6q_timer,
 	.init_machine	= imx6q_init_machine,
 	.dt_compat	= imx6q_dt_compat,
+	.restart	= imx6q_restart,
 MACHINE_END

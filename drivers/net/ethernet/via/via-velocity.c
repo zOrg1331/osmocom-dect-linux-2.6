@@ -522,7 +522,7 @@ static void velocity_init_cam_filter(struct velocity_info *vptr)
 	mac_set_vlan_cam_mask(regs, vptr->vCAMmask);
 }
 
-static void velocity_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
+static int velocity_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
 {
 	struct velocity_info *vptr = netdev_priv(dev);
 
@@ -530,9 +530,10 @@ static void velocity_vlan_rx_add_vid(struct net_device *dev, unsigned short vid)
 	set_bit(vid, vptr->active_vlans);
 	velocity_init_cam_filter(vptr);
 	spin_unlock_irq(&vptr->lock);
+	return 0;
 }
 
-static void velocity_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
+static int velocity_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid)
 {
 	struct velocity_info *vptr = netdev_priv(dev);
 
@@ -540,6 +541,7 @@ static void velocity_vlan_rx_kill_vid(struct net_device *dev, unsigned short vid
 	clear_bit(vid, vptr->active_vlans);
 	velocity_init_cam_filter(vptr);
 	spin_unlock_irq(&vptr->lock);
+	return 0;
 }
 
 static void velocity_init_rx_ring_indexes(struct velocity_info *vptr)
@@ -1507,7 +1509,7 @@ static int velocity_alloc_rx_buf(struct velocity_info *vptr, int idx)
 	struct rx_desc *rd = &(vptr->rx.ring[idx]);
 	struct velocity_rd_info *rd_info = &(vptr->rx.info[idx]);
 
-	rd_info->skb = dev_alloc_skb(vptr->rx.buf_sz + 64);
+	rd_info->skb = netdev_alloc_skb(vptr->dev, vptr->rx.buf_sz + 64);
 	if (rd_info->skb == NULL)
 		return -ENOMEM;
 
@@ -2486,11 +2488,8 @@ static int velocity_close(struct net_device *dev)
 
 	if (vptr->flags & VELOCITY_FLAGS_WOL_ENABLED)
 		velocity_get_ip(vptr);
-	if (dev->irq != 0)
-		free_irq(dev->irq, dev);
 
-	/* Power down the chip */
-	pci_set_power_state(vptr->pdev, PCI_D3hot);
+	free_irq(vptr->pdev->irq, dev);
 
 	velocity_free_rings(vptr);
 
@@ -2731,10 +2730,8 @@ static int __devinit velocity_found1(struct pci_dev *pdev, const struct pci_devi
 	}
 
 	dev = alloc_etherdev(sizeof(struct velocity_info));
-	if (!dev) {
-		dev_err(&pdev->dev, "allocate net device failed.\n");
+	if (!dev)
 		goto out;
-	}
 
 	/* Chain it all together */
 
@@ -2758,8 +2755,6 @@ static int __devinit velocity_found1(struct pci_dev *pdev, const struct pci_devi
 	if (ret < 0)
 		goto err_free_dev;
 
-	dev->irq = pdev->irq;
-
 	ret = velocity_get_pci_info(vptr, pdev);
 	if (ret < 0) {
 		/* error message already printed */
@@ -2781,8 +2776,6 @@ static int __devinit velocity_found1(struct pci_dev *pdev, const struct pci_devi
 	vptr->mac_regs = regs;
 
 	mac_wol_reset(regs);
-
-	dev->base_addr = vptr->ioaddr;
 
 	for (i = 0; i < 6; i++)
 		dev->dev_addr[i] = readb(&regs->PAR[i]);
@@ -2809,7 +2802,6 @@ static int __devinit velocity_found1(struct pci_dev *pdev, const struct pci_devi
 
 	vptr->phy_id = MII_GET_PHY_ID(vptr->mac_regs);
 
-	dev->irq = pdev->irq;
 	dev->netdev_ops = &velocity_netdev_ops;
 	dev->ethtool_ops = &velocity_ethtool_ops;
 	netif_napi_add(dev, &vptr->napi, velocity_poll, VELOCITY_NAPI_WEIGHT);
@@ -3270,9 +3262,9 @@ static int velocity_set_settings(struct net_device *dev,
 static void velocity_get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 {
 	struct velocity_info *vptr = netdev_priv(dev);
-	strcpy(info->driver, VELOCITY_NAME);
-	strcpy(info->version, VELOCITY_VERSION);
-	strcpy(info->bus_info, pci_name(vptr->pdev));
+	strlcpy(info->driver, VELOCITY_NAME, sizeof(info->driver));
+	strlcpy(info->version, VELOCITY_VERSION, sizeof(info->version));
+	strlcpy(info->bus_info, pci_name(vptr->pdev), sizeof(info->bus_info));
 }
 
 static void velocity_ethtool_get_wol(struct net_device *dev, struct ethtool_wolinfo *wol)

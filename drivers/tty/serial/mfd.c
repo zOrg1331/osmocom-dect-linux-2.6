@@ -127,11 +127,6 @@ static inline void serial_out(struct uart_hsu_port *up, int offset, int value)
 
 #define HSU_REGS_BUFSIZE	1024
 
-static int hsu_show_regs_open(struct inode *inode, struct file *file)
-{
-	file->private_data = inode->i_private;
-	return 0;
-}
 
 static ssize_t port_show_regs(struct file *file, char __user *user_buf,
 				size_t count, loff_t *ppos)
@@ -231,14 +226,14 @@ static ssize_t dma_show_regs(struct file *file, char __user *user_buf,
 
 static const struct file_operations port_regs_ops = {
 	.owner		= THIS_MODULE,
-	.open		= hsu_show_regs_open,
+	.open		= simple_open,
 	.read		= port_show_regs,
 	.llseek		= default_llseek,
 };
 
 static const struct file_operations dma_regs_ops = {
 	.owner		= THIS_MODULE,
-	.open		= hsu_show_regs_open,
+	.open		= simple_open,
 	.read		= dma_show_regs,
 	.llseek		= default_llseek,
 };
@@ -1154,7 +1149,6 @@ serial_hsu_console_setup(struct console *co, char *options)
 	int bits = 8;
 	int parity = 'n';
 	int flow = 'n';
-	int ret;
 
 	if (co->index == -1 || co->index >= serial_hsu_reg.nr)
 		co->index = 0;
@@ -1165,9 +1159,7 @@ serial_hsu_console_setup(struct console *co, char *options)
 	if (options)
 		uart_parse_options(options, &baud, &parity, &bits, &flow);
 
-	ret = uart_set_options(&up->port, co, baud, parity, bits, flow);
-
-	return ret;
+	return uart_set_options(&up->port, co, baud, parity, bits, flow);
 }
 
 static struct console serial_hsu_console = {
@@ -1176,9 +1168,13 @@ static struct console serial_hsu_console = {
 	.device		= uart_console_device,
 	.setup		= serial_hsu_console_setup,
 	.flags		= CON_PRINTBUFFER,
-	.index		= 2,
+	.index		= -1,
 	.data		= &serial_hsu_reg,
 };
+
+#define SERIAL_HSU_CONSOLE	(&serial_hsu_console)
+#else
+#define SERIAL_HSU_CONSOLE	NULL
 #endif
 
 struct uart_ops serial_hsu_pops = {
@@ -1208,6 +1204,7 @@ static struct uart_driver serial_hsu_reg = {
 	.major		= TTY_MAJOR,
 	.minor		= 128,
 	.nr		= 3,
+	.cons		= SERIAL_HSU_CONSOLE,
 };
 
 #ifdef CONFIG_PM
@@ -1342,12 +1339,6 @@ static int serial_hsu_probe(struct pci_dev *pdev,
 		}
 		uart_add_one_port(&serial_hsu_reg, &uport->port);
 
-#ifdef CONFIG_SERIAL_MFD_HSU_CONSOLE
-		if (index == 2) {
-			register_console(&serial_hsu_console);
-			uport->port.cons = &serial_hsu_console;
-		}
-#endif
 		pci_set_drvdata(pdev, uport);
 	}
 

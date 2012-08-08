@@ -170,7 +170,6 @@ static int __init qnap_ts209_pci_map_irq(const struct pci_dev *dev, u8 slot,
 static struct hw_pci qnap_ts209_pci __initdata = {
 	.nr_controllers	= 2,
 	.preinit	= qnap_ts209_pci_preinit,
-	.swizzle	= pci_std_swizzle,
 	.setup		= orion5x_pci_sys_setup,
 	.scan		= orion5x_pci_sys_scan_bus,
 	.map_irq	= qnap_ts209_pci_map_irq,
@@ -178,7 +177,7 @@ static struct hw_pci qnap_ts209_pci __initdata = {
 
 static int __init qnap_ts209_pci_init(void)
 {
-	if (machine_is_ts_x09())
+	if (machine_is_ts209())
 		pci_common_init(&qnap_ts209_pci);
 
 	return 0;
@@ -329,4 +328,5 @@ MACHINE_START(TS209, "QNAP TS-109/TS-209")
 	.init_irq	= orion5x_init_irq,
 	.timer		= &orion5x_timer,
 	.fixup		= tag_fixup_mem32,
+	.restart	= orion5x_restart,
 MACHINE_END

@@ -42,8 +42,6 @@ source "drivers/isdn/Kconfig"
 
 source "drivers/dect/Kconfig"
 
-source "drivers/telephony/Kconfig"
-
 # input before char - char/joystick depends on it. As does USB.
 
 source "drivers/input/Kconfig"
@@ -53,6 +51,8 @@ source "drivers/char/Kconfig"
 source "drivers/i2c/Kconfig"
 
 source "drivers/spi/Kconfig"
+
+source "drivers/hsi/Kconfig"
 
 source "drivers/pps/Kconfig"
 
@@ -118,6 +118,8 @@ source "drivers/vlynq/Kconfig"
 
 source "drivers/virtio/Kconfig"
 
+source "drivers/hv/Kconfig"
+
 source "drivers/xen/Kconfig"
 
 source "drivers/staging/Kconfig"
@@ -132,10 +134,20 @@ source "drivers/clocksource/Kconfig"
 
 source "drivers/iommu/Kconfig"
 
+source "drivers/remoteproc/Kconfig"
+
+source "drivers/rpmsg/Kconfig"
+
 source "drivers/virt/Kconfig"
 
-source "drivers/hv/Kconfig"
-
 source "drivers/devfreq/Kconfig"
+
+source "drivers/extcon/Kconfig"
+
+source "drivers/memory/Kconfig"
+
+source "drivers/iio/Kconfig"
+
+source "drivers/vme/Kconfig"
 
 endmenu

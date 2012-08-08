@@ -1114,7 +1114,7 @@ static void process_mpa_reply(struct c4iw_ep *ep, struct sk_buff *skb)
 	 * generated when moving QP to RTS state.
 	 * A TERM message will be sent after QP has moved to RTS state
 	 */
-	if ((ep->mpa_attr.version == 2) &&
+	if ((ep->mpa_attr.version == 2) && peer2peer &&
 			(ep->mpa_attr.p2p_type != p2p_type)) {
 		ep->mpa_attr.p2p_type = FW_RI_INIT_P2PTYPE_DISABLED;
 		rtr_mismatch = 1;
@@ -1362,7 +1362,10 @@ static int abort_rpl(struct c4iw_dev *dev, struct sk_buff *skb)
 
 	ep = lookup_tid(t, tid);
 	PDBG("%s ep %p tid %u\n", __func__, ep, ep->hwtid);
-	BUG_ON(!ep);
+	if (!ep) {
+		printk(KERN_WARNING MOD "Abort rpl to freed endpoint\n");
+		return 0;
+	}
 	mutex_lock(&ep->com.mutex);
 	switch (ep->com.state) {
 	case ABORTING:
@@ -1408,6 +1411,24 @@ static int act_open_rpl(struct c4iw_dev *dev, struct sk_buff *skb)
 		printk(KERN_WARNING MOD "Connection problems for atid %u\n",
 			atid);
 		return 0;
+	}
+
+	/*
+	 * Log interesting failures.
+	 */
+	switch (status) {
+	case CPL_ERR_CONN_RESET:
+	case CPL_ERR_CONN_TIMEDOUT:
+		break;
+	default:
+		printk(KERN_INFO MOD "Active open failure - "
+		       "atid %u status %u errno %d %pI4:%u->%pI4:%u\n",
+		       atid, status, status2errno(status),
+		       &ep->com.local_addr.sin_addr.s_addr,
+		       ntohs(ep->com.local_addr.sin_port),
+		       &ep->com.remote_addr.sin_addr.s_addr,
+		       ntohs(ep->com.remote_addr.sin_port));
+		break;
 	}
 
 	connect_reply_upcall(ep, status2errno(status));
@@ -1556,6 +1577,73 @@ static void get_4tuple(struct cpl_pass_accept_req *req,
 	return;
 }
 
+static int import_ep(struct c4iw_ep *ep, __be32 peer_ip, struct dst_entry *dst,
+		     struct c4iw_dev *cdev, bool clear_mpa_v1)
+{
+	struct neighbour *n;
+	int err, step;
+
+	n = dst_neigh_lookup(dst, &peer_ip);
+	if (!n)
+		return -ENODEV;
+
+	rcu_read_lock();
+	err = -ENOMEM;
+	if (n->dev->flags & IFF_LOOPBACK) {
+		struct net_device *pdev;
+
+		pdev = ip_dev_find(&init_net, peer_ip);
+		if (!pdev) {
+			err = -ENODEV;
+			goto out;
+		}
+		ep->l2t = cxgb4_l2t_get(cdev->rdev.lldi.l2t,
+					n, pdev, 0);
+		if (!ep->l2t)
+			goto out;
+		ep->mtu = pdev->mtu;
+		ep->tx_chan = cxgb4_port_chan(pdev);
+		ep->smac_idx = (cxgb4_port_viid(pdev) & 0x7F) << 1;
+		step = cdev->rdev.lldi.ntxq /
+			cdev->rdev.lldi.nchan;
+		ep->txq_idx = cxgb4_port_idx(pdev) * step;
+		step = cdev->rdev.lldi.nrxq /
+			cdev->rdev.lldi.nchan;
+		ep->ctrlq_idx = cxgb4_port_idx(pdev);
+		ep->rss_qid = cdev->rdev.lldi.rxq_ids[
+			cxgb4_port_idx(pdev) * step];
+		dev_put(pdev);
+	} else {
+		ep->l2t = cxgb4_l2t_get(cdev->rdev.lldi.l2t,
+					n, n->dev, 0);
+		if (!ep->l2t)
+			goto out;
+		ep->mtu = dst_mtu(dst);
+		ep->tx_chan = cxgb4_port_chan(n->dev);
+		ep->smac_idx = (cxgb4_port_viid(n->dev) & 0x7F) << 1;
+		step = cdev->rdev.lldi.ntxq /
+			cdev->rdev.lldi.nchan;
+		ep->txq_idx = cxgb4_port_idx(n->dev) * step;
+		ep->ctrlq_idx = cxgb4_port_idx(n->dev);
+		step = cdev->rdev.lldi.nrxq /
+			cdev->rdev.lldi.nchan;
+		ep->rss_qid = cdev->rdev.lldi.rxq_ids[
+			cxgb4_port_idx(n->dev) * step];
+
+		if (clear_mpa_v1) {
+			ep->retry_with_mpa_v1 = 0;
+			ep->tried_with_mpa_v1 = 0;
+		}
+	}
+	err = 0;
+out:
+	rcu_read_unlock();
+
+	neigh_release(n);
+
+	return err;
+}
+
 static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
 {
 	struct c4iw_ep *child_ep, *parent_ep;
@@ -1563,18 +1651,11 @@ static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
 	unsigned int stid = GET_POPEN_TID(ntohl(req->tos_stid));
 	struct tid_info *t = dev->rdev.lldi.tids;
 	unsigned int hwtid = GET_TID(req);
-	struct neighbour *neigh;
 	struct dst_entry *dst;
-	struct l2t_entry *l2t;
 	struct rtable *rt;
 	__be32 local_ip, peer_ip;
 	__be16 local_port, peer_port;
-	struct net_device *pdev;
-	u32 tx_chan, smac_idx;
-	u16 rss_qid;
-	u32 mtu;
-	int step;
-	int txq_idx, ctrlq_idx;
+	int err;
 
 	parent_ep = lookup_stid(t, stid);
 	PDBG("%s parent ep %p tid %u\n", __func__, parent_ep, hwtid);
@@ -1596,49 +1677,24 @@ static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
 		goto reject;
 	}
 	dst = &rt->dst;
-	rcu_read_lock();
-	neigh = dst_get_neighbour(dst);
-	if (neigh->dev->flags & IFF_LOOPBACK) {
-		pdev = ip_dev_find(&init_net, peer_ip);
-		BUG_ON(!pdev);
-		l2t = cxgb4_l2t_get(dev->rdev.lldi.l2t, neigh, pdev, 0);
-		mtu = pdev->mtu;
-		tx_chan = cxgb4_port_chan(pdev);
-		smac_idx = (cxgb4_port_viid(pdev) & 0x7F) << 1;
-		step = dev->rdev.lldi.ntxq / dev->rdev.lldi.nchan;
-		txq_idx = cxgb4_port_idx(pdev) * step;
-		ctrlq_idx = cxgb4_port_idx(pdev);
-		step = dev->rdev.lldi.nrxq / dev->rdev.lldi.nchan;
-		rss_qid = dev->rdev.lldi.rxq_ids[cxgb4_port_idx(pdev) * step];
-		dev_put(pdev);
-	} else {
-		l2t = cxgb4_l2t_get(dev->rdev.lldi.l2t, neigh, neigh->dev, 0);
-		mtu = dst_mtu(dst);
-		tx_chan = cxgb4_port_chan(neigh->dev);
-		smac_idx = (cxgb4_port_viid(neigh->dev) & 0x7F) << 1;
-		step = dev->rdev.lldi.ntxq / dev->rdev.lldi.nchan;
-		txq_idx = cxgb4_port_idx(neigh->dev) * step;
-		ctrlq_idx = cxgb4_port_idx(neigh->dev);
-		step = dev->rdev.lldi.nrxq / dev->rdev.lldi.nchan;
-		rss_qid = dev->rdev.lldi.rxq_ids[
-			  cxgb4_port_idx(neigh->dev) * step];
-	}
-	rcu_read_unlock();
-	if (!l2t) {
-		printk(KERN_ERR MOD "%s - failed to allocate l2t entry!\n",
-		       __func__);
-		dst_release(dst);
-		goto reject;
-	}
 
 	child_ep = alloc_ep(sizeof(*child_ep), GFP_KERNEL);
 	if (!child_ep) {
 		printk(KERN_ERR MOD "%s - failed to allocate ep entry!\n",
 		       __func__);
-		cxgb4_l2t_release(l2t);
 		dst_release(dst);
 		goto reject;
 	}
+
+	err = import_ep(child_ep, peer_ip, dst, dev, false);
+	if (err) {
+		printk(KERN_ERR MOD "%s - failed to allocate l2t entry!\n",
+		       __func__);
+		dst_release(dst);
+		kfree(child_ep);
+		goto reject;
+	}
+
 	state_set(&child_ep->com, CONNECTING);
 	child_ep->com.dev = dev;
 	child_ep->com.cm_id = NULL;
@@ -1651,18 +1707,11 @@ static int pass_accept_req(struct c4iw_dev *dev, struct sk_buff *skb)
 	c4iw_get_ep(&parent_ep->com);
 	child_ep->parent_ep = parent_ep;
 	child_ep->tos = GET_POPEN_TOS(ntohl(req->tos_stid));
-	child_ep->l2t = l2t;
 	child_ep->dst = dst;
 	child_ep->hwtid = hwtid;
-	child_ep->tx_chan = tx_chan;
-	child_ep->smac_idx = smac_idx;
-	child_ep->rss_qid = rss_qid;
-	child_ep->mtu = mtu;
-	child_ep->txq_idx = txq_idx;
-	child_ep->ctrlq_idx = ctrlq_idx;
 
 	PDBG("%s tx_chan %u smac_idx %u rss_qid %u\n", __func__,
-	     tx_chan, smac_idx, rss_qid);
+	     child_ep->tx_chan, child_ep->smac_idx, child_ep->rss_qid);
 
 	init_timer(&child_ep->timer);
 	cxgb4_insert_tid(t, child_ep, hwtid);
@@ -1792,11 +1841,8 @@ static int is_neg_adv_abort(unsigned int status)
 
 static int c4iw_reconnect(struct c4iw_ep *ep)
 {
-	int err = 0;
 	struct rtable *rt;
-	struct net_device *pdev;
-	struct neighbour *neigh;
-	int step;
+	int err = 0;
 
 	PDBG("%s qp %p cm_id %p\n", __func__, ep->com.qp, ep->com.cm_id);
 	init_timer(&ep->timer);
@@ -1824,47 +1870,10 @@ static int c4iw_reconnect(struct c4iw_ep *ep)
 	}
 	ep->dst = &rt->dst;
 
-	rcu_read_lock();
-	neigh = dst_get_neighbour(ep->dst);
-
-	/* get a l2t entry */
-	if (neigh->dev->flags & IFF_LOOPBACK) {
-		PDBG("%s LOOPBACK\n", __func__);
-		pdev = ip_dev_find(&init_net,
-				   ep->com.cm_id->remote_addr.sin_addr.s_addr);
-		ep->l2t = cxgb4_l2t_get(ep->com.dev->rdev.lldi.l2t,
-					neigh, pdev, 0);
-		ep->mtu = pdev->mtu;
-		ep->tx_chan = cxgb4_port_chan(pdev);
-		ep->smac_idx = (cxgb4_port_viid(pdev) & 0x7F) << 1;
-		step = ep->com.dev->rdev.lldi.ntxq /
-			ep->com.dev->rdev.lldi.nchan;
-		ep->txq_idx = cxgb4_port_idx(pdev) * step;
-		step = ep->com.dev->rdev.lldi.nrxq /
-			ep->com.dev->rdev.lldi.nchan;
-		ep->ctrlq_idx = cxgb4_port_idx(pdev);
-		ep->rss_qid = ep->com.dev->rdev.lldi.rxq_ids[
-			cxgb4_port_idx(pdev) * step];
-		dev_put(pdev);
-	} else {
-		ep->l2t = cxgb4_l2t_get(ep->com.dev->rdev.lldi.l2t,
-					neigh, neigh->dev, 0);
-		ep->mtu = dst_mtu(ep->dst);
-		ep->tx_chan = cxgb4_port_chan(neigh->dev);
-		ep->smac_idx = (cxgb4_port_viid(neigh->dev) & 0x7F) << 1;
-		step = ep->com.dev->rdev.lldi.ntxq /
-			ep->com.dev->rdev.lldi.nchan;
-		ep->txq_idx = cxgb4_port_idx(neigh->dev) * step;
-		ep->ctrlq_idx = cxgb4_port_idx(neigh->dev);
-		step = ep->com.dev->rdev.lldi.nrxq /
-			ep->com.dev->rdev.lldi.nchan;
-		ep->rss_qid = ep->com.dev->rdev.lldi.rxq_ids[
-			cxgb4_port_idx(neigh->dev) * step];
-	}
-	rcu_read_unlock();
-	if (!ep->l2t) {
+	err = import_ep(ep, ep->com.cm_id->remote_addr.sin_addr.s_addr,
+			ep->dst, ep->com.dev, false);
+	if (err) {
 		printk(KERN_ERR MOD "%s - cannot alloc l2e.\n", __func__);
-		err = -ENOMEM;
 		goto fail4;
 	}
 
@@ -2240,13 +2249,10 @@ err:
 
 int c4iw_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 {
-	int err = 0;
 	struct c4iw_dev *dev = to_c4iw_dev(cm_id->device);
 	struct c4iw_ep *ep;
 	struct rtable *rt;
-	struct net_device *pdev;
-	struct neighbour *neigh;
-	int step;
+	int err = 0;
 
 	if ((conn_param->ord > c4iw_max_read_depth) ||
 	    (conn_param->ird > c4iw_max_read_depth)) {
@@ -2307,49 +2313,10 @@ int c4iw_connect(struct iw_cm_id *cm_id, struct iw_cm_conn_param *conn_param)
 	}
 	ep->dst = &rt->dst;
 
-	rcu_read_lock();
-	neigh = dst_get_neighbour(ep->dst);
-
-	/* get a l2t entry */
-	if (neigh->dev->flags & IFF_LOOPBACK) {
-		PDBG("%s LOOPBACK\n", __func__);
-		pdev = ip_dev_find(&init_net,
-				   cm_id->remote_addr.sin_addr.s_addr);
-		ep->l2t = cxgb4_l2t_get(ep->com.dev->rdev.lldi.l2t,
-					neigh, pdev, 0);
-		ep->mtu = pdev->mtu;
-		ep->tx_chan = cxgb4_port_chan(pdev);
-		ep->smac_idx = (cxgb4_port_viid(pdev) & 0x7F) << 1;
-		step = ep->com.dev->rdev.lldi.ntxq /
-		       ep->com.dev->rdev.lldi.nchan;
-		ep->txq_idx = cxgb4_port_idx(pdev) * step;
-		step = ep->com.dev->rdev.lldi.nrxq /
-		       ep->com.dev->rdev.lldi.nchan;
-		ep->ctrlq_idx = cxgb4_port_idx(pdev);
-		ep->rss_qid = ep->com.dev->rdev.lldi.rxq_ids[
-			      cxgb4_port_idx(pdev) * step];
-		dev_put(pdev);
-	} else {
-		ep->l2t = cxgb4_l2t_get(ep->com.dev->rdev.lldi.l2t,
-					neigh, neigh->dev, 0);
-		ep->mtu = dst_mtu(ep->dst);
-		ep->tx_chan = cxgb4_port_chan(neigh->dev);
-		ep->smac_idx = (cxgb4_port_viid(neigh->dev) & 0x7F) << 1;
-		step = ep->com.dev->rdev.lldi.ntxq /
-		       ep->com.dev->rdev.lldi.nchan;
-		ep->txq_idx = cxgb4_port_idx(neigh->dev) * step;
-		ep->ctrlq_idx = cxgb4_port_idx(neigh->dev);
-		step = ep->com.dev->rdev.lldi.nrxq /
-		       ep->com.dev->rdev.lldi.nchan;
-		ep->rss_qid = ep->com.dev->rdev.lldi.rxq_ids[
-			      cxgb4_port_idx(neigh->dev) * step];
-		ep->retry_with_mpa_v1 = 0;
-		ep->tried_with_mpa_v1 = 0;
-	}
-	rcu_read_unlock();
-	if (!ep->l2t) {
+	err = import_ep(ep, cm_id->remote_addr.sin_addr.s_addr,
+			ep->dst, ep->com.dev, true);
+	if (err) {
 		printk(KERN_ERR MOD "%s - cannot alloc l2e.\n", __func__);
-		err = -ENOMEM;
 		goto fail4;
 	}
 
@@ -2714,6 +2681,12 @@ static int peer_abort_intr(struct c4iw_dev *dev, struct sk_buff *skb)
 	unsigned int tid = GET_TID(req);
 
 	ep = lookup_tid(t, tid);
+	if (!ep) {
+		printk(KERN_WARNING MOD
+		       "Abort on non-existent endpoint, tid %d\n", tid);
+		kfree_skb(skb);
+		return 0;
+	}
 	if (is_neg_adv_abort(req->status)) {
 		PDBG("%s neg_adv_abort ep %p tid %u\n", __func__, ep,
 		     ep->hwtid);
@@ -2725,11 +2698,8 @@ static int peer_abort_intr(struct c4iw_dev *dev, struct sk_buff *skb)
 
 	/*
 	 * Wake up any threads in rdma_init() or rdma_fini().
-	 * However, this is not needed if com state is just
-	 * MPA_REQ_SENT
 	 */
-	if (ep->com.state != MPA_REQ_SENT)
-		c4iw_wake_up(&ep->com.wr_wait, -ECONNRESET);
+	c4iw_wake_up(&ep->com.wr_wait, -ECONNRESET);
 	sched(dev, skb);
 	return 0;
 }

@@ -18,7 +18,7 @@
 #include <linux/err.h>
 #include <linux/init.h>
 
-#include <plat/common.h>
+#include "common.h"
 
 #include "prm-regbits-34xx.h"
 #include "voltage.h"
@@ -46,6 +46,7 @@ static struct omap_vc_common omap3_vc_common = {
 };
 
 struct omap_vc_channel omap3_vc_mpu = {
+	.flags = OMAP_VC_CHANNEL_DEFAULT,
 	.common = &omap3_vc_common,
 	.smps_sa_reg	 = OMAP3_PRM_VC_SMPS_SA_OFFSET,
 	.smps_volra_reg	 = OMAP3_PRM_VC_SMPS_VOL_RA_OFFSET,

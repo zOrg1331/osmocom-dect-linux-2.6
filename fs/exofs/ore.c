@@ -266,7 +266,7 @@ int  ore_get_rw_state(struct ore_layout *layout, struct ore_components *oc,
 
 			/* first/last seg is split */
 			num_raid_units += layout->group_width;
-			sgs_per_dev = div_u64(num_raid_units, data_devs);
+			sgs_per_dev = div_u64(num_raid_units, data_devs) + 2;
 		} else {
 			/* For Writes add parity pages array. */
 			max_par_pages = num_raid_units * pages_in_unit *
@@ -445,10 +445,10 @@ int ore_check_io(struct ore_io_state *ios, ore_on_dev_error on_dev_error)
 			u64 residual = ios->reading ?
 					or->in.residual : or->out.residual;
 			u64 offset = (ios->offset + ios->length) - residual;
-			struct ore_dev *od = ios->oc->ods[
-					per_dev->dev - ios->oc->first_dev];
+			unsigned dev = per_dev->dev - ios->oc->first_dev;
+			struct ore_dev *od = ios->oc->ods[dev];
 
-			on_dev_error(ios, od, per_dev->dev, osi.osd_err_pri,
+			on_dev_error(ios, od, dev, osi.osd_err_pri,
 				     offset, residual);
 		}
 		if (osi.osd_err_pri >= acumulated_osd_err) {
@@ -735,13 +735,7 @@ static int _prepare_for_striping(struct ore_io_state *ios)
 out:
 	ios->numdevs = devs_in_group;
 	ios->pages_consumed = cur_pg;
-	if (unlikely(ret)) {
-		if (length == ios->length)
-			return ret;
-		else
-			ios->length -= length;
-	}
-	return 0;
+	return ret;
 }
 
 int ore_create(struct ore_io_state *ios)

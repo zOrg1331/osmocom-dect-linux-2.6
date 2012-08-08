@@ -39,12 +39,12 @@
 
 void mlx4_en_fill_qp_context(struct mlx4_en_priv *priv, int size, int stride,
 			     int is_tx, int rss, int qpn, int cqn,
-			     struct mlx4_qp_context *context)
+			     int user_prio, struct mlx4_qp_context *context)
 {
 	struct mlx4_en_dev *mdev = priv->mdev;
 
 	memset(context, 0, sizeof *context);
-	context->flags = cpu_to_be32(7 << 16 | rss << 13);
+	context->flags = cpu_to_be32(7 << 16 | rss << MLX4_RSS_QPC_FLAG_OFFSET);
 	context->pd = cpu_to_be32(mdev->priv_pdn);
 	context->mtu_msgmax = 0xff;
 	if (!is_tx && !rss)
@@ -57,6 +57,10 @@ void mlx4_en_fill_qp_context(struct mlx4_en_priv *priv, int size, int stride,
 	context->local_qpn = cpu_to_be32(qpn);
 	context->pri_path.ackto = 1 & 0x07;
 	context->pri_path.sched_queue = 0x83 | (priv->port - 1) << 6;
+	if (user_prio >= 0) {
+		context->pri_path.sched_queue |= user_prio << 3;
+		context->pri_path.feup = 1 << 6;
+	}
 	context->pri_path.counter_index = 0xff;
 	context->cqn_send = cpu_to_be32(cqn);
 	context->cqn_recv = cpu_to_be32(cqn);

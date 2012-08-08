@@ -30,10 +30,15 @@ struct ethtool_cmd {
 				 * access it */
 	__u8	duplex;		/* Duplex, half or full */
 	__u8	port;		/* Which connector port */
-	__u8	phy_address;
+	__u8	phy_address;	/* MDIO PHY address (PRTAD for clause 45).
+				 * May be read-only or read-write
+				 * depending on the driver.
+				 */
 	__u8	transceiver;	/* Which transceiver to use */
 	__u8	autoneg;	/* Enable or disable autonegotiation */
-	__u8	mdio_support;
+	__u8	mdio_support;	/* MDIO protocols supported.  Read-only.
+				 * Not set by all drivers.
+				 */
 	__u32	maxtxpkt;	/* Tx pkts before generating tx int */
 	__u32	maxrxpkt;	/* Rx pkts before generating rx int */
 	__u16	speed_hi;       /* The forced speed (upper
@@ -58,6 +63,20 @@ static inline __u32 ethtool_cmd_speed(const struct ethtool_cmd *ep)
 {
 	return (ep->speed_hi << 16) | ep->speed;
 }
+
+/* Device supports clause 22 register access to PHY or peripherals
+ * using the interface defined in <linux/mii.h>.  This should not be
+ * set if there are known to be no such peripherals present or if
+ * the driver only emulates clause 22 registers for compatibility.
+ */
+#define ETH_MDIO_SUPPORTS_C22	1
+
+/* Device supports clause 45 register access to PHY or peripherals
+ * using the interface defined in <linux/mii.h> and <linux/mdio.h>.
+ * This should not be set if there are known to be no such peripherals
+ * present.
+ */
+#define ETH_MDIO_SUPPORTS_C45	2
 
 #define ETHTOOL_FWVERS_LEN	32
 #define ETHTOOL_BUSINFO_LEN	32
@@ -115,6 +134,23 @@ struct ethtool_eeprom {
 	__u32	offset; /* in bytes */
 	__u32	len; /* in bytes */
 	__u8	data[0];
+};
+
+/**
+ * struct ethtool_modinfo - plugin module eeprom information
+ * @cmd: %ETHTOOL_GMODULEINFO
+ * @type: Standard the module information conforms to %ETH_MODULE_SFF_xxxx
+ * @eeprom_len: Length of the eeprom
+ *
+ * This structure is used to return the information to
+ * properly size memory for a subsequent call to %ETHTOOL_GMODULEEEPROM.
+ * The type code indicates the eeprom data format
+ */
+struct ethtool_modinfo {
+	__u32   cmd;
+	__u32   type;
+	__u32   eeprom_len;
+	__u32   reserved[8];
 };
 
 /**
@@ -489,7 +525,10 @@ struct ethtool_rx_flow_spec {
  * on return.
  *
  * For %ETHTOOL_GRXCLSRLCNT, @rule_cnt is set to the number of defined
- * rules on return.
+ * rules on return.  If @data is non-zero on return then it is the
+ * size of the rule table, plus the flag %RX_CLS_LOC_SPECIAL if the
+ * driver supports any special location values.  If that flag is not
+ * set in @data then special location values should not be used.
  *
  * For %ETHTOOL_GRXCLSRULE, @fs.@location specifies the location of an
  * existing rule on entry and @fs contains the rule on return.
@@ -501,10 +540,23 @@ struct ethtool_rx_flow_spec {
  * must use the second parameter to get_rxnfc() instead of @rule_locs.
  *
  * For %ETHTOOL_SRXCLSRLINS, @fs specifies the rule to add or update.
- * @fs.@location specifies the location to use and must not be ignored.
+ * @fs.@location either specifies the location to use or is a special
+ * location value with %RX_CLS_LOC_SPECIAL flag set.  On return,
+ * @fs.@location is the actual rule location.
  *
  * For %ETHTOOL_SRXCLSRLDEL, @fs.@location specifies the location of an
  * existing rule on entry.
+ *
+ * A driver supporting the special location values for
+ * %ETHTOOL_SRXCLSRLINS may add the rule at any suitable unused
+ * location, and may remove a rule at a later location (lower
+ * priority) that matches exactly the same set of flows.  The special
+ * values are: %RX_CLS_LOC_ANY, selecting any location;
+ * %RX_CLS_LOC_FIRST, selecting the first suitable location (maximum
+ * priority); and %RX_CLS_LOC_LAST, selecting the last suitable
+ * location (minimum priority).  Additional special values may be
+ * defined in future and drivers must return -%EINVAL for any
+ * unrecognised value.
  */
 struct ethtool_rxnfc {
 	__u32				cmd;
@@ -543,9 +595,15 @@ struct compat_ethtool_rxnfc {
 /**
  * struct ethtool_rxfh_indir - command to get or set RX flow hash indirection
  * @cmd: Specific command number - %ETHTOOL_GRXFHINDIR or %ETHTOOL_SRXFHINDIR
- * @size: On entry, the array size of the user buffer.  On return from
- *	%ETHTOOL_GRXFHINDIR, the array size of the hardware indirection table.
+ * @size: On entry, the array size of the user buffer, which may be zero.
+ *	On return from %ETHTOOL_GRXFHINDIR, the array size of the hardware
+ *	indirection table.
  * @ring_index: RX ring/queue index for each hash value
+ *
+ * For %ETHTOOL_GRXFHINDIR, a @size of zero means that only the size
+ * should be returned.  For %ETHTOOL_SRXFHINDIR, a @size of zero means
+ * the table should be reset to default values.  This last feature
+ * is not supported by the original implementations.
  */
 struct ethtool_rxfh_indir {
 	__u32	cmd;
@@ -620,12 +678,17 @@ struct ethtool_flash {
  * 	%ETHTOOL_SET_DUMP
  * @version: FW version of the dump, filled in by driver
  * @flag: driver dependent flag for dump setting, filled in by driver during
- * 	  get and filled in by ethtool for set operation
+ *        get and filled in by ethtool for set operation.
+ *        flag must be initialized by macro ETH_FW_DUMP_DISABLE value when
+ *        firmware dump is disabled.
  * @len: length of dump data, used as the length of the user buffer on entry to
  * 	 %ETHTOOL_GET_DUMP_DATA and this is returned as dump length by driver
  * 	 for %ETHTOOL_GET_DUMP_FLAG command
  * @data: data collected for get dump data operation
  */
+
+#define ETH_FW_DUMP_DISABLE 0
+
 struct ethtool_dump {
 	__u32	cmd;
 	__u32	version;
@@ -685,6 +748,29 @@ struct ethtool_sfeatures {
 	struct ethtool_set_features_block features[0];
 };
 
+/**
+ * struct ethtool_ts_info - holds a device's timestamping and PHC association
+ * @cmd: command number = %ETHTOOL_GET_TS_INFO
+ * @so_timestamping: bit mask of the sum of the supported SO_TIMESTAMPING flags
+ * @phc_index: device index of the associated PHC, or -1 if there is none
+ * @tx_types: bit mask of the supported hwtstamp_tx_types enumeration values
+ * @rx_filters: bit mask of the supported hwtstamp_rx_filters enumeration values
+ *
+ * The bits in the 'tx_types' and 'rx_filters' fields correspond to
+ * the 'hwtstamp_tx_types' and 'hwtstamp_rx_filters' enumeration values,
+ * respectively.  For example, if the device supports HWTSTAMP_TX_ON,
+ * then (1 << HWTSTAMP_TX_ON) in 'tx_types' will be set.
+ */
+struct ethtool_ts_info {
+	__u32	cmd;
+	__u32	so_timestamping;
+	__s32	phc_index;
+	__u32	tx_types;
+	__u32	tx_reserved[3];
+	__u32	rx_filters;
+	__u32	rx_reserved[3];
+};
+
 /*
  * %ETHTOOL_SFEATURES changes features present in features[].valid to the
  * values of corresponding bits in features[].requested. Bits in .requested
@@ -724,9 +810,6 @@ enum ethtool_sfeatures_retval_bits {
 
 #include <linux/rculist.h>
 
-/* needed by dev_disable_lro() */
-extern int __ethtool_set_flags(struct net_device *dev, u32 flags);
-
 extern int __ethtool_get_settings(struct net_device *dev,
 				  struct ethtool_cmd *cmd);
 
@@ -750,19 +833,19 @@ struct net_device;
 
 /* Some generic methods drivers may use in their ethtool_ops */
 u32 ethtool_op_get_link(struct net_device *dev);
-u32 ethtool_op_get_tx_csum(struct net_device *dev);
-int ethtool_op_set_tx_csum(struct net_device *dev, u32 data);
-int ethtool_op_set_tx_hw_csum(struct net_device *dev, u32 data);
-int ethtool_op_set_tx_ipv6_csum(struct net_device *dev, u32 data);
-u32 ethtool_op_get_sg(struct net_device *dev);
-int ethtool_op_set_sg(struct net_device *dev, u32 data);
-u32 ethtool_op_get_tso(struct net_device *dev);
-int ethtool_op_set_tso(struct net_device *dev, u32 data);
-u32 ethtool_op_get_ufo(struct net_device *dev);
-int ethtool_op_set_ufo(struct net_device *dev, u32 data);
-u32 ethtool_op_get_flags(struct net_device *dev);
-int ethtool_op_set_flags(struct net_device *dev, u32 data, u32 supported);
-bool ethtool_invalid_flags(struct net_device *dev, u32 data, u32 supported);
+int ethtool_op_get_ts_info(struct net_device *dev, struct ethtool_ts_info *eti);
+
+/**
+ * ethtool_rxfh_indir_default - get default value for RX flow hash indirection
+ * @index: Index in RX flow hash indirection table
+ * @n_rx_rings: Number of RX rings to use
+ *
+ * This function provides the default policy for RX flow hash indirection.
+ */
+static inline u32 ethtool_rxfh_indir_default(u32 index, u32 n_rx_rings)
+{
+	return index % n_rx_rings;
+}
 
 /**
  * struct ethtool_ops - optional netdev operations
@@ -807,22 +890,6 @@ bool ethtool_invalid_flags(struct net_device *dev, u32 data, u32 supported);
  * @get_pauseparam: Report pause parameters
  * @set_pauseparam: Set pause parameters.  Returns a negative error code
  *	or zero.
- * @get_rx_csum: Deprecated in favour of the netdev feature %NETIF_F_RXCSUM.
- *	Report whether receive checksums are turned on or off.
- * @set_rx_csum: Deprecated in favour of generic netdev features.  Turn
- *	receive checksum on or off.  Returns a negative error code or zero.
- * @get_tx_csum: Deprecated as redundant. Report whether transmit checksums
- *	are turned on or off.
- * @set_tx_csum: Deprecated in favour of generic netdev features.  Turn
- *	transmit checksums on or off.  Returns a negative error code or zero.
- * @get_sg: Deprecated as redundant.  Report whether scatter-gather is
- *	enabled.  
- * @set_sg: Deprecated in favour of generic netdev features.  Turn
- *	scatter-gather on or off. Returns a negative error code or zero.
- * @get_tso: Deprecated as redundant.  Report whether TCP segmentation
- *	offload is enabled.
- * @set_tso: Deprecated in favour of generic netdev features.  Turn TCP
- *	segmentation offload on or off.  Returns a negative error code or zero.
  * @self_test: Run specified self-tests
  * @get_strings: Return a set of strings that describe the requested objects
  * @set_phys_id: Identify the physical devices, e.g. by flashing an LED
@@ -844,15 +911,6 @@ bool ethtool_invalid_flags(struct net_device *dev, u32 data, u32 supported);
  *	negative error code or zero.
  * @complete: Function to be called after any other operation except
  *	@begin.  Will be called even if the other operation failed.
- * @get_ufo: Deprecated as redundant.  Report whether UDP fragmentation
- *	offload is enabled.
- * @set_ufo: Deprecated in favour of generic netdev features.  Turn UDP
- *	fragmentation offload on or off.  Returns a negative error code or zero.
- * @get_flags: Deprecated as redundant.  Report features included in
- *	&enum ethtool_flags that are enabled.  
- * @set_flags: Deprecated in favour of generic netdev features.  Turn
- *	features included in &enum ethtool_flags on or off.  Returns a
- *	negative error code or zero.
  * @get_priv_flags: Report driver-specific feature flags.
  * @set_priv_flags: Set driver-specific feature flags.  Returns a negative
  *	error code or zero.
@@ -866,11 +924,13 @@ bool ethtool_invalid_flags(struct net_device *dev, u32 data, u32 supported);
  * @reset: Reset (part of) the device, as specified by a bitmask of
  *	flags from &enum ethtool_reset_flags.  Returns a negative
  *	error code or zero.
- * @set_rx_ntuple: Set an RX n-tuple rule.  Returns a negative error code
- *	or zero.
+ * @get_rxfh_indir_size: Get the size of the RX flow hash indirection table.
+ *	Returns zero if not supported for this specific device.
  * @get_rxfh_indir: Get the contents of the RX flow hash indirection table.
+ *	Will not be called if @get_rxfh_indir_size returns zero.
  *	Returns a negative error code or zero.
  * @set_rxfh_indir: Set the contents of the RX flow hash indirection table.
+ *	Will not be called if @get_rxfh_indir_size returns zero.
  *	Returns a negative error code or zero.
  * @get_channels: Get number of channels.
  * @set_channels: Set number of channels.  Returns a negative error code or
@@ -879,11 +939,16 @@ bool ethtool_invalid_flags(struct net_device *dev, u32 data, u32 supported);
  * 		   and flag of the device.
  * @get_dump_data: Get dump data.
  * @set_dump: Set dump specific flags to the device.
+ * @get_ts_info: Get the time stamping and PTP hardware clock capabilities.
+ *	Drivers supporting transmit time stamps in software should set this to
+ *	ethtool_op_get_ts_info().
+ * @get_module_info: Get the size and type of the eeprom contained within
+ *	a plug-in module.
+ * @get_module_eeprom: Get the eeprom information from the plug-in module
  *
  * All operations are optional (i.e. the function pointer may be set
  * to %NULL) and callers must take this into account.  Callers must
- * hold the RTNL, except that for @get_drvinfo the caller may or may
- * not hold the RTNL.
+ * hold the RTNL lock.
  *
  * See the structures used by these operations for further documentation.
  *
@@ -917,14 +982,6 @@ struct ethtool_ops {
 				  struct ethtool_pauseparam*);
 	int	(*set_pauseparam)(struct net_device *,
 				  struct ethtool_pauseparam*);
-	u32	(*get_rx_csum)(struct net_device *);
-	int	(*set_rx_csum)(struct net_device *, u32);
-	u32	(*get_tx_csum)(struct net_device *);
-	int	(*set_tx_csum)(struct net_device *, u32);
-	u32	(*get_sg)(struct net_device *);
-	int	(*set_sg)(struct net_device *, u32);
-	u32	(*get_tso)(struct net_device *);
-	int	(*set_tso)(struct net_device *, u32);
 	void	(*self_test)(struct net_device *, struct ethtool_test *, u64 *);
 	void	(*get_strings)(struct net_device *, u32 stringset, u8 *);
 	int	(*set_phys_id)(struct net_device *, enum ethtool_phys_id_state);
@@ -932,10 +989,6 @@ struct ethtool_ops {
 				     struct ethtool_stats *, u64 *);
 	int	(*begin)(struct net_device *);
 	void	(*complete)(struct net_device *);
-	u32	(*get_ufo)(struct net_device *);
-	int	(*set_ufo)(struct net_device *, u32);
-	u32	(*get_flags)(struct net_device *);
-	int	(*set_flags)(struct net_device *, u32);
 	u32	(*get_priv_flags)(struct net_device *);
 	int	(*set_priv_flags)(struct net_device *, u32);
 	int	(*get_sset_count)(struct net_device *, int);
@@ -944,18 +997,21 @@ struct ethtool_ops {
 	int	(*set_rxnfc)(struct net_device *, struct ethtool_rxnfc *);
 	int	(*flash_device)(struct net_device *, struct ethtool_flash *);
 	int	(*reset)(struct net_device *, u32 *);
-	int	(*set_rx_ntuple)(struct net_device *,
-				 struct ethtool_rx_ntuple *);
-	int	(*get_rxfh_indir)(struct net_device *,
-				  struct ethtool_rxfh_indir *);
-	int	(*set_rxfh_indir)(struct net_device *,
-				  const struct ethtool_rxfh_indir *);
+	u32	(*get_rxfh_indir_size)(struct net_device *);
+	int	(*get_rxfh_indir)(struct net_device *, u32 *);
+	int	(*set_rxfh_indir)(struct net_device *, const u32 *);
 	void	(*get_channels)(struct net_device *, struct ethtool_channels *);
 	int	(*set_channels)(struct net_device *, struct ethtool_channels *);
 	int	(*get_dump_flag)(struct net_device *, struct ethtool_dump *);
 	int	(*get_dump_data)(struct net_device *,
 				 struct ethtool_dump *, void *);
 	int	(*set_dump)(struct net_device *, struct ethtool_dump *);
+	int	(*get_ts_info)(struct net_device *, struct ethtool_ts_info *);
+	int     (*get_module_info)(struct net_device *,
+				   struct ethtool_modinfo *);
+	int     (*get_module_eeprom)(struct net_device *,
+				     struct ethtool_eeprom *, u8 *);
+
 
 };
 #endif /* __KERNEL__ */
@@ -1030,6 +1086,9 @@ struct ethtool_ops {
 #define ETHTOOL_SET_DUMP	0x0000003e /* Set dump settings */
 #define ETHTOOL_GET_DUMP_FLAG	0x0000003f /* Get dump settings */
 #define ETHTOOL_GET_DUMP_DATA	0x00000040 /* Get dump data */
+#define ETHTOOL_GET_TS_INFO	0x00000041 /* Get time stamping and PHC info */
+#define ETHTOOL_GMODULEINFO	0x00000042 /* Get plug-in module information */
+#define ETHTOOL_GMODULEEEPROM	0x00000043 /* Get plug-in module eeprom */
 
 /* compatibility with older code */
 #define SPARC_ETH_GSET		ETHTOOL_GSET
@@ -1172,6 +1231,18 @@ struct ethtool_ops {
 #define	RXH_DISCARD	(1 << 31)
 
 #define	RX_CLS_FLOW_DISC	0xffffffffffffffffULL
+
+/* Special RX classification rule insert location values */
+#define RX_CLS_LOC_SPECIAL	0x80000000	/* flag */
+#define RX_CLS_LOC_ANY		0xffffffff
+#define RX_CLS_LOC_FIRST	0xfffffffe
+#define RX_CLS_LOC_LAST		0xfffffffd
+
+/* EEPROM Standards for plug in modules */
+#define ETH_MODULE_SFF_8079		0x1
+#define ETH_MODULE_SFF_8079_LEN		256
+#define ETH_MODULE_SFF_8472		0x2
+#define ETH_MODULE_SFF_8472_LEN		512
 
 /* Reset flags */
 /* The reset() operation must clear the flags for the components which

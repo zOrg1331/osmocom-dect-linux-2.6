@@ -63,7 +63,6 @@ struct ad7887_state {
 	struct spi_device		*spi;
 	const struct ad7887_chip_info	*chip_info;
 	struct regulator		*reg;
-	size_t				d_size;
 	u16				int_vref_mv;
 	struct spi_transfer		xfer[4];
 	struct spi_message		msg[3];
@@ -83,14 +82,9 @@ enum ad7887_supported_device_ids {
 };
 
 #ifdef CONFIG_IIO_BUFFER
-int ad7887_scan_from_ring(struct ad7887_state *st, int channum);
 int ad7887_register_ring_funcs_and_init(struct iio_dev *indio_dev);
 void ad7887_ring_cleanup(struct iio_dev *indio_dev);
 #else /* CONFIG_IIO_BUFFER */
-static inline int ad7887_scan_from_ring(struct ad7887_state *st, int channum)
-{
-	return 0;
-}
 
 static inline int
 ad7887_register_ring_funcs_and_init(struct iio_dev *indio_dev)

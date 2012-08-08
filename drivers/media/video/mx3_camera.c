@@ -199,8 +199,6 @@ static int mx3_videobuf_setup(struct vb2_queue *vq,
 	struct soc_camera_device *icd = soc_camera_from_vb2q(vq);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
 	struct mx3_camera_dev *mx3_cam = ici->priv;
-	int bytes_per_line;
-	unsigned int height;
 
 	if (!mx3_cam->idmac_channel[0])
 		return -EINVAL;
@@ -208,21 +206,29 @@ static int mx3_videobuf_setup(struct vb2_queue *vq,
 	if (fmt) {
 		const struct soc_camera_format_xlate *xlate = soc_camera_xlate_by_fourcc(icd,
 								fmt->fmt.pix.pixelformat);
+		unsigned int bytes_per_line;
+		int ret;
+
 		if (!xlate)
 			return -EINVAL;
-		bytes_per_line = soc_mbus_bytes_per_line(fmt->fmt.pix.width,
-							 xlate->host_fmt);
-		height = fmt->fmt.pix.height;
+
+		ret = soc_mbus_bytes_per_line(fmt->fmt.pix.width,
+					      xlate->host_fmt);
+		if (ret < 0)
+			return ret;
+
+		bytes_per_line = max_t(u32, fmt->fmt.pix.bytesperline, ret);
+
+		ret = soc_mbus_image_size(xlate->host_fmt, bytes_per_line,
+					  fmt->fmt.pix.height);
+		if (ret < 0)
+			return ret;
+
+		sizes[0] = max_t(u32, fmt->fmt.pix.sizeimage, ret);
 	} else {
 		/* Called from VIDIOC_REQBUFS or in compatibility mode */
-		bytes_per_line = soc_mbus_bytes_per_line(icd->user_width,
-						icd->current_fmt->host_fmt);
-		height = icd->user_height;
+		sizes[0] = icd->sizeimage;
 	}
-	if (bytes_per_line < 0)
-		return bytes_per_line;
-
-	sizes[0] = bytes_per_line * height;
 
 	alloc_ctxs[0] = mx3_cam->alloc_ctx;
 
@@ -267,14 +273,11 @@ static void mx3_videobuf_queue(struct vb2_buffer *vb)
 	struct idmac_channel *ichan = mx3_cam->idmac_channel[0];
 	struct idmac_video_param *video = &ichan->params.video;
 	const struct soc_mbus_pixelfmt *host_fmt = icd->current_fmt->host_fmt;
-	int bytes_per_line = soc_mbus_bytes_per_line(icd->user_width, host_fmt);
 	unsigned long flags;
 	dma_cookie_t cookie;
 	size_t new_size;
 
-	BUG_ON(bytes_per_line <= 0);
-
-	new_size = bytes_per_line * icd->user_height;
+	new_size = icd->sizeimage;
 
 	if (vb2_plane_size(vb, 0) < new_size) {
 		dev_err(icd->parent, "Buffer #%d too small (%lu < %zu)\n",
@@ -286,8 +289,8 @@ static void mx3_videobuf_queue(struct vb2_buffer *vb)
 		sg_dma_address(sg)	= vb2_dma_contig_plane_dma_addr(vb, 0);
 		sg_dma_len(sg)		= new_size;
 
-		txd = ichan->dma_chan.device->device_prep_slave_sg(
-			&ichan->dma_chan, sg, 1, DMA_FROM_DEVICE,
+		txd = dmaengine_prep_slave_sg(
+			&ichan->dma_chan, sg, 1, DMA_DEV_TO_MEM,
 			DMA_PREP_INTERRUPT);
 		if (!txd)
 			goto error;
@@ -314,9 +317,9 @@ static void mx3_videobuf_queue(struct vb2_buffer *vb)
 		 * horizontal parameters in this case are expressed in bytes,
 		 * not in pixels.
 		 */
-		video->out_width	= bytes_per_line;
+		video->out_width	= icd->bytesperline;
 		video->out_height	= icd->user_height;
-		video->out_stride	= bytes_per_line;
+		video->out_stride	= icd->bytesperline;
 	} else {
 		/*
 		 * For IPU known formats the pixel unit will be managed
@@ -508,7 +511,7 @@ static void mx3_camera_activate(struct mx3_camera_dev *mx3_cam,
 	/* ipu_csi_init_interface() */
 	csi_reg_write(mx3_cam, conf, CSI_SENS_CONF);
 
-	clk_enable(mx3_cam->clk);
+	clk_prepare_enable(mx3_cam->clk);
 	rate = clk_round_rate(mx3_cam->clk, mx3_cam->mclk);
 	dev_dbg(icd->parent, "Set SENS_CONF to %x, rate %ld\n", conf, rate);
 	if (rate)
@@ -549,7 +552,7 @@ static void mx3_camera_remove_device(struct soc_camera_device *icd)
 		*ichan = NULL;
 	}
 
-	clk_disable(mx3_cam->clk);
+	clk_disable_unprepare(mx3_cam->clk);
 
 	mx3_cam->icd = NULL;
 
@@ -642,12 +645,14 @@ static const struct soc_mbus_pixelfmt mx3_camera_formats[] = {
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_NONE,
 		.order			= SOC_MBUS_ORDER_LE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	}, {
 		.fourcc			= V4L2_PIX_FMT_GREY,
 		.name			= "Monochrome 8 bit",
 		.bits_per_sample	= 8,
 		.packing		= SOC_MBUS_PACKING_NONE,
 		.order			= SOC_MBUS_ORDER_LE,
+		.layout			= SOC_MBUS_LAYOUT_PACKED,
 	},
 };
 
@@ -982,12 +987,13 @@ static int mx3_camera_querycap(struct soc_camera_host *ici,
 	return 0;
 }
 
-static int mx3_camera_set_bus_param(struct soc_camera_device *icd, __u32 pixfmt)
+static int mx3_camera_set_bus_param(struct soc_camera_device *icd)
 {
 	struct v4l2_subdev *sd = soc_camera_to_subdev(icd);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
 	struct mx3_camera_dev *mx3_cam = ici->priv;
 	struct v4l2_mbus_config cfg = {.type = V4L2_MBUS_PARALLEL,};
+	u32 pixfmt = icd->current_fmt->host_fmt->fourcc;
 	unsigned long bus_flags, common_flags;
 	u32 dw, sens_conf;
 	const struct soc_mbus_pixelfmt *fmt;
@@ -1285,19 +1291,7 @@ static struct platform_driver mx3_camera_driver = {
 	.remove		= __devexit_p(mx3_camera_remove),
 };
 
-
-static int __init mx3_camera_init(void)
-{
-	return platform_driver_register(&mx3_camera_driver);
-}
-
-static void __exit mx3_camera_exit(void)
-{
-	platform_driver_unregister(&mx3_camera_driver);
-}
-
-module_init(mx3_camera_init);
-module_exit(mx3_camera_exit);
+module_platform_driver(mx3_camera_driver);
 
 MODULE_DESCRIPTION("i.MX3x SoC Camera Host driver");
 MODULE_AUTHOR("Guennadi Liakhovetski <lg@denx.de>");

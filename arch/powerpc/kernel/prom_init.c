@@ -35,7 +35,6 @@
 #include <asm/irq.h>
 #include <asm/io.h>
 #include <asm/smp.h>
-#include <asm/system.h>
 #include <asm/mmu.h>
 #include <asm/pgtable.h>
 #include <asm/pci.h>
@@ -46,14 +45,6 @@
 #include <asm/opal.h>
 
 #include <linux/linux_logo.h>
-
-/*
- * Properties whose value is longer than this get excluded from our
- * copy of the device tree. This value does need to be big enough to
- * ensure that we don't lose things like the interrupt-map property
- * on a PCI-PCI bridge.
- */
-#define MAX_PROPERTY_LENGTH	(1UL * 1024 * 1024)
 
 /*
  * Eventually bump that one up
@@ -455,7 +446,7 @@ static void __init __attribute__((noreturn)) prom_panic(const char *reason)
 	if (RELOC(of_platform) == PLATFORM_POWERMAC)
 		asm("trap\n");
 
-	/* ToDo: should put up an SRC here on p/iSeries */
+	/* ToDo: should put up an SRC here on pSeries */
 	call_prom("exit", 0, 0);
 
 	for (;;)			/* should never get here */
@@ -689,6 +680,9 @@ static void __init early_cmdline_parse(void)
 #define OV3_VMX			0x40	/* VMX/Altivec */
 #define OV3_DFP			0x20	/* decimal FP */
 
+/* Option vector 4: IBM PAPR implementation */
+#define OV4_MIN_ENT_CAP		0x01	/* minimum VP entitled capacity */
+
 /* Option vector 5: PAPR/OF options supported */
 #define OV5_LPAR		0x80	/* logical partitioning supported */
 #define OV5_SPLPAR		0x40	/* shared-processor LPAR supported */
@@ -710,6 +704,8 @@ static void __init early_cmdline_parse(void)
 #define OV5_XCMO			0x00
 #endif
 #define OV5_TYPE1_AFFINITY	0x80	/* Type 1 NUMA affinity */
+#define OV5_PFO_HW_RNG		0x80	/* PFO Random Number Generator */
+#define OV5_PFO_HW_ENCR		0x20	/* PFO Encryption Accelerator */
 
 /* Option Vector 6: IBM PAPR hints */
 #define OV6_LINUX		0x02	/* Linux is our OS */
@@ -742,7 +738,7 @@ static unsigned char ibm_architecture_vec[] = {
 	W(0xffffffff),			/* virt_base */
 	W(0xffffffff),			/* virt_size */
 	W(0xffffffff),			/* load_base */
-	W(64),				/* 64MB min RMA */
+	W(256),				/* 256MB min RMA */
 	W(0xffffffff),			/* full client load */
 	0,				/* min RMA percentage of total RAM */
 	48,				/* max log_2(hash table size) */
@@ -753,11 +749,12 @@ static unsigned char ibm_architecture_vec[] = {
 	OV3_FP | OV3_VMX | OV3_DFP,
 
 	/* option vector 4: IBM PAPR implementation */
-	2 - 2,				/* length */
+	3 - 2,				/* length */
 	0,				/* don't halt */
+	OV4_MIN_ENT_CAP,		/* minimum VP entitled capacity */
 
 	/* option vector 5: PAPR/OF options */
-	13 - 2,				/* length */
+	18 - 2,				/* length */
 	0,				/* don't ignore, don't halt */
 	OV5_LPAR | OV5_SPLPAR | OV5_LARGE_PAGES | OV5_DRCONF_MEMORY |
 	OV5_DONATE_DEDICATE_CPU | OV5_MSI,
@@ -771,8 +768,13 @@ static unsigned char ibm_architecture_vec[] = {
 	 * must match by the macro below. Update the definition if
 	 * the structure layout changes.
 	 */
-#define IBM_ARCH_VEC_NRCORES_OFFSET	100
+#define IBM_ARCH_VEC_NRCORES_OFFSET	101
 	W(NR_CPUS),			/* number of cores supported */
+	0,
+	0,
+	0,
+	0,
+	OV5_PFO_HW_RNG | OV5_PFO_HW_ENCR,
 
 	/* option vector 6: IBM PAPR hints */
 	4 - 2,				/* length */
@@ -1224,14 +1226,6 @@ static void __init prom_init_mem(void)
 
 	RELOC(alloc_bottom) = PAGE_ALIGN((unsigned long)&RELOC(_end) + 0x4000);
 
-	/* Check if we have an initrd after the kernel, if we do move our bottom
-	 * point to after it
-	 */
-	if (RELOC(prom_initrd_start)) {
-		if (RELOC(prom_initrd_end) > RELOC(alloc_bottom))
-			RELOC(alloc_bottom) = PAGE_ALIGN(RELOC(prom_initrd_end));
-	}
-
 	/*
 	 * If prom_memory_limit is set we reduce the upper limits *except* for
 	 * alloc_top_high. This must be the real top of RAM so we can put
@@ -1268,6 +1262,15 @@ static void __init prom_init_mem(void)
 	RELOC(rmo_top) = min(0x30000000ul, RELOC(rmo_top));
 	RELOC(alloc_top) = RELOC(rmo_top);
 	RELOC(alloc_top_high) = RELOC(ram_top);
+
+	/*
+	 * Check if we have an initrd after the kernel but still inside
+	 * the RMO.  If we do move our bottom point to after it.
+	 */
+	if (RELOC(prom_initrd_start) &&
+	    RELOC(prom_initrd_start) < RELOC(rmo_top) &&
+	    RELOC(prom_initrd_end) > RELOC(alloc_bottom))
+		RELOC(alloc_bottom) = PAGE_ALIGN(RELOC(prom_initrd_end));
 
 	prom_printf("memory layout at init:\n");
 	prom_printf("  memory_limit : %x (16 MB aligned)\n", RELOC(prom_memory_limit));
@@ -1309,7 +1312,7 @@ static struct opal_secondary_data {
 
 extern char opal_secondary_entry;
 
-static void prom_query_opal(void)
+static void __init prom_query_opal(void)
 {
 	long rc;
 
@@ -1433,7 +1436,7 @@ static void __init prom_opal_hold_cpus(void)
 	prom_debug("prom_opal_hold_cpus: end...\n");
 }
 
-static void prom_opal_takeover(void)
+static void __init prom_opal_takeover(void)
 {
 	struct opal_secondary_data *data = &RELOC(opal_secondary_data);
 	struct opal_takeover_args *args = &data->args;
@@ -2079,7 +2082,7 @@ static void __init prom_check_displays(void)
 		/* Setup a usable color table when the appropriate
 		 * method is available. Should update this to set-colors */
 		clut = RELOC(default_colors);
-		for (i = 0; i < 32; i++, clut += 3)
+		for (i = 0; i < 16; i++, clut += 3)
 			if (prom_set_color(ih, i, clut[0], clut[1],
 					   clut[2]) != 0)
 				break;
@@ -2272,13 +2275,6 @@ static void __init scan_dt_build_struct(phandle node, unsigned long *mem_start,
 		/* sanity checks */
 		if (l == PROM_ERROR)
 			continue;
-		if (l > MAX_PROPERTY_LENGTH) {
-			prom_printf("WARNING: ignoring large property ");
-			/* It seems OF doesn't null-terminate the path :-( */
-			prom_printf("[%s] ", path);
-			prom_printf("%s length 0x%x\n", RELOC(pname), l);
-			continue;
-		}
 
 		/* push property head */
 		dt_push_token(OF_DT_PROP, mem_start, mem_end);
@@ -2844,7 +2840,7 @@ unsigned long __init prom_init(unsigned long r3, unsigned long r4,
 	RELOC(of_platform) = prom_find_machine_type();
 	prom_printf("Detected machine type: %x\n", RELOC(of_platform));
 
-#ifndef CONFIG_RELOCATABLE
+#ifndef CONFIG_NONSTATIC_KERNEL
 	/* Bail if this is a kdump kernel. */
 	if (PHYSICAL_START > 0)
 		prom_panic("Error: You can't boot a kdump kernel from OF!\n");
@@ -2969,9 +2965,11 @@ unsigned long __init prom_init(unsigned long r3, unsigned long r4,
 	/*
 	 * in case stdin is USB and still active on IBM machines...
 	 * Unfortunately quiesce crashes on some powermacs if we have
-	 * closed stdin already (in particular the powerbook 101).
+	 * closed stdin already (in particular the powerbook 101). It
+	 * appears that the OPAL version of OFW doesn't like it either.
 	 */
-	if (RELOC(of_platform) != PLATFORM_POWERMAC)
+	if (RELOC(of_platform) != PLATFORM_POWERMAC &&
+	    RELOC(of_platform) != PLATFORM_OPAL)
 		prom_close_stdin();
 
 	/*
@@ -2987,8 +2985,12 @@ unsigned long __init prom_init(unsigned long r3, unsigned long r4,
 	 * is common to us and kexec
 	 */
 	hdr = RELOC(dt_header_start);
-	prom_printf("returning from prom_init\n");
-	prom_debug("->dt_header_start=0x%x\n", hdr);
+
+	/* Don't print anything after quiesce under OPAL, it crashes OFW */
+	if (RELOC(of_platform) != PLATFORM_OPAL) {
+		prom_printf("returning from prom_init\n");
+		prom_debug("->dt_header_start=0x%x\n", hdr);
+	}
 
 #ifdef CONFIG_PPC32
 	reloc_got2(-offset);

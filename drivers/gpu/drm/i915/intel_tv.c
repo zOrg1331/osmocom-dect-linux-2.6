@@ -417,7 +417,7 @@ static const struct tv_mode tv_modes[] = {
 	{
 		.name		= "NTSC-M",
 		.clock		= 108000,
-		.refresh	= 29970,
+		.refresh	= 59940,
 		.oversample	= TV_OVERSAMPLE_8X,
 		.component_only = 0,
 		/* 525 Lines, 60 Fields, 15.734KHz line, Sub-Carrier 3.580MHz */
@@ -460,7 +460,7 @@ static const struct tv_mode tv_modes[] = {
 	{
 		.name		= "NTSC-443",
 		.clock		= 108000,
-		.refresh	= 29970,
+		.refresh	= 59940,
 		.oversample	= TV_OVERSAMPLE_8X,
 		.component_only = 0,
 		/* 525 Lines, 60 Fields, 15.734KHz line, Sub-Carrier 4.43MHz */
@@ -502,7 +502,7 @@ static const struct tv_mode tv_modes[] = {
 	{
 		.name		= "NTSC-J",
 		.clock		= 108000,
-		.refresh	= 29970,
+		.refresh	= 59940,
 		.oversample	= TV_OVERSAMPLE_8X,
 		.component_only = 0,
 
@@ -545,7 +545,7 @@ static const struct tv_mode tv_modes[] = {
 	{
 		.name		= "PAL-M",
 		.clock		= 108000,
-		.refresh	= 29970,
+		.refresh	= 59940,
 		.oversample	= TV_OVERSAMPLE_8X,
 		.component_only = 0,
 
@@ -589,7 +589,7 @@ static const struct tv_mode tv_modes[] = {
 		/* 625 Lines, 50 Fields, 15.625KHz line, Sub-Carrier 4.434MHz */
 		.name	    = "PAL-N",
 		.clock		= 108000,
-		.refresh	= 25000,
+		.refresh	= 50000,
 		.oversample	= TV_OVERSAMPLE_8X,
 		.component_only = 0,
 
@@ -634,7 +634,7 @@ static const struct tv_mode tv_modes[] = {
 		/* 625 Lines, 50 Fields, 15.625KHz line, Sub-Carrier 4.434MHz */
 		.name	    = "PAL",
 		.clock		= 108000,
-		.refresh	= 25000,
+		.refresh	= 50000,
 		.oversample	= TV_OVERSAMPLE_8X,
 		.component_only = 0,
 
@@ -674,7 +674,7 @@ static const struct tv_mode tv_modes[] = {
 		.filter_table = filter_table,
 	},
 	{
-		.name       = "480p@59.94Hz",
+		.name       = "480p",
 		.clock		= 107520,
 		.refresh	= 59940,
 		.oversample     = TV_OVERSAMPLE_4X,
@@ -682,30 +682,6 @@ static const struct tv_mode tv_modes[] = {
 
 		.hsync_end      = 64,               .hblank_end         = 122,
 		.hblank_start   = 842,              .htotal             = 857,
-
-		.progressive    = true,		    .trilevel_sync = false,
-
-		.vsync_start_f1 = 12,               .vsync_start_f2     = 12,
-		.vsync_len      = 12,
-
-		.veq_ena        = false,
-
-		.vi_end_f1      = 44,               .vi_end_f2          = 44,
-		.nbr_end        = 479,
-
-		.burst_ena      = false,
-
-		.filter_table = filter_table,
-	},
-	{
-		.name       = "480p@60Hz",
-		.clock		= 107520,
-		.refresh	= 60000,
-		.oversample     = TV_OVERSAMPLE_4X,
-		.component_only = 1,
-
-		.hsync_end      = 64,               .hblank_end         = 122,
-		.hblank_start   = 842,              .htotal             = 856,
 
 		.progressive    = true,		    .trilevel_sync = false,
 
@@ -731,7 +707,7 @@ static const struct tv_mode tv_modes[] = {
 		.hsync_end      = 64,               .hblank_end         = 139,
 		.hblank_start   = 859,              .htotal             = 863,
 
-		.progressive    = true,		.trilevel_sync = false,
+		.progressive    = true,		    .trilevel_sync = false,
 
 		.vsync_start_f1 = 10,               .vsync_start_f2     = 10,
 		.vsync_len      = 10,
@@ -754,30 +730,6 @@ static const struct tv_mode tv_modes[] = {
 
 		.hsync_end      = 80,               .hblank_end         = 300,
 		.hblank_start   = 1580,             .htotal             = 1649,
-
-		.progressive	= true,		    .trilevel_sync = true,
-
-		.vsync_start_f1 = 10,               .vsync_start_f2     = 10,
-		.vsync_len      = 10,
-
-		.veq_ena        = false,
-
-		.vi_end_f1      = 29,               .vi_end_f2          = 29,
-		.nbr_end        = 719,
-
-		.burst_ena      = false,
-
-		.filter_table = filter_table,
-	},
-	{
-		.name       = "720p@59.94Hz",
-		.clock		= 148800,
-		.refresh	= 59940,
-		.oversample     = TV_OVERSAMPLE_2X,
-		.component_only = 1,
-
-		.hsync_end      = 80,               .hblank_end         = 300,
-		.hblank_start   = 1580,             .htotal             = 1651,
 
 		.progressive	= true,		    .trilevel_sync = true,
 
@@ -821,7 +773,7 @@ static const struct tv_mode tv_modes[] = {
 	{
 		.name       = "1080i@50Hz",
 		.clock		= 148800,
-		.refresh	= 25000,
+		.refresh	= 50000,
 		.oversample     = TV_OVERSAMPLE_2X,
 		.component_only = 1,
 
@@ -847,7 +799,7 @@ static const struct tv_mode tv_modes[] = {
 	{
 		.name       = "1080i@60Hz",
 		.clock		= 148800,
-		.refresh	= 30000,
+		.refresh	= 60000,
 		.oversample     = TV_OVERSAMPLE_2X,
 		.component_only = 1,
 
@@ -864,32 +816,6 @@ static const struct tv_mode tv_modes[] = {
 
 
 		.vi_end_f1      = 21,               .vi_end_f2          = 22,
-		.nbr_end        = 539,
-
-		.burst_ena      = false,
-
-		.filter_table = filter_table,
-	},
-	{
-		.name       = "1080i@59.94Hz",
-		.clock		= 148800,
-		.refresh	= 29970,
-		.oversample     = TV_OVERSAMPLE_2X,
-		.component_only = 1,
-
-		.hsync_end      = 88,               .hblank_end         = 235,
-		.hblank_start   = 2155,             .htotal             = 2201,
-
-		.progressive	= false,	    .trilevel_sync = true,
-
-		.vsync_start_f1 = 4,            .vsync_start_f2    = 5,
-		.vsync_len      = 10,
-
-		.veq_ena	= true,		    .veq_start_f1	= 4,
-		.veq_start_f2	= 4,		.veq_len	  = 10,
-
-
-		.vi_end_f1	= 21,		.vi_end_f2	  = 22,
 		.nbr_end        = 539,
 
 		.burst_ena      = false,
@@ -933,7 +859,7 @@ intel_tv_mode_lookup(const char *tv_format)
 {
 	int i;
 
-	for (i = 0; i < sizeof(tv_modes) / sizeof(tv_modes[0]); i++) {
+	for (i = 0; i < ARRAY_SIZE(tv_modes); i++) {
 		const struct tv_mode *tv_mode = &tv_modes[i];
 
 		if (!strcmp(tv_format, tv_mode->name))
@@ -1275,6 +1201,15 @@ intel_tv_detect_type(struct intel_tv *intel_tv,
 		   DAC_B_0_7_V |
 		   DAC_C_0_7_V);
 
+
+	/*
+	 * The TV sense state should be cleared to zero on cantiga platform. Otherwise
+	 * the TV is misdetected. This is hardware requirement.
+	 */
+	if (IS_GM45(dev))
+		tv_dac &= ~(TVDAC_STATE_CHG_EN | TVDAC_A_SENSE_CTL |
+			    TVDAC_B_SENSE_CTL | TVDAC_C_SENSE_CTL);
+
 	I915_WRITE(TV_CTL, tv_ctl);
 	I915_WRITE(TV_DAC, tv_dac);
 	POSTING_READ(TV_DAC);
@@ -1307,6 +1242,11 @@ intel_tv_detect_type(struct intel_tv *intel_tv,
 
 	I915_WRITE(TV_DAC, save_tv_dac & ~TVDAC_STATE_CHG_EN);
 	I915_WRITE(TV_CTL, save_tv_ctl);
+	POSTING_READ(TV_CTL);
+
+	/* For unknown reasons the hw barfs if we don't do this vblank wait. */
+	intel_wait_for_vblank(intel_tv->base.base.dev,
+			      to_intel_crtc(intel_tv->base.base.crtc)->pipe);
 
 	/* Restore interrupt config */
 	if (connector->polled & DRM_CONNECTOR_POLL_HPD) {
@@ -1362,11 +1302,8 @@ intel_tv_detect(struct drm_connector *connector, bool force)
 	int type;
 
 	mode = reported_modes[0];
-	drm_mode_set_crtcinfo(&mode, CRTC_INTERLACE_HALVE_V);
 
-	if (intel_tv->base.base.crtc && intel_tv->base.base.crtc->enabled) {
-		type = intel_tv_detect_type(intel_tv, connector);
-	} else if (force) {
+	if (force) {
 		struct intel_load_detect_pipe tmp;
 
 		if (intel_get_load_detect_pipe(&intel_tv->base, connector,

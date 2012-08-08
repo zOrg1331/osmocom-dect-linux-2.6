@@ -1905,17 +1905,7 @@ static struct usb_driver zd1201_usb = {
 	.id_table = zd1201_table,
 	.suspend = zd1201_suspend,
 	.resume = zd1201_resume,
+	.disable_hub_initiated_lpm = 1,
 };
 
-static int __init zd1201_init(void)
-{
-	return usb_register(&zd1201_usb);
-}
-
-static void __exit zd1201_cleanup(void)
-{
-	usb_deregister(&zd1201_usb);
-}
-
-module_init(zd1201_init);
-module_exit(zd1201_cleanup);
+module_usb_driver(zd1201_usb);

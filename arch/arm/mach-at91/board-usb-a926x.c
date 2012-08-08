@@ -53,12 +53,6 @@ static void __init ek_init_early(void)
 {
 	/* Initialize processor: 12.00 MHz crystal */
 	at91_initialize(12000000);
-
-	/* DBGU on ttyS0. (Rx & Tx only) */
-	at91_register_uart(0, 0, 0);
-
-	/* set serial console to ttyS0 (ie, DBGU) */
-	at91_set_serial_console(0);
 }
 
 /*
@@ -66,6 +60,8 @@ static void __init ek_init_early(void)
  */
 static struct at91_usbh_data __initdata ek_usbh_data = {
 	.ports		= 2,
+	.vbus_pin	= {-EINVAL, -EINVAL},
+	.overcurrent_pin= {-EINVAL, -EINVAL},
 };
 
 /*
@@ -73,7 +69,7 @@ static struct at91_usbh_data __initdata ek_usbh_data = {
  */
 static struct at91_udc_data __initdata ek_udc_data = {
 	.vbus_pin	= AT91_PIN_PB11,
-	.pullup_pin	= 0,		/* pull-up driven by UDC */
+	.pullup_pin	= -EINVAL,		/* pull-up driven by UDC */
 };
 
 static void __init ek_add_device_udc(void)
@@ -146,7 +142,7 @@ static void __init ek_add_device_spi(void)
 /*
  * MACB Ethernet device
  */
-static struct at91_eth_data __initdata ek_macb_data = {
+static struct macb_platform_data __initdata ek_macb_data = {
 	.phy_irq_pin	= AT91_PIN_PE31,
 	.is_rmii	= 1,
 };
@@ -176,6 +172,10 @@ static struct mtd_partition __initdata ek_nand_partition[] = {
 		.offset	= MTDPART_OFS_NXTBLK,
 		.size	= SZ_128K,
 	}, {
+		.name	= "oftree",
+		.offset	= MTDPART_OFS_NXTBLK,
+		.size	= SZ_128K,
+	}, {
 		.name	= "kernel",
 		.offset	= MTDPART_OFS_NXTBLK,
 		.size	= 4 * SZ_1M,
@@ -193,9 +193,11 @@ static struct mtd_partition __initdata ek_nand_partition[] = {
 static struct atmel_nand_data __initdata ek_nand_data = {
 	.ale		= 21,
 	.cle		= 22,
-//	.det_pin	= ... not connected
+	.det_pin	= -EINVAL,
 	.rdy_pin	= AT91_PIN_PA22,
 	.enable_pin	= AT91_PIN_PD15,
+	.ecc_mode	= NAND_ECC_SOFT,
+	.on_flash_bbt	= 1,
 	.parts		= ek_nand_partition,
 	.num_parts	= ARRAY_SIZE(ek_nand_partition),
 };
@@ -245,9 +247,9 @@ static void __init ek_add_device_nand(void)
 
 	/* configure chip-select 3 (NAND) */
 	if (machine_is_usb_a9g20())
-		sam9_smc_configure(3, &usb_a9g20_nand_smc_config);
+		sam9_smc_configure(0, 3, &usb_a9g20_nand_smc_config);
 	else
-		sam9_smc_configure(3, &usb_a9260_nand_smc_config);
+		sam9_smc_configure(0, 3, &usb_a9260_nand_smc_config);
 
 	at91_add_device_nand(&ek_nand_data);
 }
@@ -321,6 +323,8 @@ static void __init ek_add_device_leds(void)
 static void __init ek_board_init(void)
 {
 	/* Serial */
+	/* DBGU on ttyS0. (Rx & Tx only) */
+	at91_register_uart(0, 0, 0);
 	at91_add_device_serial();
 	/* USB Host */
 	at91_add_device_usbh(&ek_usbh_data);
@@ -344,7 +348,7 @@ static void __init ek_board_init(void)
 		/* I2C */
 		at91_add_device_i2c(NULL, 0);
 		/* shutdown controller, wakeup button (5 msec low) */
-		at91_sys_write(AT91_SHDW_MR, AT91_SHDW_CPTWK0_(10)
+		at91_shdwc_write(AT91_SHDW_MR, AT91_SHDW_CPTWK0_(10)
 				| AT91_SHDW_WKMODE0_LOW
 				| AT91_SHDW_RTTWKEN);
 	}

@@ -1,5 +1,8 @@
 /*
- * GIT - The information manager from hell
+ * config.c
+ *
+ * Helper functions for parsing config items.
+ * Originally copied from GIT source.
  *
  * Copyright (C) Linus Torvalds, 2005
  * Copyright (C) Johannes Schindelin, 2005
@@ -117,7 +120,7 @@ static char *parse_value(void)
 
 static inline int iskeychar(int c)
 {
-	return isalnum(c) || c == '-';
+	return isalnum(c) || c == '-' || c == '_';
 }
 
 static int get_value(config_fn_t fn, void *data, char *name, unsigned int len)

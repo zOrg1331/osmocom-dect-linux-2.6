@@ -2076,9 +2076,11 @@ static void qib_6120_config_ctxts(struct qib_devdata *dd)
 static void qib_update_6120_usrhead(struct qib_ctxtdata *rcd, u64 hd,
 				    u32 updegr, u32 egrhd, u32 npkts)
 {
-	qib_write_ureg(rcd->dd, ur_rcvhdrhead, hd, rcd->ctxt);
 	if (updegr)
 		qib_write_ureg(rcd->dd, ur_rcvegrindexhead, egrhd, rcd->ctxt);
+	mmiowb();
+	qib_write_ureg(rcd->dd, ur_rcvhdrhead, hd, rcd->ctxt);
+	mmiowb();
 }
 
 static u32 qib_6120_hdrqempty(struct qib_ctxtdata *rcd)
@@ -2103,7 +2105,7 @@ static void alloc_dummy_hdrq(struct qib_devdata *dd)
 	dd->cspec->dummy_hdrq = dma_alloc_coherent(&dd->pcidev->dev,
 					dd->rcd[0]->rcvhdrq_size,
 					&dd->cspec->dummy_hdrq_phys,
-					GFP_KERNEL | __GFP_COMP);
+					GFP_ATOMIC | __GFP_COMP);
 	if (!dd->cspec->dummy_hdrq) {
 		qib_devinfo(dd->pcidev, "Couldn't allocate dummy hdrq\n");
 		/* fallback to just 0'ing */
@@ -3130,6 +3132,7 @@ static void get_6120_chip_params(struct qib_devdata *dd)
 	val = qib_read_kreg64(dd, kr_sendpiobufcnt);
 	dd->piobcnt2k = val & ~0U;
 	dd->piobcnt4k = val >> 32;
+	dd->last_pio = dd->piobcnt4k + dd->piobcnt2k - 1;
 	/* these may be adjusted in init_chip_wc_pat() */
 	dd->pio2kbase = (u32 __iomem *)
 		(((char __iomem *)dd->kregbase) + dd->pio2k_bufbase);

@@ -3946,7 +3946,7 @@ static int get_fr_idx(struct gspca_dev *gspca_dev)
 		/* 640x480 * 30 fps does not work */
 		if (i == 6			/* if 30 fps */
 		 && gspca_dev->width == 640)
-			i = 0x86;		/* 15 fps */
+			i = 0x05;		/* 15 fps */
 	} else {
 		for (i = 0; i < ARRAY_SIZE(rates_6810) - 1; i++) {
 			if (sd->framerate >= rates_6810[i])
@@ -4675,11 +4675,9 @@ static void sd_pkt_scan(struct gspca_dev *gspca_dev,
 /* -- do autogain -- */
 /* gain setting is done in setexposure() for tp6810 */
 static void setgain(struct gspca_dev *gspca_dev) {}
-/* !! coarse_grained_expo_autogain is not used !! */
-#define exp_too_low_cnt bridge
-#define exp_too_high_cnt sensor
-
+#define WANT_REGULAR_AUTOGAIN
 #include "autogain_functions.h"
+
 static void sd_dq_callback(struct gspca_dev *gspca_dev)
 {
 	struct sd *sd = (struct sd *) gspca_dev;
@@ -4971,18 +4969,7 @@ static struct usb_driver sd_driver = {
 #endif
 };
 
-/* -- module insert / remove -- */
-static int __init sd_mod_init(void)
-{
-	return usb_register(&sd_driver);
-}
-static void __exit sd_mod_exit(void)
-{
-	usb_deregister(&sd_driver);
-}
-
-module_init(sd_mod_init);
-module_exit(sd_mod_exit);
+module_usb_driver(sd_driver);
 
 module_param(force_sensor, int, 0644);
 MODULE_PARM_DESC(force_sensor,

@@ -141,6 +141,8 @@ static void __init mx23evk_init(void)
 {
 	int ret;
 
+	mx23_soc_init();
+
 	mxs_iomux_setup_multiple_pads(mx23evk_pads, ARRAY_SIZE(mx23evk_pads));
 
 	mx23_add_duart();
@@ -184,4 +186,5 @@ MACHINE_START(MX23EVK, "Freescale MX23 EVK")
 	.init_irq	= mx23_init_irq,
 	.timer		= &mx23evk_timer,
 	.init_machine	= mx23evk_init,
+	.restart	= mxs_restart,
 MACHINE_END

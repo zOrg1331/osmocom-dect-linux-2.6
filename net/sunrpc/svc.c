@@ -20,6 +20,7 @@
 #include <linux/module.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
+#include <linux/nsproxy.h>
 
 #include <linux/sunrpc/types.h>
 #include <linux/sunrpc/xdr.h>
@@ -30,7 +31,7 @@
 
 #define RPCDBG_FACILITY	RPCDBG_SVCDSP
 
-static void svc_unregister(const struct svc_serv *serv);
+static void svc_unregister(const struct svc_serv *serv, struct net *net);
 
 #define svc_serv_is_pooled(serv)    ((serv)->sv_function)
 
@@ -167,6 +168,7 @@ svc_pool_map_alloc_arrays(struct svc_pool_map *m, unsigned int maxpools)
 
 fail_free:
 	kfree(m->to_pool);
+	m->to_pool = NULL;
 fail:
 	return -ENOMEM;
 }
@@ -285,9 +287,10 @@ svc_pool_map_put(void)
 	mutex_lock(&svc_pool_map_mutex);
 
 	if (!--m->count) {
-		m->mode = SVC_POOL_DEFAULT;
 		kfree(m->to_pool);
+		m->to_pool = NULL;
 		kfree(m->pool_to);
+		m->pool_to = NULL;
 		m->npools = 0;
 	}
 
@@ -366,23 +369,24 @@ svc_pool_for_cpu(struct svc_serv *serv, int cpu)
 	return &serv->sv_pools[pidx % serv->sv_nrpools];
 }
 
-static int svc_rpcb_setup(struct svc_serv *serv)
+int svc_rpcb_setup(struct svc_serv *serv, struct net *net)
 {
 	int err;
 
-	err = rpcb_create_local();
+	err = rpcb_create_local(net);
 	if (err)
 		return err;
 
 	/* Remove any stale portmap registrations */
-	svc_unregister(serv);
+	svc_unregister(serv, net);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(svc_rpcb_setup);
 
-void svc_rpcb_cleanup(struct svc_serv *serv)
+void svc_rpcb_cleanup(struct svc_serv *serv, struct net *net)
 {
-	svc_unregister(serv);
-	rpcb_put_local();
+	svc_unregister(serv, net);
+	rpcb_put_local(net);
 }
 EXPORT_SYMBOL_GPL(svc_rpcb_cleanup);
 
@@ -403,12 +407,20 @@ static int svc_uses_rpcbind(struct svc_serv *serv)
 	return 0;
 }
 
+int svc_bind(struct svc_serv *serv, struct net *net)
+{
+	if (!svc_uses_rpcbind(serv))
+		return 0;
+	return svc_rpcb_setup(serv, net);
+}
+EXPORT_SYMBOL_GPL(svc_bind);
+
 /*
  * Create an RPC service
  */
 static struct svc_serv *
 __svc_create(struct svc_program *prog, unsigned int bufsize, int npools,
-	     void (*shutdown)(struct svc_serv *serv))
+	     void (*shutdown)(struct svc_serv *serv, struct net *net))
 {
 	struct svc_serv	*serv;
 	unsigned int vers;
@@ -467,22 +479,15 @@ __svc_create(struct svc_program *prog, unsigned int bufsize, int npools,
 		spin_lock_init(&pool->sp_lock);
 	}
 
-	if (svc_uses_rpcbind(serv)) {
-	       	if (svc_rpcb_setup(serv) < 0) {
-			kfree(serv->sv_pools);
-			kfree(serv);
-			return NULL;
-		}
-		if (!serv->sv_shutdown)
-			serv->sv_shutdown = svc_rpcb_cleanup;
-	}
+	if (svc_uses_rpcbind(serv) && (!serv->sv_shutdown))
+		serv->sv_shutdown = svc_rpcb_cleanup;
 
 	return serv;
 }
 
 struct svc_serv *
 svc_create(struct svc_program *prog, unsigned int bufsize,
-	   void (*shutdown)(struct svc_serv *serv))
+	   void (*shutdown)(struct svc_serv *serv, struct net *net))
 {
 	return __svc_create(prog, bufsize, /*npools*/1, shutdown);
 }
@@ -490,7 +495,7 @@ EXPORT_SYMBOL_GPL(svc_create);
 
 struct svc_serv *
 svc_create_pooled(struct svc_program *prog, unsigned int bufsize,
-		  void (*shutdown)(struct svc_serv *serv),
+		  void (*shutdown)(struct svc_serv *serv, struct net *net),
 		  svc_thread_fn func, struct module *mod)
 {
 	struct svc_serv *serv;
@@ -506,6 +511,24 @@ svc_create_pooled(struct svc_program *prog, unsigned int bufsize,
 	return serv;
 }
 EXPORT_SYMBOL_GPL(svc_create_pooled);
+
+void svc_shutdown_net(struct svc_serv *serv, struct net *net)
+{
+	/*
+	 * The set of xprts (contained in the sv_tempsocks and
+	 * sv_permsocks lists) is now constant, since it is modified
+	 * only by accepting new sockets (done by service threads in
+	 * svc_recv) or aging old ones (done by sv_temptimer), or
+	 * configuration changes (excluded by whatever locking the
+	 * caller is using--nfsd_mutex in the case of nfsd).  So it's
+	 * safe to traverse those lists and shut everything down:
+	 */
+	svc_close_net(serv, net);
+
+	if (serv->sv_shutdown)
+		serv->sv_shutdown(serv, net);
+}
+EXPORT_SYMBOL_GPL(svc_shutdown_net);
 
 /*
  * Destroy an RPC service. Should be called with appropriate locking to
@@ -528,13 +551,10 @@ svc_destroy(struct svc_serv *serv)
 
 	del_timer_sync(&serv->sv_temptimer);
 
-	svc_close_all(&serv->sv_tempsocks);
-
-	if (serv->sv_shutdown)
-		serv->sv_shutdown(serv);
-
-	svc_close_all(&serv->sv_permsocks);
-
+	/*
+	 * The last user is gone and thus all sockets have to be destroyed to
+	 * the point. Check this.
+	 */
 	BUG_ON(!list_empty(&serv->sv_permsocks));
 	BUG_ON(!list_empty(&serv->sv_tempsocks));
 
@@ -683,8 +703,8 @@ found_pool:
  * Create or destroy enough new threads to make the number
  * of threads the given number.  If `pool' is non-NULL, applies
  * only to threads in that pool, otherwise round-robins between
- * all pools.  Must be called with a svc_get() reference and
- * the BKL or another lock to protect access to svc_serv fields.
+ * all pools.  Caller must ensure that mutual exclusion between this and
+ * server startup or shutdown.
  *
  * Destroying threads relies on the service threads filling in
  * rqstp->rq_task, which only the nfs ones do.  Assumes the serv
@@ -790,7 +810,8 @@ EXPORT_SYMBOL_GPL(svc_exit_thread);
  * Returns zero on success; a negative errno value is returned
  * if any error occurs.
  */
-static int __svc_rpcb_register4(const u32 program, const u32 version,
+static int __svc_rpcb_register4(struct net *net, const u32 program,
+				const u32 version,
 				const unsigned short protocol,
 				const unsigned short port)
 {
@@ -813,7 +834,7 @@ static int __svc_rpcb_register4(const u32 program, const u32 version,
 		return -ENOPROTOOPT;
 	}
 
-	error = rpcb_v4_register(program, version,
+	error = rpcb_v4_register(net, program, version,
 					(const struct sockaddr *)&sin, netid);
 
 	/*
@@ -821,12 +842,12 @@ static int __svc_rpcb_register4(const u32 program, const u32 version,
 	 * registration request with the legacy rpcbind v2 protocol.
 	 */
 	if (error == -EPROTONOSUPPORT)
-		error = rpcb_register(program, version, protocol, port);
+		error = rpcb_register(net, program, version, protocol, port);
 
 	return error;
 }
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 /*
  * Register an "inet6" protocol family netid with the local
  * rpcbind daemon via an rpcbind v4 SET request.
@@ -837,7 +858,8 @@ static int __svc_rpcb_register4(const u32 program, const u32 version,
  * Returns zero on success; a negative errno value is returned
  * if any error occurs.
  */
-static int __svc_rpcb_register6(const u32 program, const u32 version,
+static int __svc_rpcb_register6(struct net *net, const u32 program,
+				const u32 version,
 				const unsigned short protocol,
 				const unsigned short port)
 {
@@ -860,7 +882,7 @@ static int __svc_rpcb_register6(const u32 program, const u32 version,
 		return -ENOPROTOOPT;
 	}
 
-	error = rpcb_v4_register(program, version,
+	error = rpcb_v4_register(net, program, version,
 					(const struct sockaddr *)&sin6, netid);
 
 	/*
@@ -872,7 +894,7 @@ static int __svc_rpcb_register6(const u32 program, const u32 version,
 
 	return error;
 }
-#endif	/* defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE) */
+#endif	/* IS_ENABLED(CONFIG_IPV6) */
 
 /*
  * Register a kernel RPC service via rpcbind version 4.
@@ -880,7 +902,7 @@ static int __svc_rpcb_register6(const u32 program, const u32 version,
  * Returns zero on success; a negative errno value is returned
  * if any error occurs.
  */
-static int __svc_register(const char *progname,
+static int __svc_register(struct net *net, const char *progname,
 			  const u32 program, const u32 version,
 			  const int family,
 			  const unsigned short protocol,
@@ -890,14 +912,14 @@ static int __svc_register(const char *progname,
 
 	switch (family) {
 	case PF_INET:
-		error = __svc_rpcb_register4(program, version,
+		error = __svc_rpcb_register4(net, program, version,
 						protocol, port);
 		break;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	case PF_INET6:
-		error = __svc_rpcb_register6(program, version,
+		error = __svc_rpcb_register6(net, program, version,
 						protocol, port);
-#endif	/* defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE) */
+#endif
 	}
 
 	if (error < 0)
@@ -909,14 +931,16 @@ static int __svc_register(const char *progname,
 /**
  * svc_register - register an RPC service with the local portmapper
  * @serv: svc_serv struct for the service to register
+ * @net: net namespace for the service to register
  * @family: protocol family of service's listener socket
  * @proto: transport protocol number to advertise
  * @port: port to advertise
  *
  * Service is registered for any address in the passed-in protocol family
  */
-int svc_register(const struct svc_serv *serv, const int family,
-		 const unsigned short proto, const unsigned short port)
+int svc_register(const struct svc_serv *serv, struct net *net,
+		 const int family, const unsigned short proto,
+		 const unsigned short port)
 {
 	struct svc_program	*progp;
 	unsigned int		i;
@@ -941,7 +965,7 @@ int svc_register(const struct svc_serv *serv, const int family,
 			if (progp->pg_vers[i]->vs_hidden)
 				continue;
 
-			error = __svc_register(progp->pg_name, progp->pg_prog,
+			error = __svc_register(net, progp->pg_name, progp->pg_prog,
 						i, family, proto, port);
 			if (error < 0)
 				break;
@@ -958,19 +982,19 @@ int svc_register(const struct svc_serv *serv, const int family,
  * any "inet6" entries anyway.  So a PMAP_UNSET should be sufficient
  * in this case to clear all existing entries for [program, version].
  */
-static void __svc_unregister(const u32 program, const u32 version,
+static void __svc_unregister(struct net *net, const u32 program, const u32 version,
 			     const char *progname)
 {
 	int error;
 
-	error = rpcb_v4_register(program, version, NULL, "");
+	error = rpcb_v4_register(net, program, version, NULL, "");
 
 	/*
 	 * User space didn't support rpcbind v4, so retry this
 	 * request with the legacy rpcbind v2 protocol.
 	 */
 	if (error == -EPROTONOSUPPORT)
-		error = rpcb_register(program, version, 0, 0);
+		error = rpcb_register(net, program, version, 0, 0);
 
 	dprintk("svc: %s(%sv%u), error %d\n",
 			__func__, progname, version, error);
@@ -984,7 +1008,7 @@ static void __svc_unregister(const u32 program, const u32 version,
  * The result of unregistration is reported via dprintk for those who want
  * verification of the result, but is otherwise not important.
  */
-static void svc_unregister(const struct svc_serv *serv)
+static void svc_unregister(const struct svc_serv *serv, struct net *net)
 {
 	struct svc_program *progp;
 	unsigned long flags;
@@ -1001,7 +1025,7 @@ static void svc_unregister(const struct svc_serv *serv)
 
 			dprintk("svc: attempting to unregister %sv%u\n",
 				progp->pg_name, i);
-			__svc_unregister(progp->pg_prog, i, progp->pg_name);
+			__svc_unregister(net, progp->pg_prog, i, progp->pg_name);
 		}
 	}
 
@@ -1014,23 +1038,21 @@ static void svc_unregister(const struct svc_serv *serv)
  * Printk the given error with the address of the client that caused it.
  */
 static __printf(2, 3)
-int svc_printk(struct svc_rqst *rqstp, const char *fmt, ...)
+void svc_printk(struct svc_rqst *rqstp, const char *fmt, ...)
 {
+	struct va_format vaf;
 	va_list args;
-	int 	r;
 	char 	buf[RPC_MAX_ADDRBUFLEN];
 
-	if (!net_ratelimit())
-		return 0;
-
-	printk(KERN_WARNING "svc: %s: ",
-		svc_print_addr(rqstp, buf, sizeof(buf)));
-
 	va_start(args, fmt);
-	r = vprintk(fmt, args);
-	va_end(args);
 
-	return r;
+	vaf.fmt = fmt;
+	vaf.va = &args;
+
+	net_warn_ratelimited("svc: %s: %pV",
+			     svc_print_addr(rqstp, buf, sizeof(buf)), &vaf);
+
+	va_end(args);
 }
 
 /*
@@ -1352,7 +1374,8 @@ bc_svc_process(struct svc_serv *serv, struct rpc_rqst *req,
 						sizeof(req->rq_snd_buf));
 		return bc_send(req);
 	} else {
-		/* Nothing to do to drop request */
+		/* drop request */
+		xprt_free_bc_request(req);
 		return 0;
 	}
 }

@@ -37,6 +37,7 @@
 #include <asm/idle.h>
 #include <asm/io_apic.h>
 #include <asm/sync_bitops.h>
+#include <asm/xen/page.h>
 #include <asm/xen/pci.h>
 #include <asm/xen/hypercall.h>
 #include <asm/xen/hypervisor.h>
@@ -87,6 +88,7 @@ enum xen_irq_type {
  */
 struct irq_info {
 	struct list_head list;
+	int refcnt;
 	enum xen_irq_type type;	/* type */
 	unsigned irq;
 	unsigned short evtchn;	/* event channel */
@@ -108,6 +110,8 @@ struct irq_info {
 #define PIRQ_SHAREABLE	(1 << 1)
 
 static int *evtchn_to_irq;
+static unsigned long *pirq_eoi_map;
+static bool (*pirq_needs_eoi)(unsigned irq);
 
 static DEFINE_PER_CPU(unsigned long [NR_EVENT_CHANNELS/BITS_PER_LONG],
 		      cpu_evtchn_mask);
@@ -268,10 +272,14 @@ static unsigned int cpu_from_evtchn(unsigned int evtchn)
 	return ret;
 }
 
-static bool pirq_needs_eoi(unsigned irq)
+static bool pirq_check_eoi_map(unsigned irq)
+{
+	return test_bit(pirq_from_irq(irq), pirq_eoi_map);
+}
+
+static bool pirq_needs_eoi_flag(unsigned irq)
 {
 	struct irq_info *info = info_for_irq(irq);
-
 	BUG_ON(info->type != IRQT_PIRQ);
 
 	return info->u.pirq.flags & PIRQ_NEEDS_EOI;
@@ -406,6 +414,7 @@ static void xen_irq_init(unsigned irq)
 		panic("Unable to allocate metadata for IRQ%d\n", irq);
 
 	info->type = IRQT_UNBOUND;
+	info->refcnt = -1;
 
 	irq_set_handler_data(irq, info);
 
@@ -468,6 +477,8 @@ static void xen_free_irq(unsigned irq)
 	list_del(&info->list);
 
 	irq_set_handler_data(irq, NULL);
+
+	WARN_ON(info->refcnt > 0);
 
 	kfree(info);
 
@@ -600,7 +611,7 @@ static void disable_pirq(struct irq_data *data)
 	disable_dynirq(data);
 }
 
-static int find_irq_by_gsi(unsigned gsi)
+int xen_irq_from_gsi(unsigned gsi)
 {
 	struct irq_info *info;
 
@@ -614,6 +625,7 @@ static int find_irq_by_gsi(unsigned gsi)
 
 	return -1;
 }
+EXPORT_SYMBOL_GPL(xen_irq_from_gsi);
 
 /*
  * Do not make any assumptions regarding the relationship between the
@@ -633,11 +645,11 @@ int xen_bind_pirq_gsi_to_irq(unsigned gsi,
 
 	mutex_lock(&irq_mapping_update_lock);
 
-	irq = find_irq_by_gsi(gsi);
+	irq = xen_irq_from_gsi(gsi);
 	if (irq != -1) {
 		printk(KERN_INFO "xen_map_pirq_gsi: returning irq %d for gsi %u\n",
 		       irq, gsi);
-		goto out;	/* XXX need refcount? */
+		goto out;
 	}
 
 	irq = xen_allocate_irq_gsi(gsi);
@@ -815,6 +827,9 @@ int bind_evtchn_to_irq(unsigned int evtchn)
 					      handle_edge_irq, "event");
 
 		xen_irq_info_evtchn_init(irq, evtchn);
+	} else {
+		struct irq_info *info = info_for_irq(irq);
+		WARN_ON(info == NULL || info->type != IRQT_EVTCHN);
 	}
 
 out:
@@ -850,6 +865,9 @@ static int bind_ipi_to_irq(unsigned int ipi, unsigned int cpu)
 		xen_irq_info_ipi_init(cpu, irq, evtchn, ipi);
 
 		bind_evtchn_to_cpu(evtchn, cpu);
+	} else {
+		struct irq_info *info = info_for_irq(irq);
+		WARN_ON(info == NULL || info->type != IRQT_IPI);
 	}
 
  out:
@@ -927,6 +945,9 @@ int bind_virq_to_irq(unsigned int virq, unsigned int cpu)
 		xen_irq_info_virq_init(cpu, irq, evtchn, virq);
 
 		bind_evtchn_to_cpu(evtchn, cpu);
+	} else {
+		struct irq_info *info = info_for_irq(irq);
+		WARN_ON(info == NULL || info->type != IRQT_VIRQ);
 	}
 
 out:
@@ -939,8 +960,15 @@ static void unbind_from_irq(unsigned int irq)
 {
 	struct evtchn_close close;
 	int evtchn = evtchn_from_irq(irq);
+	struct irq_info *info = irq_get_handler_data(irq);
 
 	mutex_lock(&irq_mapping_update_lock);
+
+	if (info->refcnt > 0) {
+		info->refcnt--;
+		if (info->refcnt != 0)
+			goto done;
+	}
 
 	if (VALID_EVTCHN(evtchn)) {
 		close.port = evtchn;
@@ -970,6 +998,7 @@ static void unbind_from_irq(unsigned int irq)
 
 	xen_free_irq(irq);
 
+ done:
 	mutex_unlock(&irq_mapping_update_lock);
 }
 
@@ -1064,6 +1093,69 @@ void unbind_from_irqhandler(unsigned int irq, void *dev_id)
 	unbind_from_irq(irq);
 }
 EXPORT_SYMBOL_GPL(unbind_from_irqhandler);
+
+int evtchn_make_refcounted(unsigned int evtchn)
+{
+	int irq = evtchn_to_irq[evtchn];
+	struct irq_info *info;
+
+	if (irq == -1)
+		return -ENOENT;
+
+	info = irq_get_handler_data(irq);
+
+	if (!info)
+		return -ENOENT;
+
+	WARN_ON(info->refcnt != -1);
+
+	info->refcnt = 1;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(evtchn_make_refcounted);
+
+int evtchn_get(unsigned int evtchn)
+{
+	int irq;
+	struct irq_info *info;
+	int err = -ENOENT;
+
+	if (evtchn >= NR_EVENT_CHANNELS)
+		return -EINVAL;
+
+	mutex_lock(&irq_mapping_update_lock);
+
+	irq = evtchn_to_irq[evtchn];
+	if (irq == -1)
+		goto done;
+
+	info = irq_get_handler_data(irq);
+
+	if (!info)
+		goto done;
+
+	err = -EINVAL;
+	if (info->refcnt <= 0)
+		goto done;
+
+	info->refcnt++;
+	err = 0;
+ done:
+	mutex_unlock(&irq_mapping_update_lock);
+
+	return err;
+}
+EXPORT_SYMBOL_GPL(evtchn_get);
+
+void evtchn_put(unsigned int evtchn)
+{
+	int irq = evtchn_to_irq[evtchn];
+	if (WARN_ON(irq == -1))
+		return;
+	unbind_from_irq(irq);
+}
+EXPORT_SYMBOL_GPL(evtchn_put);
 
 void xen_send_IPI_one(unsigned int cpu, enum ipi_vector vector)
 {
@@ -1693,7 +1785,7 @@ void xen_callback_vector(void) {}
 
 void __init xen_init_IRQ(void)
 {
-	int i;
+	int i, rc;
 
 	evtchn_to_irq = kcalloc(NR_EVENT_CHANNELS, sizeof(*evtchn_to_irq),
 				    GFP_KERNEL);
@@ -1707,6 +1799,8 @@ void __init xen_init_IRQ(void)
 	for (i = 0; i < NR_EVENT_CHANNELS; i++)
 		mask_evtchn(i);
 
+	pirq_needs_eoi = pirq_needs_eoi_flag;
+
 	if (xen_hvm_domain()) {
 		xen_callback_vector();
 		native_init_IRQ();
@@ -1714,8 +1808,19 @@ void __init xen_init_IRQ(void)
 		 * __acpi_register_gsi can point at the right function */
 		pci_xen_hvm_init();
 	} else {
+		struct physdev_pirq_eoi_gmfn eoi_gmfn;
+
 		irq_ctx_init(smp_processor_id());
 		if (xen_initial_domain())
 			pci_xen_initial_domain();
+
+		pirq_eoi_map = (void *)__get_free_page(GFP_KERNEL|__GFP_ZERO);
+		eoi_gmfn.gmfn = virt_to_mfn(pirq_eoi_map);
+		rc = HYPERVISOR_physdev_op(PHYSDEVOP_pirq_eoi_gmfn_v2, &eoi_gmfn);
+		if (rc != 0) {
+			free_page((unsigned long) pirq_eoi_map);
+			pirq_eoi_map = NULL;
+		} else
+			pirq_needs_eoi = pirq_check_eoi_map;
 	}
 }

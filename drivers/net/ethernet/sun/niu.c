@@ -1151,19 +1151,8 @@ static int link_status_mii(struct niu *np, int *link_up_p)
 		supported |= SUPPORTED_1000baseT_Full;
 	lp->supported = supported;
 
-	advertising = 0;
-	if (advert & ADVERTISE_10HALF)
-		advertising |= ADVERTISED_10baseT_Half;
-	if (advert & ADVERTISE_10FULL)
-		advertising |= ADVERTISED_10baseT_Full;
-	if (advert & ADVERTISE_100HALF)
-		advertising |= ADVERTISED_100baseT_Half;
-	if (advert & ADVERTISE_100FULL)
-		advertising |= ADVERTISED_100baseT_Full;
-	if (ctrl1000 & ADVERTISE_1000HALF)
-		advertising |= ADVERTISED_1000baseT_Half;
-	if (ctrl1000 & ADVERTISE_1000FULL)
-		advertising |= ADVERTISED_1000baseT_Full;
+	advertising = mii_adv_to_ethtool_adv_t(advert);
+	advertising |= mii_ctrl1000_to_ethtool_adv_t(ctrl1000);
 
 	if (bmcr & BMCR_ANENABLE) {
 		int neg, neg1000;
@@ -6415,7 +6404,7 @@ static int niu_set_mac_addr(struct net_device *dev, void *p)
 	unsigned long flags;
 
 	if (!is_valid_ether_addr(addr->sa_data))
-		return -EINVAL;
+		return -EADDRNOTAVAIL;
 
 	memcpy(dev->dev_addr, addr->sa_data, ETH_ALEN);
 
@@ -6823,12 +6812,13 @@ static void niu_get_drvinfo(struct net_device *dev,
 	struct niu *np = netdev_priv(dev);
 	struct niu_vpd *vpd = &np->vpd;
 
-	strcpy(info->driver, DRV_MODULE_NAME);
-	strcpy(info->version, DRV_MODULE_VERSION);
-	sprintf(info->fw_version, "%d.%d",
+	strlcpy(info->driver, DRV_MODULE_NAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_MODULE_VERSION, sizeof(info->version));
+	snprintf(info->fw_version, sizeof(info->fw_version), "%d.%d",
 		vpd->fcode_major, vpd->fcode_minor);
 	if (np->parent->plat_type != PLAT_TYPE_NIU)
-		strcpy(info->bus_info, pci_name(np->pdev));
+		strlcpy(info->bus_info, pci_name(np->pdev),
+			sizeof(info->bus_info));
 }
 
 static int niu_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
@@ -8589,9 +8579,11 @@ static int __devinit phy_record(struct niu_parent *parent,
 	if (dev_id_1 < 0 || dev_id_2 < 0)
 		return 0;
 	if (type == PHY_TYPE_PMA_PMD || type == PHY_TYPE_PCS) {
+		/* Because of the NIU_PHY_ID_MASK being applied, the 8704
+		 * test covers the 8706 as well.
+		 */
 		if (((id & NIU_PHY_ID_MASK) != NIU_PHY_ID_BCM8704) &&
-		    ((id & NIU_PHY_ID_MASK) != NIU_PHY_ID_MRVL88X2011) &&
-		    ((id & NIU_PHY_ID_MASK) != NIU_PHY_ID_BCM8706))
+		    ((id & NIU_PHY_ID_MASK) != NIU_PHY_ID_MRVL88X2011))
 			return 0;
 	} else {
 		if ((id & NIU_PHY_ID_MASK) != NIU_PHY_ID_BCM5464R)
@@ -9683,10 +9675,8 @@ static struct net_device * __devinit niu_alloc_and_init(
 	struct niu *np;
 
 	dev = alloc_etherdev_mq(sizeof(struct niu), NIU_NUM_TXCHAN);
-	if (!dev) {
-		dev_err(gen_dev, "Etherdev alloc failed, aborting\n");
+	if (!dev)
 		return NULL;
-	}
 
 	SET_NETDEV_DEV(dev, gen_dev);
 
@@ -9838,7 +9828,7 @@ static int __devinit niu_pci_init_one(struct pci_dev *pdev,
 			goto err_out_release_parent;
 		}
 	}
-	if (err || dma_mask == DMA_BIT_MASK(32)) {
+	if (err) {
 		err = pci_set_dma_mask(pdev, DMA_BIT_MASK(32));
 		if (err) {
 			dev_err(&pdev->dev, "No usable DMA configuration, aborting\n");

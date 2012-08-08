@@ -8,7 +8,7 @@
 #include <linux/sched.h>
 #include "hpfs_fn.h"
 
-static int hpfs_mkdir(struct inode *dir, struct dentry *dentry, int mode)
+static int hpfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 {
 	const unsigned char *name = dentry->d_name.name;
 	unsigned len = dentry->d_name.len;
@@ -70,7 +70,7 @@ static int hpfs_mkdir(struct inode *dir, struct dentry *dentry, int mode)
 	fnode->len = len;
 	memcpy(fnode->name, name, len > 15 ? 15 : len);
 	fnode->up = cpu_to_le32(dir->i_ino);
-	fnode->dirflag = 1;
+	fnode->flags |= FNODE_dir;
 	fnode->btree.n_free_nodes = 7;
 	fnode->btree.n_used_nodes = 1;
 	fnode->btree.first_free = cpu_to_le16(0x14);
@@ -115,7 +115,7 @@ bail:
 	return err;
 }
 
-static int hpfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidata *nd)
+static int hpfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, struct nameidata *nd)
 {
 	const unsigned char *name = dentry->d_name.name;
 	unsigned len = dentry->d_name.len;
@@ -201,7 +201,7 @@ bail:
 	return err;
 }
 
-static int hpfs_mknod(struct inode *dir, struct dentry *dentry, int mode, dev_t rdev)
+static int hpfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t rdev)
 {
 	const unsigned char *name = dentry->d_name.name;
 	unsigned len = dentry->d_name.len;

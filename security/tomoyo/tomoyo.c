@@ -186,7 +186,7 @@ static int tomoyo_path_unlink(struct path *parent, struct dentry *dentry)
  * Returns 0 on success, negative value otherwise.
  */
 static int tomoyo_path_mkdir(struct path *parent, struct dentry *dentry,
-			     int mode)
+			     umode_t mode)
 {
 	struct path path = { parent->mnt, dentry };
 	return tomoyo_path_number_perm(TOMOYO_TYPE_MKDIR, &path,
@@ -234,7 +234,7 @@ static int tomoyo_path_symlink(struct path *parent, struct dentry *dentry,
  * Returns 0 on success, negative value otherwise.
  */
 static int tomoyo_path_mknod(struct path *parent, struct dentry *dentry,
-			     int mode, unsigned int dev)
+			     umode_t mode, unsigned int dev)
 {
 	struct path path = { parent->mnt, dentry };
 	int type = TOMOYO_TYPE_CREATE;
@@ -319,14 +319,14 @@ static int tomoyo_file_fcntl(struct file *file, unsigned int cmd,
 }
 
 /**
- * tomoyo_dentry_open - Target for security_dentry_open().
+ * tomoyo_file_open - Target for security_file_open().
  *
  * @f:    Pointer to "struct file".
  * @cred: Pointer to "struct cred".
  *
  * Returns 0 on success, negative value otherwise.
  */
-static int tomoyo_dentry_open(struct file *f, const struct cred *cred)
+static int tomoyo_file_open(struct file *f, const struct cred *cred)
 {
 	int flags = f->f_flags;
 	/* Don't check read permission here if called from do_execve(). */
@@ -353,17 +353,14 @@ static int tomoyo_file_ioctl(struct file *file, unsigned int cmd,
 /**
  * tomoyo_path_chmod - Target for security_path_chmod().
  *
- * @dentry: Pointer to "struct dentry".
- * @mnt:    Pointer to "struct vfsmount".
- * @mode:   DAC permission mode.
+ * @path: Pointer to "struct path".
+ * @mode: DAC permission mode.
  *
  * Returns 0 on success, negative value otherwise.
  */
-static int tomoyo_path_chmod(struct dentry *dentry, struct vfsmount *mnt,
-			     mode_t mode)
+static int tomoyo_path_chmod(struct path *path, umode_t mode)
 {
-	struct path path = { mnt, dentry };
-	return tomoyo_path_number_perm(TOMOYO_TYPE_CHMOD, &path,
+	return tomoyo_path_number_perm(TOMOYO_TYPE_CHMOD, path,
 				       mode & S_IALLUGO);
 }
 
@@ -513,7 +510,7 @@ static struct security_operations tomoyo_security_ops = {
 	.bprm_set_creds      = tomoyo_bprm_set_creds,
 	.bprm_check_security = tomoyo_bprm_check_security,
 	.file_fcntl          = tomoyo_file_fcntl,
-	.dentry_open         = tomoyo_dentry_open,
+	.file_open           = tomoyo_file_open,
 	.path_truncate       = tomoyo_path_truncate,
 	.path_unlink         = tomoyo_path_unlink,
 	.path_mkdir          = tomoyo_path_mkdir,

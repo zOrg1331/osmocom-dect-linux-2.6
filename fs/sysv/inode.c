@@ -316,7 +316,7 @@ static void sysv_evict_inode(struct inode *inode)
 		sysv_truncate(inode);
 	}
 	invalidate_inode_buffers(inode);
-	end_writeback(inode);
+	clear_inode(inode);
 	if (!inode->i_nlink)
 		sysv_free_inode(inode);
 }
@@ -336,7 +336,6 @@ static struct inode *sysv_alloc_inode(struct super_block *sb)
 static void sysv_i_callback(struct rcu_head *head)
 {
 	struct inode *inode = container_of(head, struct inode, i_rcu);
-	INIT_LIST_HEAD(&inode->i_dentry);
 	kmem_cache_free(sysv_inode_cachep, SYSV_I(inode));
 }
 

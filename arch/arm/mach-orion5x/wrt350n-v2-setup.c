@@ -243,7 +243,6 @@ static int __init wrt350n_v2_pci_map_irq(const struct pci_dev *dev, u8 slot,
 
 static struct hw_pci wrt350n_v2_pci __initdata = {
 	.nr_controllers	= 2,
-	.swizzle	= pci_std_swizzle,
 	.setup		= orion5x_pci_sys_setup,
 	.scan		= orion5x_pci_sys_scan_bus,
 	.map_irq	= wrt350n_v2_pci_map_irq,
@@ -267,4 +266,5 @@ MACHINE_START(WRT350N_V2, "Linksys WRT350N v2")
 	.init_irq	= orion5x_init_irq,
 	.timer		= &orion5x_timer,
 	.fixup		= tag_fixup_mem32,
+	.restart	= orion5x_restart,
 MACHINE_END

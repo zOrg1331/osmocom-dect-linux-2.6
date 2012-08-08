@@ -18,6 +18,8 @@
  *
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/capability.h>
 #include <linux/errno.h>
@@ -60,7 +62,7 @@ MODULE_LICENSE("GPL");
 MODULE_ALIAS_NETDEV("ip6tnl0");
 
 #ifdef IP6_TNL_DEBUG
-#define IP6_TNL_TRACE(x...) printk(KERN_DEBUG "%s:" x "\n", __func__)
+#define IP6_TNL_TRACE(x...) pr_debug("%s:" x "\n", __func__)
 #else
 #define IP6_TNL_TRACE(x...) do {;} while(0)
 #endif
@@ -93,7 +95,7 @@ struct pcpu_tstats {
 	unsigned long	rx_bytes;
 	unsigned long	tx_packets;
 	unsigned long	tx_bytes;
-};
+} __attribute__((aligned(4*sizeof(unsigned long))));
 
 static struct net_device_stats *ip6_get_stats(struct net_device *dev)
 {
@@ -198,7 +200,7 @@ ip6_tnl_bucket(struct ip6_tnl_net *ip6n, const struct ip6_tnl_parm *p)
 {
 	const struct in6_addr *remote = &p->raddr;
 	const struct in6_addr *local = &p->laddr;
-	unsigned h = 0;
+	unsigned int h = 0;
 	int prio = 0;
 
 	if (!ipv6_addr_any(remote) || !ipv6_addr_any(local)) {
@@ -218,8 +220,8 @@ ip6_tnl_link(struct ip6_tnl_net *ip6n, struct ip6_tnl *t)
 {
 	struct ip6_tnl __rcu **tp = ip6_tnl_bucket(ip6n, &t->parms);
 
-	RCU_INIT_POINTER(t->next , rtnl_dereference(*tp));
-	RCU_INIT_POINTER(*tp, t);
+	rcu_assign_pointer(t->next , rtnl_dereference(*tp));
+	rcu_assign_pointer(*tp, t);
 }
 
 /**
@@ -237,7 +239,7 @@ ip6_tnl_unlink(struct ip6_tnl_net *ip6n, struct ip6_tnl *t)
 	     (iter = rtnl_dereference(*tp)) != NULL;
 	     tp = &iter->next) {
 		if (t == iter) {
-			RCU_INIT_POINTER(*tp, t->next);
+			rcu_assign_pointer(*tp, t->next);
 			break;
 		}
 	}
@@ -460,19 +462,14 @@ ip6_tnl_err(struct sk_buff *skb, __u8 ipproto, struct inet6_skb_parm *opt,
 		struct ipv6_tlv_tnl_enc_lim *tel;
 		__u32 mtu;
 	case ICMPV6_DEST_UNREACH:
-		if (net_ratelimit())
-			printk(KERN_WARNING
-			       "%s: Path to destination invalid "
-			       "or inactive!\n", t->parms.name);
+		net_warn_ratelimited("%s: Path to destination invalid or inactive!\n",
+				     t->parms.name);
 		rel_msg = 1;
 		break;
 	case ICMPV6_TIME_EXCEED:
 		if ((*code) == ICMPV6_EXC_HOPLIMIT) {
-			if (net_ratelimit())
-				printk(KERN_WARNING
-				       "%s: Too small hop limit or "
-				       "routing loop in tunnel!\n",
-				       t->parms.name);
+			net_warn_ratelimited("%s: Too small hop limit or routing loop in tunnel!\n",
+					     t->parms.name);
 			rel_msg = 1;
 		}
 		break;
@@ -484,17 +481,13 @@ ip6_tnl_err(struct sk_buff *skb, __u8 ipproto, struct inet6_skb_parm *opt,
 		if (teli && teli == *info - 2) {
 			tel = (struct ipv6_tlv_tnl_enc_lim *) &skb->data[teli];
 			if (tel->encap_limit == 0) {
-				if (net_ratelimit())
-					printk(KERN_WARNING
-					       "%s: Too small encapsulation "
-					       "limit or routing loop in "
-					       "tunnel!\n", t->parms.name);
+				net_warn_ratelimited("%s: Too small encapsulation limit or routing loop in tunnel!\n",
+						     t->parms.name);
 				rel_msg = 1;
 			}
-		} else if (net_ratelimit()) {
-			printk(KERN_WARNING
-			       "%s: Recipient unable to parse tunneled "
-			       "packet!\n ", t->parms.name);
+		} else {
+			net_warn_ratelimited("%s: Recipient unable to parse tunneled packet!\n",
+					     t->parms.name);
 		}
 		break;
 	case ICMPV6_PKT_TOOBIG:
@@ -653,8 +646,8 @@ ip6ip6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 		rt = rt6_lookup(dev_net(skb->dev), &ipv6_hdr(skb2)->saddr,
 				NULL, 0, 0);
 
-		if (rt && rt->rt6i_dev)
-			skb2->dev = rt->rt6i_dev;
+		if (rt && rt->dst.dev)
+			skb2->dev = rt->dst.dev;
 
 		icmpv6_send(skb2, rel_type, rel_code, rel_info);
 
@@ -825,7 +818,7 @@ static void init_tel_txopt(struct ipv6_tel_txoption *opt, __u8 encap_limit)
  *   0 else
  **/
 
-static inline int
+static inline bool
 ip6_tnl_addr_conflict(const struct ip6_tnl *t, const struct ipv6hdr *hdr)
 {
 	return ipv6_addr_equal(&t->parms.raddr, &hdr->saddr);
@@ -845,15 +838,12 @@ static inline int ip6_tnl_xmit_ctl(struct ip6_tnl *t)
 			ldev = dev_get_by_index_rcu(net, p->link);
 
 		if (unlikely(!ipv6_chk_addr(net, &p->laddr, ldev, 0)))
-			printk(KERN_WARNING
-			       "%s xmit: Local address not yet configured!\n",
-			       p->name);
+			pr_warn("%s xmit: Local address not yet configured!\n",
+				p->name);
 		else if (!ipv6_addr_is_multicast(&p->raddr) &&
 			 unlikely(ipv6_chk_addr(net, &p->raddr, NULL, 0)))
-			printk(KERN_WARNING
-			       "%s xmit: Routing loop! "
-			       "Remote address found on this node!\n",
-			       p->name);
+			pr_warn("%s xmit: Routing loop! Remote address found on this node!\n",
+				p->name);
 		else
 			ret = 1;
 		rcu_read_unlock();
@@ -919,10 +909,8 @@ static int ip6_tnl_xmit2(struct sk_buff *skb,
 
 	if (tdev == dev) {
 		stats->collisions++;
-		if (net_ratelimit())
-			printk(KERN_WARNING
-			       "%s: Local routing loop detected!\n",
-			       t->parms.name);
+		net_warn_ratelimited("%s: Local routing loop detected!\n",
+				     t->parms.name);
 		goto tx_err_dst_release;
 	}
 	mtu = dst_mtu(dst) - sizeof (*ipv6h);
@@ -954,7 +942,7 @@ static int ip6_tnl_xmit2(struct sk_buff *skb,
 
 		if (skb->sk)
 			skb_set_owner_w(new_skb, skb->sk);
-		kfree_skb(skb);
+		consume_skb(skb);
 		skb = new_skb;
 	}
 	skb_dst_drop(skb);
@@ -979,8 +967,8 @@ static int ip6_tnl_xmit2(struct sk_buff *skb,
 	ipv6_change_dsfield(ipv6h, ~INET_ECN_MASK, dsfield);
 	ipv6h->hop_limit = t->parms.hop_limit;
 	ipv6h->nexthdr = proto;
-	ipv6_addr_copy(&ipv6h->saddr, &fl6->saddr);
-	ipv6_addr_copy(&ipv6h->daddr, &fl6->daddr);
+	ipv6h->saddr = fl6->saddr;
+	ipv6h->daddr = fl6->daddr;
 	nf_reset(skb);
 	pkt_len = skb->len;
 	err = ip6_local_out(skb);
@@ -1155,8 +1143,8 @@ static void ip6_tnl_link_config(struct ip6_tnl *t)
 	memcpy(dev->broadcast, &p->raddr, sizeof(struct in6_addr));
 
 	/* Set up flowi template */
-	ipv6_addr_copy(&fl6->saddr, &p->laddr);
-	ipv6_addr_copy(&fl6->daddr, &p->raddr);
+	fl6->saddr = p->laddr;
+	fl6->daddr = p->raddr;
 	fl6->flowi6_oif = p->link;
 	fl6->flowlabel = 0;
 
@@ -1185,11 +1173,11 @@ static void ip6_tnl_link_config(struct ip6_tnl *t)
 		if (rt == NULL)
 			return;
 
-		if (rt->rt6i_dev) {
-			dev->hard_header_len = rt->rt6i_dev->hard_header_len +
+		if (rt->dst.dev) {
+			dev->hard_header_len = rt->dst.dev->hard_header_len +
 				sizeof (struct ipv6hdr);
 
-			dev->mtu = rt->rt6i_dev->mtu - sizeof (struct ipv6hdr);
+			dev->mtu = rt->dst.dev->mtu - sizeof (struct ipv6hdr);
 			if (!(t->parms.flags & IP6_TNL_F_IGN_ENCAP_LIMIT))
 				dev->mtu-=8;
 
@@ -1212,8 +1200,8 @@ static void ip6_tnl_link_config(struct ip6_tnl *t)
 static int
 ip6_tnl_change(struct ip6_tnl *t, struct ip6_tnl_parm *p)
 {
-	ipv6_addr_copy(&t->parms.laddr, &p->laddr);
-	ipv6_addr_copy(&t->parms.raddr, &p->raddr);
+	t->parms.laddr = p->laddr;
+	t->parms.raddr = p->raddr;
 	t->parms.flags = p->flags;
 	t->parms.hop_limit = p->hop_limit;
 	t->parms.encap_limit = p->encap_limit;
@@ -1450,7 +1438,7 @@ static int __net_init ip6_fb_tnl_dev_init(struct net_device *dev)
 
 	t->parms.proto = IPPROTO_IPV6;
 	dev_hold(dev);
-	RCU_INIT_POINTER(ip6n->tnls_wc[0], t);
+	rcu_assign_pointer(ip6n->tnls_wc[0], t);
 	return 0;
 }
 
@@ -1553,13 +1541,13 @@ static int __init ip6_tunnel_init(void)
 
 	err = xfrm6_tunnel_register(&ip4ip6_handler, AF_INET);
 	if (err < 0) {
-		printk(KERN_ERR "ip6_tunnel init: can't register ip4ip6\n");
+		pr_err("%s: can't register ip4ip6\n", __func__);
 		goto out_ip4ip6;
 	}
 
 	err = xfrm6_tunnel_register(&ip6ip6_handler, AF_INET6);
 	if (err < 0) {
-		printk(KERN_ERR "ip6_tunnel init: can't register ip6ip6\n");
+		pr_err("%s: can't register ip6ip6\n", __func__);
 		goto out_ip6ip6;
 	}
 
@@ -1580,10 +1568,10 @@ out_pernet:
 static void __exit ip6_tunnel_cleanup(void)
 {
 	if (xfrm6_tunnel_deregister(&ip4ip6_handler, AF_INET))
-		printk(KERN_INFO "ip6_tunnel close: can't deregister ip4ip6\n");
+		pr_info("%s: can't deregister ip4ip6\n", __func__);
 
 	if (xfrm6_tunnel_deregister(&ip6ip6_handler, AF_INET6))
-		printk(KERN_INFO "ip6_tunnel close: can't deregister ip6ip6\n");
+		pr_info("%s: can't deregister ip6ip6\n", __func__);
 
 	unregister_pernet_device(&ip6_tnl_net_ops);
 }

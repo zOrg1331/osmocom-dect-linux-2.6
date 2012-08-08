@@ -637,7 +637,7 @@ void sctp_addr_wq_timeout_handler(unsigned long arg)
 		    " for cmd %d at entry %p\n", &sctp_addr_waitq, &addrw->a, addrw->state,
 		    addrw);
 
-#if defined(CONFIG_IPV6) || defined (CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 		/* Now we send an ASCONF for each association */
 		/* Note. we currently don't handle link local IPv6 addressees */
 		if (addrw->a.sa.sa_family == AF_INET6) {
@@ -673,7 +673,9 @@ void sctp_addr_wq_timeout_handler(unsigned long arg)
 				SCTP_DEBUG_PRINTK("sctp_addrwq_timo_handler: sctp_asconf_mgmt failed\n");
 			sctp_bh_unlock_sock(sk);
 		}
+#if IS_ENABLED(CONFIG_IPV6)
 free_next:
+#endif
 		list_del(&addrw->list);
 		kfree(addrw);
 	}

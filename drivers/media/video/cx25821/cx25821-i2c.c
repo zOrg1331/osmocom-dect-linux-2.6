@@ -252,8 +252,8 @@ static int i2c_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg *msgs, int num)
 		} else if (i + 1 < num && (msgs[i + 1].flags & I2C_M_RD) &&
 			   msgs[i].addr == msgs[i + 1].addr) {
 			/* write then read from same address */
-			retval =
-			    i2c_sendbytes(i2c_adap, &msgs[i], msgs[i + 1].len);
+			retval = i2c_sendbytes(i2c_adap, &msgs[i],
+					msgs[i + 1].len);
 
 			if (retval < 0)
 				goto err;
@@ -276,10 +276,8 @@ err:
 
 static u32 cx25821_functionality(struct i2c_adapter *adap)
 {
-	return I2C_FUNC_SMBUS_EMUL |
-	    I2C_FUNC_I2C |
-	    I2C_FUNC_SMBUS_WORD_DATA |
-	    I2C_FUNC_SMBUS_READ_WORD_DATA | I2C_FUNC_SMBUS_WRITE_WORD_DATA;
+	return I2C_FUNC_SMBUS_EMUL | I2C_FUNC_I2C | I2C_FUNC_SMBUS_WORD_DATA |
+		I2C_FUNC_SMBUS_READ_WORD_DATA | I2C_FUNC_SMBUS_WRITE_WORD_DATA;
 }
 
 static struct i2c_algorithm cx25821_i2c_algo_template = {
@@ -300,7 +298,7 @@ static struct i2c_client cx25821_i2c_client_template = {
 	.name = "cx25821 internal",
 };
 
-/* init + register i2c algo-bit adapter */
+/* init + register i2c adapter */
 int cx25821_i2c_register(struct cx25821_i2c *bus)
 {
 	struct cx25821_dev *dev = bus->dev;
@@ -363,7 +361,6 @@ void cx25821_av_clk(struct cx25821_dev *dev, int enable)
 int cx25821_i2c_read(struct cx25821_i2c *bus, u16 reg_addr, int *value)
 {
 	struct i2c_client *client = &bus->i2c_client;
-	int retval = 0;
 	int v = 0;
 	u8 addr[2] = { 0, 0 };
 	u8 buf[4] = { 0, 0, 0, 0 };
@@ -387,7 +384,7 @@ int cx25821_i2c_read(struct cx25821_i2c *bus, u16 reg_addr, int *value)
 	msgs[0].addr = 0x44;
 	msgs[1].addr = 0x44;
 
-	retval = i2c_xfer(client->adapter, msgs, 2);
+	i2c_xfer(client->adapter, msgs, 2);
 
 	v = (buf[3] << 24) | (buf[2] << 16) | (buf[1] << 8) | buf[0];
 	*value = v;

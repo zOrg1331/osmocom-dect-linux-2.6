@@ -25,8 +25,11 @@
 #include <linux/gpio_keys.h>
 #include <linux/input.h>
 #include <linux/gpio.h>
+#include <linux/mmc/host.h>
 #include <linux/interrupt.h>
+#include <linux/platform_data/s3c-hsotg.h>
 
+#include <asm/hardware/vic.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/setup.h>
@@ -37,7 +40,6 @@
 
 #include <plat/gpio-cfg.h>
 #include <plat/regs-serial.h>
-#include <plat/s5pv210.h>
 #include <plat/devs.h>
 #include <plat/cpu.h>
 #include <plat/fb.h>
@@ -53,6 +55,8 @@
 #include <media/v4l2-mediabus.h>
 #include <media/s5p_fimc.h>
 #include <media/noon010pc30.h>
+
+#include "common.h"
 
 /* Following are default values for UCON, ULCON and UFCON UART registers */
 #define GONI_UCON_DEFAULT	(S3C2410_UCON_TXILEVEL |	\
@@ -103,25 +107,29 @@ static struct s3c2410_uartcfg goni_uartcfgs[] __initdata = {
 
 /* Frame Buffer */
 static struct s3c_fb_pd_win goni_fb_win0 = {
-	.win_mode = {
-		.left_margin	= 16,
-		.right_margin	= 16,
-		.upper_margin	= 2,
-		.lower_margin	= 28,
-		.hsync_len	= 2,
-		.vsync_len	= 1,
-		.xres		= 480,
-		.yres		= 800,
-		.refresh	= 55,
-	},
 	.max_bpp	= 32,
 	.default_bpp	= 16,
+	.xres		= 480,
+	.yres		= 800,
 	.virtual_x	= 480,
 	.virtual_y	= 2 * 800,
 };
 
+static struct fb_videomode goni_lcd_timing = {
+	.left_margin	= 16,
+	.right_margin	= 16,
+	.upper_margin	= 2,
+	.lower_margin	= 28,
+	.hsync_len	= 2,
+	.vsync_len	= 1,
+	.xres		= 480,
+	.yres		= 800,
+	.refresh	= 55,
+};
+
 static struct s3c_fb_platdata goni_lcd_pdata __initdata = {
 	.win[0]		= &goni_fb_win0,
+	.vtiming	= &goni_lcd_timing,
 	.vidcon0	= VIDCON0_VIDOUT_RGB | VIDCON0_PNRMODE_RGB |
 			  VIDCON0_CLKSEL_LCD,
 	.vidcon1	= VIDCON1_INV_VCLK | VIDCON1_INV_VDEN
@@ -227,8 +235,7 @@ static void __init goni_radio_init(void)
 	i2c1_devs[0].irq = gpio_to_irq(gpio);
 
 	gpio = S5PV210_GPJ2(5);			/* XMSMDATA_5 */
-	gpio_request(gpio, "FM_RST");
-	gpio_direction_output(gpio, 1);
+	gpio_request_one(gpio, GPIOF_OUT_INIT_HIGH, "FM_RST");
 }
 
 /* TSP */
@@ -264,8 +271,7 @@ static void __init goni_tsp_init(void)
 	int gpio;
 
 	gpio = S5PV210_GPJ1(3);		/* XMSMADDR_11 */
-	gpio_request(gpio, "TSP_LDO_ON");
-	gpio_direction_output(gpio, 1);
+	gpio_request_one(gpio, GPIOF_OUT_INIT_HIGH, "TSP_LDO_ON");
 	gpio_export(gpio, 0);
 
 	gpio = S5PV210_GPJ0(5);		/* XMSMADDR_5 */
@@ -276,6 +282,9 @@ static void __init goni_tsp_init(void)
 	s3c_gpio_setpull(gpio, S3C_GPIO_PULL_UP);
 	i2c2_devs[0].irq = gpio_to_irq(gpio);
 }
+
+/* USB OTG */
+static struct s3c_hsotg_plat goni_hsotg_pdata;
 
 static void goni_camera_init(void)
 {
@@ -674,8 +683,8 @@ static struct wm8994_pdata wm8994_platform_data = {
 	.gpio_defaults[8] = 0x0100,
 	.gpio_defaults[9] = 0x0100,
 	.gpio_defaults[10] = 0x0100,
-	.ldo[0]	= { S5PV210_MP03(6), NULL, &wm8994_ldo1_data },	/* XM0FRNB_2 */
-	.ldo[1]	= { 0, NULL, &wm8994_ldo2_data },
+	.ldo[0]	= { S5PV210_MP03(6), &wm8994_ldo1_data },	/* XM0FRNB_2 */
+	.ldo[1]	= { 0, &wm8994_ldo2_data },
 };
 
 /* GPIO I2C PMIC */
@@ -765,6 +774,7 @@ static void __init goni_pmic_init(void)
 /* MoviNAND */
 static struct s3c_sdhci_platdata goni_hsmmc0_data __initdata = {
 	.max_width		= 4,
+	.host_caps2		= MMC_CAP2_BROKEN_VOLTAGE,
 	.cd_type		= S3C_SDHCI_CD_PERMANENT,
 };
 
@@ -844,7 +854,7 @@ static struct s5p_fimc_isp_info goni_camera_sensors[] = {
 	},
 };
 
-struct s5p_platform_fimc goni_fimc_md_platdata __initdata = {
+static struct s5p_platform_fimc goni_fimc_md_platdata __initdata = {
 	.isp_info	= goni_camera_sensors,
 	.num_clients	= ARRAY_SIZE(goni_camera_sensors),
 };
@@ -890,7 +900,7 @@ static void __init goni_sound_init(void)
 
 static void __init goni_map_io(void)
 {
-	s5p_init_io(NULL, 0, S5P_VA_CHIPID);
+	s5pv210_init_io(NULL, 0);
 	s3c24xx_init_clocks(24000000);
 	s3c24xx_init_uarts(goni_uartcfgs, ARRAY_SIZE(goni_uartcfgs));
 	s5p_set_timer_source(S5P_PWM3, S5P_PWM4);
@@ -939,6 +949,8 @@ static void __init goni_machine_init(void)
 	s3c_set_platdata(&goni_fimc_md_platdata, sizeof(goni_fimc_md_platdata),
 			 &s5p_device_fimc_md);
 
+	s3c_hsotg_set_platdata(&goni_hsotg_pdata);
+
 	goni_camera_init();
 
 	/* SPI */
@@ -956,8 +968,10 @@ MACHINE_START(GONI, "GONI")
 	/* Maintainers: Kyungmin Park <kyungmin.park@samsung.com> */
 	.atag_offset	= 0x100,
 	.init_irq	= s5pv210_init_irq,
+	.handle_irq	= vic_handle_irq,
 	.map_io		= goni_map_io,
 	.init_machine	= goni_machine_init,
 	.timer		= &s5p_timer,
 	.reserve	= &goni_reserve,
+	.restart	= s5pv210_restart,
 MACHINE_END

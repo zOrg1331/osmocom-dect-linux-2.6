@@ -18,9 +18,9 @@
 #include <linux/irq.h>
 #include <linux/bitmap.h>
 
-#include "iio.h"
-#include "trigger_consumer.h"
-#include "kfifo_buf.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/trigger_consumer.h>
+#include <linux/iio/kfifo_buf.h>
 
 #include "iio_simple_dummy.h"
 
@@ -37,7 +37,7 @@ static const s16 fakedata[] = {
  * @irq: the interrupt number
  * @p: private data - always a pointer to the poll func.
  *
- * This is the guts of buffered capture. On a trigger event occuring,
+ * This is the guts of buffered capture. On a trigger event occurring,
  * if the pollfunc is attached then this handler is called as a threaded
  * interrupt (and hence may sleep). It is responsible for grabbing data
  * from the device and pushing it into the associated buffer.
@@ -48,23 +48,20 @@ static irqreturn_t iio_simple_dummy_trigger_h(int irq, void *p)
 	struct iio_dev *indio_dev = pf->indio_dev;
 	struct iio_buffer *buffer = indio_dev->buffer;
 	int len = 0;
-	/*
-	 * The datasize is obtained from the buffer. It was stored when
-	 * the preenable setup function was called.
-	 */
-	size_t datasize = buffer->access->get_bytes_per_datum(buffer);
-	u16 *data = kmalloc(datasize, GFP_KERNEL);
+	u16 *data;
+
+	data = kmalloc(indio_dev->scan_bytes, GFP_KERNEL);
 	if (data == NULL)
 		return -ENOMEM;
 
-	if (buffer->scan_count) {
+	if (!bitmap_empty(indio_dev->active_scan_mask, indio_dev->masklength)) {
 		/*
 		 * Three common options here:
 		 * hardware scans: certain combinations of channels make
 		 *   up a fast read.  The capture will consist of all of them.
 		 *   Hence we just call the grab data function and fill the
 		 *   buffer without processing.
-		 * sofware scans: can be considered to be random access
+		 * software scans: can be considered to be random access
 		 *   so efficient reading is just a case of minimal bus
 		 *   transactions.
 		 * software culled hardware scans:
@@ -75,7 +72,10 @@ static irqreturn_t iio_simple_dummy_trigger_h(int irq, void *p)
 		 * in the constant table fakedata.
 		 */
 		int i, j;
-		for (i = 0, j = 0; i < buffer->scan_count; i++) {
+		for (i = 0, j = 0;
+		     i < bitmap_weight(indio_dev->active_scan_mask,
+				       indio_dev->masklength);
+		     i++) {
 			j = find_next_bit(buffer->scan_mask,
 					  indio_dev->masklength, j + 1);
 			/* random access read form the 'device' */
@@ -84,7 +84,7 @@ static irqreturn_t iio_simple_dummy_trigger_h(int irq, void *p)
 		}
 	}
 	/* Store a timestampe at an 8 byte boundary */
-	if (buffer->scan_timestamp)
+	if (indio_dev->scan_timestamp)
 		*(s64 *)(((phys_addr_t)data + len
 				+ sizeof(s64) - 1) & ~(sizeof(s64) - 1))
 			= iio_get_time_ns();
@@ -139,11 +139,7 @@ int iio_simple_dummy_configure_buffer(struct iio_dev *indio_dev)
 	}
 
 	indio_dev->buffer = buffer;
-	/* Tell the core how to access the buffer */
-	buffer->access = &kfifo_access_funcs;
 
-	/* Number of bytes per element */
-	buffer->bpe = 2;
 	/* Enable timestamps by default */
 	buffer->scan_timestamp = true;
 
@@ -151,8 +147,7 @@ int iio_simple_dummy_configure_buffer(struct iio_dev *indio_dev)
 	 * Tell the core what device type specific functions should
 	 * be run on either side of buffer capture enable / disable.
 	 */
-	buffer->setup_ops = &iio_simple_dummy_buffer_setup_ops;
-	buffer->owner = THIS_MODULE;
+	indio_dev->setup_ops = &iio_simple_dummy_buffer_setup_ops;
 
 	/*
 	 * Configure a polling function.

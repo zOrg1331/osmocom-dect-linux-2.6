@@ -515,6 +515,7 @@ static int gianfar_ptp_probe(struct platform_device *dev)
 		err = PTR_ERR(etsects->clock);
 		goto no_clock;
 	}
+	gfar_phc_clock = ptp_clock_index(etsects->clock);
 
 	dev_set_drvdata(&dev->dev, etsects);
 
@@ -538,6 +539,7 @@ static int gianfar_ptp_remove(struct platform_device *dev)
 	gfar_write(&etsects->regs->tmr_temask, 0);
 	gfar_write(&etsects->regs->tmr_ctrl,   0);
 
+	gfar_phc_clock = -1;
 	ptp_clock_unregister(etsects->clock);
 	iounmap(etsects->regs);
 	release_resource(etsects->rsrc);
@@ -562,22 +564,8 @@ static struct platform_driver gianfar_ptp_driver = {
 	.remove      = gianfar_ptp_remove,
 };
 
-/* module operations */
+module_platform_driver(gianfar_ptp_driver);
 
-static int __init ptp_gianfar_init(void)
-{
-	return platform_driver_register(&gianfar_ptp_driver);
-}
-
-module_init(ptp_gianfar_init);
-
-static void __exit ptp_gianfar_exit(void)
-{
-	platform_driver_unregister(&gianfar_ptp_driver);
-}
-
-module_exit(ptp_gianfar_exit);
-
-MODULE_AUTHOR("Richard Cochran <richard.cochran@omicron.at>");
+MODULE_AUTHOR("Richard Cochran <richardcochran@gmail.com>");
 MODULE_DESCRIPTION("PTP clock using the eTSEC");
 MODULE_LICENSE("GPL");

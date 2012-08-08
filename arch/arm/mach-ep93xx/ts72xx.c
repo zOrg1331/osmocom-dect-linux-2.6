@@ -23,10 +23,12 @@
 #include <mach/hardware.h>
 #include <mach/ts72xx.h>
 
+#include <asm/hardware/vic.h>
 #include <asm/mach-types.h>
 #include <asm/mach/map.h>
 #include <asm/mach/arch.h>
 
+#include "soc.h"
 
 static struct map_desc ts72xx_io_desc[] __initdata = {
 	{
@@ -103,8 +105,6 @@ static int ts72xx_nand_device_ready(struct mtd_info *mtd)
 	return !!(__raw_readb(addr) & 0x20);
 }
 
-static const char *ts72xx_nand_part_probes[] = { "cmdlinepart", NULL };
-
 #define TS72XX_BOOTROM_PART_SIZE	(SZ_16K)
 #define TS72XX_REDBOOT_PART_SIZE	(SZ_2M + SZ_1M)
 
@@ -132,7 +132,6 @@ static struct platform_nand_data ts72xx_nand_data = {
 		.nr_chips	= 1,
 		.chip_offset	= 0,
 		.chip_delay	= 15,
-		.part_probe_types = ts72xx_nand_part_probes,
 		.partitions	= ts72xx_nand_parts,
 		.nr_partitions	= ARRAY_SIZE(ts72xx_nand_parts),
 	},
@@ -247,6 +246,9 @@ MACHINE_START(TS72XX, "Technologic Systems TS-72xx SBC")
 	.atag_offset	= 0x100,
 	.map_io		= ts72xx_map_io,
 	.init_irq	= ep93xx_init_irq,
+	.handle_irq	= vic_handle_irq,
 	.timer		= &ep93xx_timer,
 	.init_machine	= ts72xx_init_machine,
+	.init_late	= ep93xx_init_late,
+	.restart	= ep93xx_restart,
 MACHINE_END

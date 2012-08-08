@@ -200,8 +200,7 @@ xfs_ialloc_inode_init(
 		 */
 		d = XFS_AGB_TO_DADDR(mp, agno, agbno + (j * blks_per_cluster));
 		fbuf = xfs_trans_get_buf(tp, mp->m_ddev_targp, d,
-					 mp->m_bsize * blks_per_cluster,
-					 XBF_LOCK);
+					 mp->m_bsize * blks_per_cluster, 0);
 		if (!fbuf)
 			return ENOMEM;
 		/*
@@ -447,7 +446,7 @@ STATIC xfs_buf_t *			/* allocation group buffer */
 xfs_ialloc_ag_select(
 	xfs_trans_t	*tp,		/* transaction pointer */
 	xfs_ino_t	parent,		/* parent directory inode number */
-	mode_t		mode,		/* bits set to indicate file type */
+	umode_t		mode,		/* bits set to indicate file type */
 	int		okalloc)	/* ok to allocate more space */
 {
 	xfs_buf_t	*agbp;		/* allocation group header buffer */
@@ -610,6 +609,13 @@ xfs_ialloc_get_rec(
 /*
  * Visible inode allocation functions.
  */
+/*
+ * Find a free (set) bit in the inode bitmask.
+ */
+static inline int xfs_ialloc_find_free(xfs_inofree_t *fp)
+{
+	return xfs_lowbit64(*fp);
+}
 
 /*
  * Allocate an inode on disk.
@@ -640,7 +646,7 @@ int
 xfs_dialloc(
 	xfs_trans_t	*tp,		/* transaction pointer */
 	xfs_ino_t	parent,		/* parent inode (directory) */
-	mode_t		mode,		/* mode bits for new inode */
+	umode_t		mode,		/* mode bits for new inode */
 	int		okalloc,	/* ok to allocate more space */
 	xfs_buf_t	**IO_agbp,	/* in/out ag header's buffer */
 	boolean_t	*alloc_done,	/* true if we needed to replenish

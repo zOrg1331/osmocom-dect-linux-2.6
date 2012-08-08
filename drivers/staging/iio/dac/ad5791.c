@@ -1,5 +1,6 @@
 /*
- * AD5760, AD5780, AD5781, AD5791 Voltage Output Digital to Analog Converter
+ * AD5760, AD5780, AD5781, AD5790, AD5791 Voltage Output Digital to Analog
+ * Converter
  *
  * Copyright 2011 Analog Devices Inc.
  *
@@ -16,8 +17,8 @@
 #include <linux/regulator/consumer.h>
 #include <linux/module.h>
 
-#include "../iio.h"
-#include "../sysfs.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
 #include "dac.h"
 #include "ad5791.h"
 
@@ -77,8 +78,9 @@ static int ad5791_spi_read(struct spi_device *spi, u8 addr, u32 *val)
 	.indexed = 1,					\
 	.address = AD5791_ADDR_DAC0,			\
 	.channel = 0,					\
-	.info_mask = (1 << IIO_CHAN_INFO_SCALE_SHARED) | \
-		(1 << IIO_CHAN_INFO_OFFSET_SHARED),	\
+	.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |	\
+		IIO_CHAN_INFO_SCALE_SHARED_BIT |	\
+		IIO_CHAN_INFO_OFFSET_SHARED_BIT,	\
 	.scan_type = IIO_ST('u', bits, 24, shift)	\
 }
 
@@ -92,7 +94,7 @@ static const struct iio_chan_spec ad5791_channels[] = {
 static ssize_t ad5791_read_powerdown_mode(struct device *dev,
 				      struct device_attribute *attr, char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad5791_state *st = iio_priv(indio_dev);
 
 	const char mode[][14] = {"6kohm_to_gnd", "three_state"};
@@ -104,7 +106,7 @@ static ssize_t ad5791_write_powerdown_mode(struct device *dev,
 				       struct device_attribute *attr,
 				       const char *buf, size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad5791_state *st = iio_priv(indio_dev);
 	int ret;
 
@@ -122,7 +124,7 @@ static ssize_t ad5791_read_dac_powerdown(struct device *dev,
 					   struct device_attribute *attr,
 					   char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad5791_state *st = iio_priv(indio_dev);
 
 	return sprintf(buf, "%d\n", st->pwr_down);
@@ -134,7 +136,7 @@ static ssize_t ad5791_write_dac_powerdown(struct device *dev,
 {
 	long readin;
 	int ret;
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad5791_state *st = iio_priv(indio_dev);
 
 	ret = strict_strtol(buf, 10, &readin);
@@ -230,18 +232,18 @@ static int ad5791_read_raw(struct iio_dev *indio_dev,
 	int ret;
 
 	switch (m) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		ret = ad5791_spi_read(st->spi, chan->address, val);
 		if (ret)
 			return ret;
 		*val &= AD5791_DAC_MASK;
 		*val >>= chan->scan_type.shift;
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_SCALE_SHARED):
+	case IIO_CHAN_INFO_SCALE:
 		*val = 0;
 		*val2 = (((u64)st->vref_mv) * 1000000ULL) >> chan->scan_type.realbits;
 		return IIO_VAL_INT_PLUS_MICRO;
-	case (1 << IIO_CHAN_INFO_OFFSET_SHARED):
+	case IIO_CHAN_INFO_OFFSET:
 		val64 = (((u64)st->vref_neg_mv) << chan->scan_type.realbits);
 		do_div(val64, st->vref_mv);
 		*val = -val64;
@@ -262,7 +264,7 @@ static int ad5791_write_raw(struct iio_dev *indio_dev,
 	struct ad5791_state *st = iio_priv(indio_dev);
 
 	switch (mask) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		val &= AD5791_RES_MASK(chan->scan_type.realbits);
 		val <<= chan->scan_type.shift;
 
@@ -287,7 +289,7 @@ static int __devinit ad5791_probe(struct spi_device *spi)
 	struct ad5791_state *st;
 	int ret, pos_voltage_uv = 0, neg_voltage_uv = 0;
 
-	indio_dev = iio_allocate_device(sizeof(*st));
+	indio_dev = iio_device_alloc(sizeof(*st));
 	if (indio_dev == NULL) {
 		ret = -ENOMEM;
 		goto error_ret;
@@ -367,7 +369,7 @@ error_put_reg_neg:
 error_put_reg_pos:
 	if (!IS_ERR(st->reg_vdd))
 		regulator_put(st->reg_vdd);
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 error_ret:
 
 	return ret;
@@ -388,7 +390,7 @@ static int __devexit ad5791_remove(struct spi_device *spi)
 		regulator_disable(st->reg_vss);
 		regulator_put(st->reg_vss);
 	}
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 
 	return 0;
 }
@@ -397,9 +399,11 @@ static const struct spi_device_id ad5791_id[] = {
 	{"ad5760", ID_AD5760},
 	{"ad5780", ID_AD5780},
 	{"ad5781", ID_AD5781},
+	{"ad5790", ID_AD5791},
 	{"ad5791", ID_AD5791},
 	{}
 };
+MODULE_DEVICE_TABLE(spi, ad5791_id);
 
 static struct spi_driver ad5791_driver = {
 	.driver = {
@@ -410,19 +414,8 @@ static struct spi_driver ad5791_driver = {
 	.remove = __devexit_p(ad5791_remove),
 	.id_table = ad5791_id,
 };
-
-static __init int ad5791_spi_init(void)
-{
-	return spi_register_driver(&ad5791_driver);
-}
-module_init(ad5791_spi_init);
-
-static __exit void ad5791_spi_exit(void)
-{
-	spi_unregister_driver(&ad5791_driver);
-}
-module_exit(ad5791_spi_exit);
+module_spi_driver(ad5791_driver);
 
 MODULE_AUTHOR("Michael Hennerich <hennerich@blackfin.uclinux.org>");
-MODULE_DESCRIPTION("Analog Devices AD5760/AD5780/AD5781/AD5791 DAC");
+MODULE_DESCRIPTION("Analog Devices AD5760/AD5780/AD5781/AD5790/AD5791 DAC");
 MODULE_LICENSE("GPL v2");

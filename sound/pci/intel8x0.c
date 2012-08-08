@@ -79,9 +79,9 @@ static int index = SNDRV_DEFAULT_IDX1;	/* Index 0-MAX */
 static char *id = SNDRV_DEFAULT_STR1;	/* ID for this card */
 static int ac97_clock;
 static char *ac97_quirk;
-static int buggy_semaphore;
+static bool buggy_semaphore;
 static int buggy_irq = -1; /* auto-check */
-static int xbox;
+static bool xbox;
 static int spdif_aclink = -1;
 static int inside_vm = -1;
 
@@ -95,17 +95,17 @@ module_param(ac97_quirk, charp, 0444);
 MODULE_PARM_DESC(ac97_quirk, "AC'97 workaround for strange hardware.");
 module_param(buggy_semaphore, bool, 0444);
 MODULE_PARM_DESC(buggy_semaphore, "Enable workaround for hardwares with problematic codec semaphores.");
-module_param(buggy_irq, bool, 0444);
+module_param(buggy_irq, bint, 0444);
 MODULE_PARM_DESC(buggy_irq, "Enable workaround for buggy interrupts on some motherboards.");
 module_param(xbox, bool, 0444);
 MODULE_PARM_DESC(xbox, "Set to 1 for Xbox, if you have problems with the AC'97 codec detection.");
 module_param(spdif_aclink, int, 0444);
 MODULE_PARM_DESC(spdif_aclink, "S/PDIF over AC-link.");
-module_param(inside_vm, bool, 0444);
+module_param(inside_vm, bint, 0444);
 MODULE_PARM_DESC(inside_vm, "KVM/Parallels optimization.");
 
 /* just for backward compatibility */
-static int enable;
+static bool enable;
 module_param(enable, bool, 0444);
 static int joystick;
 module_param(joystick, int, 0444);
@@ -2102,6 +2102,12 @@ static struct ac97_quirk ac97_quirks[] __devinitdata = {
 	},
 	{
 		.subvendor = 0x161f,
+		.subdevice = 0x202f,
+		.name = "Gateway M520",
+		.type = AC97_TUNE_INV_EAPD
+	},
+	{
+		.subvendor = 0x161f,
 		.subdevice = 0x203a,
 		.name = "Gateway 4525GZ",		/* AD1981B */
 		.type = AC97_TUNE_INV_EAPD
@@ -3332,7 +3338,7 @@ static void __devexit snd_intel8x0_remove(struct pci_dev *pci)
 	pci_set_drvdata(pci, NULL);
 }
 
-static struct pci_driver driver = {
+static struct pci_driver intel8x0_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = snd_intel8x0_ids,
 	.probe = snd_intel8x0_probe,
@@ -3343,16 +3349,4 @@ static struct pci_driver driver = {
 #endif
 };
 
-
-static int __init alsa_card_intel8x0_init(void)
-{
-	return pci_register_driver(&driver);
-}
-
-static void __exit alsa_card_intel8x0_exit(void)
-{
-	pci_unregister_driver(&driver);
-}
-
-module_init(alsa_card_intel8x0_init)
-module_exit(alsa_card_intel8x0_exit)
+module_pci_driver(intel8x0_driver);

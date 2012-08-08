@@ -149,15 +149,6 @@ static unsigned int pfvfres_pmask(struct adapter *adapter,
 #endif
 
 enum {
-	MEMWIN0_APERTURE = 65536,
-	MEMWIN0_BASE     = 0x30000,
-	MEMWIN1_APERTURE = 32768,
-	MEMWIN1_BASE     = 0x28000,
-	MEMWIN2_APERTURE = 2048,
-	MEMWIN2_BASE     = 0x1b800,
-};
-
-enum {
 	MAX_TXQ_ENTRIES      = 16384,
 	MAX_CTRL_TXQ_ENTRIES = 1024,
 	MAX_RSPQ_ENTRIES     = 16384,
@@ -196,6 +187,8 @@ static DEFINE_PCI_DEVICE_TABLE(cxgb4_pci_tbl) = {
 	CH_DEVICE(0x4408, 4),
 	CH_DEVICE(0x4409, 4),
 	CH_DEVICE(0x440a, 4),
+	CH_DEVICE(0x440d, 4),
+	CH_DEVICE(0x440e, 4),
 	{ 0, }
 };
 
@@ -243,7 +236,7 @@ module_param_array(intr_cnt, uint, NULL, 0644);
 MODULE_PARM_DESC(intr_cnt,
 		 "thresholds 1..3 for queue interrupt packet counters");
 
-static int vf_acls;
+static bool vf_acls;
 
 #ifdef CONFIG_PCI_IOV
 module_param(vf_acls, bool, 0644);
@@ -369,6 +362,15 @@ static int set_addr_filters(const struct net_device *dev, bool sleep)
 				uhash | mhash, sleep);
 }
 
+int dbfifo_int_thresh = 10; /* 10 == 640 entry threshold */
+module_param(dbfifo_int_thresh, int, 0644);
+MODULE_PARM_DESC(dbfifo_int_thresh, "doorbell fifo interrupt threshold");
+
+int dbfifo_drain_delay = 1000; /* usecs to sleep while draining the dbfifo */
+module_param(dbfifo_drain_delay, int, 0644);
+MODULE_PARM_DESC(dbfifo_drain_delay,
+		 "usecs to sleep while draining the dbfifo");
+
 /*
  * Set Rx properties of a port, such as promiscruity, address filters, and MTU.
  * If @mtu is -1 it is left unchanged.
@@ -386,6 +388,8 @@ static int set_rxmode(struct net_device *dev, int mtu, bool sleep_ok)
 				    sleep_ok);
 	return ret;
 }
+
+static struct workqueue_struct *workq;
 
 /**
  *	link_start - enable a port
@@ -1002,13 +1006,12 @@ static void get_drvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 {
 	struct adapter *adapter = netdev2adap(dev);
 
-	strcpy(info->driver, KBUILD_MODNAME);
-	strcpy(info->version, DRV_VERSION);
-	strcpy(info->bus_info, pci_name(adapter->pdev));
+	strlcpy(info->driver, KBUILD_MODNAME, sizeof(info->driver));
+	strlcpy(info->version, DRV_VERSION, sizeof(info->version));
+	strlcpy(info->bus_info, pci_name(adapter->pdev),
+		sizeof(info->bus_info));
 
-	if (!adapter->params.fw_vers)
-		strcpy(info->fw_version, "N/A");
-	else
+	if (adapter->params.fw_vers)
 		snprintf(info->fw_version, sizeof(info->fw_version),
 			"%u.%u.%u.%u, TP %u.%u.%u.%u",
 			FW_HDR_FW_VER_MAJOR_GET(adapter->params.fw_vers),
@@ -1855,10 +1858,10 @@ static int set_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
 	return err;
 }
 
-static int cxgb_set_features(struct net_device *dev, u32 features)
+static int cxgb_set_features(struct net_device *dev, netdev_features_t features)
 {
 	const struct port_info *pi = netdev_priv(dev);
-	u32 changed = dev->features ^ features;
+	netdev_features_t changed = dev->features ^ features;
 	int err;
 
 	if (!(changed & NETIF_F_HW_VLAN_RX))
@@ -1872,30 +1875,30 @@ static int cxgb_set_features(struct net_device *dev, u32 features)
 	return err;
 }
 
-static int get_rss_table(struct net_device *dev, struct ethtool_rxfh_indir *p)
+static u32 get_rss_table_size(struct net_device *dev)
 {
 	const struct port_info *pi = netdev_priv(dev);
-	unsigned int n = min_t(unsigned int, p->size, pi->rss_size);
 
-	p->size = pi->rss_size;
+	return pi->rss_size;
+}
+
+static int get_rss_table(struct net_device *dev, u32 *p)
+{
+	const struct port_info *pi = netdev_priv(dev);
+	unsigned int n = pi->rss_size;
+
 	while (n--)
-		p->ring_index[n] = pi->rss[n];
+		p[n] = pi->rss[n];
 	return 0;
 }
 
-static int set_rss_table(struct net_device *dev,
-			 const struct ethtool_rxfh_indir *p)
+static int set_rss_table(struct net_device *dev, const u32 *p)
 {
 	unsigned int i;
 	struct port_info *pi = netdev_priv(dev);
 
-	if (p->size != pi->rss_size)
-		return -EINVAL;
-	for (i = 0; i < p->size; i++)
-		if (p->ring_index[i] >= pi->nqsets)
-			return -EINVAL;
-	for (i = 0; i < p->size; i++)
-		pi->rss[i] = p->ring_index[i];
+	for (i = 0; i < pi->rss_size; i++)
+		pi->rss[i] = p[i];
 	if (pi->adapter->flags & FULL_INIT_DONE)
 		return write_rss(pi, pi->rss);
 	return 0;
@@ -1964,7 +1967,7 @@ static int get_rxnfc(struct net_device *dev, struct ethtool_rxnfc *info,
 	return -EOPNOTSUPP;
 }
 
-static struct ethtool_ops cxgb_ethtool_ops = {
+static const struct ethtool_ops cxgb_ethtool_ops = {
 	.get_settings      = get_settings,
 	.set_settings      = set_settings,
 	.get_drvinfo       = get_drvinfo,
@@ -1990,6 +1993,7 @@ static struct ethtool_ops cxgb_ethtool_ops = {
 	.get_wol           = get_wol,
 	.set_wol           = set_wol,
 	.get_rxnfc         = get_rxnfc,
+	.get_rxfh_indir_size = get_rss_table_size,
 	.get_rxfh_indir    = get_rss_table,
 	.set_rxfh_indir    = set_rss_table,
 	.flash_device      = set_flash,
@@ -1998,13 +2002,6 @@ static struct ethtool_ops cxgb_ethtool_ops = {
 /*
  * debugfs support
  */
-
-static int mem_open(struct inode *inode, struct file *file)
-{
-	file->private_data = inode->i_private;
-	return 0;
-}
-
 static ssize_t mem_read(struct file *file, char __user *buf, size_t count,
 			loff_t *ppos)
 {
@@ -2048,7 +2045,7 @@ static ssize_t mem_read(struct file *file, char __user *buf, size_t count,
 
 static const struct file_operations mem_debugfs_fops = {
 	.owner   = THIS_MODULE,
-	.open    = mem_open,
+	.open    = simple_open,
 	.read    = mem_read,
 	.llseek  = default_llseek,
 };
@@ -2201,7 +2198,7 @@ static void cxgb4_queue_tid_release(struct tid_info *t, unsigned int chan,
 	adap->tid_release_head = (void **)((uintptr_t)p | chan);
 	if (!adap->tid_release_task_busy) {
 		adap->tid_release_task_busy = true;
-		schedule_work(&adap->tid_release_task);
+		queue_work(workq, &adap->tid_release_task);
 	}
 	spin_unlock_bh(&adap->tid_release_lock);
 }
@@ -2371,6 +2368,16 @@ unsigned int cxgb4_port_chan(const struct net_device *dev)
 }
 EXPORT_SYMBOL(cxgb4_port_chan);
 
+unsigned int cxgb4_dbfifo_count(const struct net_device *dev, int lpfifo)
+{
+	struct adapter *adap = netdev2adap(dev);
+	u32 v;
+
+	v = t4_read_reg(adap, A_SGE_DBFIFO_STATUS);
+	return lpfifo ? G_LP_COUNT(v) : G_HP_COUNT(v);
+}
+EXPORT_SYMBOL(cxgb4_dbfifo_count);
+
 /**
  *	cxgb4_port_viid - get the VI id of a port
  *	@dev: the net device for the port
@@ -2418,6 +2425,59 @@ void cxgb4_iscsi_init(struct net_device *dev, unsigned int tag_mask,
 }
 EXPORT_SYMBOL(cxgb4_iscsi_init);
 
+int cxgb4_flush_eq_cache(struct net_device *dev)
+{
+	struct adapter *adap = netdev2adap(dev);
+	int ret;
+
+	ret = t4_fwaddrspace_write(adap, adap->mbox,
+				   0xe1000000 + A_SGE_CTXT_CMD, 0x20000000);
+	return ret;
+}
+EXPORT_SYMBOL(cxgb4_flush_eq_cache);
+
+static int read_eq_indices(struct adapter *adap, u16 qid, u16 *pidx, u16 *cidx)
+{
+	u32 addr = t4_read_reg(adap, A_SGE_DBQ_CTXT_BADDR) + 24 * qid + 8;
+	__be64 indices;
+	int ret;
+
+	ret = t4_mem_win_read_len(adap, addr, (__be32 *)&indices, 8);
+	if (!ret) {
+		indices = be64_to_cpu(indices);
+		*cidx = (indices >> 25) & 0xffff;
+		*pidx = (indices >> 9) & 0xffff;
+	}
+	return ret;
+}
+
+int cxgb4_sync_txq_pidx(struct net_device *dev, u16 qid, u16 pidx,
+			u16 size)
+{
+	struct adapter *adap = netdev2adap(dev);
+	u16 hw_pidx, hw_cidx;
+	int ret;
+
+	ret = read_eq_indices(adap, qid, &hw_pidx, &hw_cidx);
+	if (ret)
+		goto out;
+
+	if (pidx != hw_pidx) {
+		u16 delta;
+
+		if (pidx >= hw_pidx)
+			delta = pidx - hw_pidx;
+		else
+			delta = size - hw_pidx + pidx;
+		wmb();
+		t4_write_reg(adap, MYPF_REG(A_SGE_PF_KDOORBELL),
+			     V_QID(qid) | V_PIDX(delta));
+	}
+out:
+	return ret;
+}
+EXPORT_SYMBOL(cxgb4_sync_txq_pidx);
+
 static struct pci_driver cxgb4_driver;
 
 static void check_neigh_update(struct neighbour *neigh)
@@ -2450,6 +2510,144 @@ static bool netevent_registered;
 static struct notifier_block cxgb4_netevent_nb = {
 	.notifier_call = netevent_cb
 };
+
+static void drain_db_fifo(struct adapter *adap, int usecs)
+{
+	u32 v;
+
+	do {
+		set_current_state(TASK_UNINTERRUPTIBLE);
+		schedule_timeout(usecs_to_jiffies(usecs));
+		v = t4_read_reg(adap, A_SGE_DBFIFO_STATUS);
+		if (G_LP_COUNT(v) == 0 && G_HP_COUNT(v) == 0)
+			break;
+	} while (1);
+}
+
+static void disable_txq_db(struct sge_txq *q)
+{
+	spin_lock_irq(&q->db_lock);
+	q->db_disabled = 1;
+	spin_unlock_irq(&q->db_lock);
+}
+
+static void enable_txq_db(struct sge_txq *q)
+{
+	spin_lock_irq(&q->db_lock);
+	q->db_disabled = 0;
+	spin_unlock_irq(&q->db_lock);
+}
+
+static void disable_dbs(struct adapter *adap)
+{
+	int i;
+
+	for_each_ethrxq(&adap->sge, i)
+		disable_txq_db(&adap->sge.ethtxq[i].q);
+	for_each_ofldrxq(&adap->sge, i)
+		disable_txq_db(&adap->sge.ofldtxq[i].q);
+	for_each_port(adap, i)
+		disable_txq_db(&adap->sge.ctrlq[i].q);
+}
+
+static void enable_dbs(struct adapter *adap)
+{
+	int i;
+
+	for_each_ethrxq(&adap->sge, i)
+		enable_txq_db(&adap->sge.ethtxq[i].q);
+	for_each_ofldrxq(&adap->sge, i)
+		enable_txq_db(&adap->sge.ofldtxq[i].q);
+	for_each_port(adap, i)
+		enable_txq_db(&adap->sge.ctrlq[i].q);
+}
+
+static void sync_txq_pidx(struct adapter *adap, struct sge_txq *q)
+{
+	u16 hw_pidx, hw_cidx;
+	int ret;
+
+	spin_lock_bh(&q->db_lock);
+	ret = read_eq_indices(adap, (u16)q->cntxt_id, &hw_pidx, &hw_cidx);
+	if (ret)
+		goto out;
+	if (q->db_pidx != hw_pidx) {
+		u16 delta;
+
+		if (q->db_pidx >= hw_pidx)
+			delta = q->db_pidx - hw_pidx;
+		else
+			delta = q->size - hw_pidx + q->db_pidx;
+		wmb();
+		t4_write_reg(adap, MYPF_REG(A_SGE_PF_KDOORBELL),
+				V_QID(q->cntxt_id) | V_PIDX(delta));
+	}
+out:
+	q->db_disabled = 0;
+	spin_unlock_bh(&q->db_lock);
+	if (ret)
+		CH_WARN(adap, "DB drop recovery failed.\n");
+}
+static void recover_all_queues(struct adapter *adap)
+{
+	int i;
+
+	for_each_ethrxq(&adap->sge, i)
+		sync_txq_pidx(adap, &adap->sge.ethtxq[i].q);
+	for_each_ofldrxq(&adap->sge, i)
+		sync_txq_pidx(adap, &adap->sge.ofldtxq[i].q);
+	for_each_port(adap, i)
+		sync_txq_pidx(adap, &adap->sge.ctrlq[i].q);
+}
+
+static void notify_rdma_uld(struct adapter *adap, enum cxgb4_control cmd)
+{
+	mutex_lock(&uld_mutex);
+	if (adap->uld_handle[CXGB4_ULD_RDMA])
+		ulds[CXGB4_ULD_RDMA].control(adap->uld_handle[CXGB4_ULD_RDMA],
+				cmd);
+	mutex_unlock(&uld_mutex);
+}
+
+static void process_db_full(struct work_struct *work)
+{
+	struct adapter *adap;
+
+	adap = container_of(work, struct adapter, db_full_task);
+
+	notify_rdma_uld(adap, CXGB4_CONTROL_DB_FULL);
+	drain_db_fifo(adap, dbfifo_drain_delay);
+	t4_set_reg_field(adap, A_SGE_INT_ENABLE3,
+			F_DBFIFO_HP_INT | F_DBFIFO_LP_INT,
+			F_DBFIFO_HP_INT | F_DBFIFO_LP_INT);
+	notify_rdma_uld(adap, CXGB4_CONTROL_DB_EMPTY);
+}
+
+static void process_db_drop(struct work_struct *work)
+{
+	struct adapter *adap;
+
+	adap = container_of(work, struct adapter, db_drop_task);
+
+	t4_set_reg_field(adap, A_SGE_DOORBELL_CONTROL, F_DROPPED_DB, 0);
+	disable_dbs(adap);
+	notify_rdma_uld(adap, CXGB4_CONTROL_DB_DROP);
+	drain_db_fifo(adap, 1);
+	recover_all_queues(adap);
+	enable_dbs(adap);
+}
+
+void t4_db_full(struct adapter *adap)
+{
+	t4_set_reg_field(adap, A_SGE_INT_ENABLE3,
+			F_DBFIFO_HP_INT | F_DBFIFO_LP_INT, 0);
+	queue_work(workq, &adap->db_full_task);
+}
+
+void t4_db_dropped(struct adapter *adap)
+{
+	queue_work(workq, &adap->db_drop_task);
+}
 
 static void uld_attach(struct adapter *adap, unsigned int uld)
 {
@@ -2484,6 +2682,7 @@ static void uld_attach(struct adapter *adap, unsigned int uld)
 	lli.gts_reg = adap->regs + MYPF_REG(SGE_PF_GTS);
 	lli.db_reg = adap->regs + MYPF_REG(SGE_PF_KDOORBELL);
 	lli.fw_vers = adap->params.fw_vers;
+	lli.dbfifo_int_thresh = dbfifo_int_thresh;
 
 	handle = ulds[uld].add(&lli);
 	if (IS_ERR(handle)) {
@@ -2654,6 +2853,8 @@ static void cxgb_down(struct adapter *adapter)
 {
 	t4_intr_disable(adapter);
 	cancel_work_sync(&adapter->tid_release_task);
+	cancel_work_sync(&adapter->db_full_task);
+	cancel_work_sync(&adapter->db_drop_task);
 	adapter->tid_release_task_busy = false;
 	adapter->tid_release_head = NULL;
 
@@ -2809,7 +3010,7 @@ static int cxgb_set_mac_addr(struct net_device *dev, void *p)
 	struct port_info *pi = netdev_priv(dev);
 
 	if (!is_valid_ether_addr(addr->sa_data))
-		return -EINVAL;
+		return -EADDRNOTAVAIL;
 
 	ret = t4_change_mac(pi->adapter, pi->adapter->fn, pi->viid,
 			    pi->xact_addr_filt, addr->sa_data, true, true);
@@ -3449,7 +3650,7 @@ static int __devinit init_rss(struct adapter *adap)
 		if (!pi->rss)
 			return -ENOMEM;
 		for (j = 0; j < pi->rss_size; j++)
-			pi->rss[j] = j % pi->nqsets;
+			pi->rss[j] = ethtool_rxfh_indir_default(j, pi->nqsets);
 	}
 	return 0;
 }
@@ -3537,7 +3738,7 @@ static int __devinit init_one(struct pci_dev *pdev,
 {
 	int func, i, err;
 	struct port_info *pi;
-	unsigned int highdma = 0;
+	bool highdma = false;
 	struct adapter *adapter = NULL;
 
 	printk_once(KERN_INFO "%s - version %s\n", DRV_DESC, DRV_VERSION);
@@ -3563,7 +3764,7 @@ static int __devinit init_one(struct pci_dev *pdev,
 	}
 
 	if (!pci_set_dma_mask(pdev, DMA_BIT_MASK(64))) {
-		highdma = NETIF_F_HIGHDMA;
+		highdma = true;
 		err = pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64));
 		if (err) {
 			dev_err(&pdev->dev, "unable to obtain 64-bit DMA for "
@@ -3598,6 +3799,7 @@ static int __devinit init_one(struct pci_dev *pdev,
 
 	adapter->pdev = pdev;
 	adapter->pdev_dev = &pdev->dev;
+	adapter->mbox = func;
 	adapter->fn = func;
 	adapter->msg_enable = dflt_msg_enable;
 	memset(adapter->chan_map, 0xff, sizeof(adapter->chan_map));
@@ -3606,6 +3808,8 @@ static int __devinit init_one(struct pci_dev *pdev,
 	spin_lock_init(&adapter->tid_release_lock);
 
 	INIT_WORK(&adapter->tid_release_task, process_tid_release_list);
+	INIT_WORK(&adapter->db_full_task, process_db_full);
+	INIT_WORK(&adapter->db_drop_task, process_db_drop);
 
 	err = t4_prep_adapter(adapter);
 	if (err)
@@ -3637,7 +3841,9 @@ static int __devinit init_one(struct pci_dev *pdev,
 			NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM |
 			NETIF_F_RXCSUM | NETIF_F_RXHASH |
 			NETIF_F_HW_VLAN_TX | NETIF_F_HW_VLAN_RX;
-		netdev->features |= netdev->hw_features | highdma;
+		if (highdma)
+			netdev->hw_features |= NETIF_F_HIGHDMA;
+		netdev->features |= netdev->hw_features;
 		netdev->vlan_features = netdev->features & VLAN_FEAT;
 
 		netdev->priv_flags |= IFF_UNICAST_FLT;
@@ -3791,6 +3997,10 @@ static int __init cxgb4_init_module(void)
 {
 	int ret;
 
+	workq = create_singlethread_workqueue("cxgb4");
+	if (!workq)
+		return -ENOMEM;
+
 	/* Debugfs support is optional, just warn if this fails */
 	cxgb4_debugfs_root = debugfs_create_dir(KBUILD_MODNAME, NULL);
 	if (!cxgb4_debugfs_root)
@@ -3806,6 +4016,8 @@ static void __exit cxgb4_cleanup_module(void)
 {
 	pci_unregister_driver(&cxgb4_driver);
 	debugfs_remove(cxgb4_debugfs_root);  /* NULL ok */
+	flush_workqueue(workq);
+	destroy_workqueue(workq);
 }
 
 module_init(cxgb4_init_module);

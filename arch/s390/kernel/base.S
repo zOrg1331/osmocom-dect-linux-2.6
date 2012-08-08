@@ -33,7 +33,7 @@ s390_base_mcck_handler_fn:
 	.previous
 
 ENTRY(s390_base_ext_handler)
-	stmg	%r0,%r15,__LC_SAVE_AREA
+	stmg	%r0,%r15,__LC_SAVE_AREA_ASYNC
 	basr	%r13,0
 0:	aghi	%r15,-STACK_FRAME_OVERHEAD
 	larl	%r1,s390_base_ext_handler_fn
@@ -41,7 +41,7 @@ ENTRY(s390_base_ext_handler)
 	ltgr	%r1,%r1
 	jz	1f
 	basr	%r14,%r1
-1:	lmg	%r0,%r15,__LC_SAVE_AREA
+1:	lmg	%r0,%r15,__LC_SAVE_AREA_ASYNC
 	ni	__LC_EXT_OLD_PSW+1,0xfd	# clear wait state bit
 	lpswe	__LC_EXT_OLD_PSW
 
@@ -53,7 +53,7 @@ s390_base_ext_handler_fn:
 	.previous
 
 ENTRY(s390_base_pgm_handler)
-	stmg	%r0,%r15,__LC_SAVE_AREA
+	stmg	%r0,%r15,__LC_SAVE_AREA_SYNC
 	basr	%r13,0
 0:	aghi	%r15,-STACK_FRAME_OVERHEAD
 	larl	%r1,s390_base_pgm_handler_fn
@@ -61,7 +61,7 @@ ENTRY(s390_base_pgm_handler)
 	ltgr	%r1,%r1
 	jz	1f
 	basr	%r14,%r1
-	lmg	%r0,%r15,__LC_SAVE_AREA
+	lmg	%r0,%r15,__LC_SAVE_AREA_SYNC
 	lpswe	__LC_PGM_OLD_PSW
 1:	lpswe	disabled_wait_psw-0b(%r13)
 
@@ -88,6 +88,9 @@ ENTRY(diag308_reset)
 	stctg	%c0,%c15,0(%r4)
 	larl	%r4,.Lfpctl		# Floating point control register
 	stfpc	0(%r4)
+	larl	%r4,.Lcontinue_psw	# Save PSW flags
+	epsw	%r2,%r3
+	stm	%r2,%r3,0(%r4)
 	larl	%r4,.Lrestart_psw	# Setup restart PSW at absolute 0
 	lghi	%r3,0
 	lg	%r4,0(%r4)		# Save PSW
@@ -103,10 +106,19 @@ ENTRY(diag308_reset)
 	lctlg	%c0,%c15,0(%r4)
 	larl	%r4,.Lfpctl		# Restore floating point ctl register
 	lfpc	0(%r4)
+	larl	%r4,.Lcontinue_psw	# Restore PSW flags
+	lpswe	0(%r4)
+.Lcontinue:
 	br	%r14
 .align 16
 .Lrestart_psw:
 	.long	0x00080000,0x80000000 + .Lrestart_part2
+
+	.section .data..nosave,"aw",@progbits
+.align 8
+.Lcontinue_psw:
+	.quad	0,.Lcontinue
+	.previous
 
 	.section .bss
 .align 8
@@ -142,7 +154,7 @@ s390_base_mcck_handler_fn:
 	.previous
 
 ENTRY(s390_base_ext_handler)
-	stm	%r0,%r15,__LC_SAVE_AREA
+	stm	%r0,%r15,__LC_SAVE_AREA_ASYNC
 	basr	%r13,0
 0:	ahi	%r15,-STACK_FRAME_OVERHEAD
 	l	%r1,2f-0b(%r13)
@@ -150,7 +162,7 @@ ENTRY(s390_base_ext_handler)
 	ltr	%r1,%r1
 	jz	1f
 	basr	%r14,%r1
-1:	lm	%r0,%r15,__LC_SAVE_AREA
+1:	lm	%r0,%r15,__LC_SAVE_AREA_ASYNC
 	ni	__LC_EXT_OLD_PSW+1,0xfd	# clear wait state bit
 	lpsw	__LC_EXT_OLD_PSW
 
@@ -164,7 +176,7 @@ s390_base_ext_handler_fn:
 	.previous
 
 ENTRY(s390_base_pgm_handler)
-	stm	%r0,%r15,__LC_SAVE_AREA
+	stm	%r0,%r15,__LC_SAVE_AREA_SYNC
 	basr	%r13,0
 0:	ahi	%r15,-STACK_FRAME_OVERHEAD
 	l	%r1,2f-0b(%r13)
@@ -172,7 +184,7 @@ ENTRY(s390_base_pgm_handler)
 	ltr	%r1,%r1
 	jz	1f
 	basr	%r14,%r1
-	lm	%r0,%r15,__LC_SAVE_AREA
+	lm	%r0,%r15,__LC_SAVE_AREA_SYNC
 	lpsw	__LC_PGM_OLD_PSW
 
 1:	lpsw	disabled_wait_psw-0b(%r13)

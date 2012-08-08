@@ -421,6 +421,7 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 		qp->uobject    = NULL;
 		qp->qp_type    = qp_init_attr->qp_type;
 
+		atomic_set(&qp->usecnt, 0);
 		if (qp_init_attr->qp_type == IB_QPT_XRC_TGT) {
 			qp->event_handler = __ib_shared_qp_event_handler;
 			qp->qp_context = qp;
@@ -430,7 +431,6 @@ struct ib_qp *ib_create_qp(struct ib_pd *pd,
 			qp->xrcd = qp_init_attr->xrcd;
 			atomic_inc(&qp_init_attr->xrcd->usecnt);
 			INIT_LIST_HEAD(&qp->open_list);
-			atomic_set(&qp->usecnt, 0);
 
 			real_qp = qp;
 			qp = __ib_open_qp(real_qp, qp_init_attr->event_handler,
@@ -479,6 +479,7 @@ static const struct {
 				[IB_QPT_UD]  = (IB_QP_PKEY_INDEX		|
 						IB_QP_PORT			|
 						IB_QP_QKEY),
+				[IB_QPT_RAW_PACKET] = IB_QP_PORT,
 				[IB_QPT_UC]  = (IB_QP_PKEY_INDEX		|
 						IB_QP_PORT			|
 						IB_QP_ACCESS_FLAGS),
@@ -1183,23 +1184,33 @@ EXPORT_SYMBOL(ib_dealloc_fmr);
 
 int ib_attach_mcast(struct ib_qp *qp, union ib_gid *gid, u16 lid)
 {
+	int ret;
+
 	if (!qp->device->attach_mcast)
 		return -ENOSYS;
 	if (gid->raw[0] != 0xff || qp->qp_type != IB_QPT_UD)
 		return -EINVAL;
 
-	return qp->device->attach_mcast(qp, gid, lid);
+	ret = qp->device->attach_mcast(qp, gid, lid);
+	if (!ret)
+		atomic_inc(&qp->usecnt);
+	return ret;
 }
 EXPORT_SYMBOL(ib_attach_mcast);
 
 int ib_detach_mcast(struct ib_qp *qp, union ib_gid *gid, u16 lid)
 {
+	int ret;
+
 	if (!qp->device->detach_mcast)
 		return -ENOSYS;
 	if (gid->raw[0] != 0xff || qp->qp_type != IB_QPT_UD)
 		return -EINVAL;
 
-	return qp->device->detach_mcast(qp, gid, lid);
+	ret = qp->device->detach_mcast(qp, gid, lid);
+	if (!ret)
+		atomic_dec(&qp->usecnt);
+	return ret;
 }
 EXPORT_SYMBOL(ib_detach_mcast);
 

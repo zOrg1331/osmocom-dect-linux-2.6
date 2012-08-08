@@ -16,8 +16,8 @@
 #include <linux/sysfs.h>
 #include <linux/regulator/consumer.h>
 
-#include "../iio.h"
-#include "../sysfs.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
 #include "dac.h"
 
 #define AD5360_CMD(x)				((x) << 22)
@@ -103,10 +103,11 @@ enum ad5360_type {
 	.type = IIO_VOLTAGE,					\
 	.indexed = 1,						\
 	.output = 1,						\
-	.info_mask = (1 << IIO_CHAN_INFO_SCALE_SEPARATE) |	\
-		(1 << IIO_CHAN_INFO_OFFSET_SEPARATE) |		\
-		(1 << IIO_CHAN_INFO_CALIBSCALE_SEPARATE) |	\
-		(1 << IIO_CHAN_INFO_CALIBBIAS_SEPARATE),	\
+	.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |		\
+		IIO_CHAN_INFO_SCALE_SEPARATE_BIT |		\
+		IIO_CHAN_INFO_OFFSET_SEPARATE_BIT |		\
+		IIO_CHAN_INFO_CALIBSCALE_SEPARATE_BIT |	\
+		IIO_CHAN_INFO_CALIBBIAS_SEPARATE_BIT,	\
 	.scan_type = IIO_ST('u', (bits), 16, 16 - (bits))	\
 }
 
@@ -250,7 +251,7 @@ static ssize_t ad5360_read_dac_powerdown(struct device *dev,
 					   struct device_attribute *attr,
 					   char *buf)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ad5360_state *st = iio_priv(indio_dev);
 
 	return sprintf(buf, "%d\n", (bool)(st->ctrl & AD5360_SF_CTRL_PWR_DOWN));
@@ -278,7 +279,7 @@ static int ad5360_update_ctrl(struct iio_dev *indio_dev, unsigned int set,
 static ssize_t ad5360_write_dac_powerdown(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t len)
 {
-	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	bool pwr_down;
 	int ret;
 
@@ -319,28 +320,28 @@ static int ad5360_write_raw(struct iio_dev *indio_dev,
 	unsigned int ofs_index;
 
 	switch (mask) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		if (val >= max_val || val < 0)
 			return -EINVAL;
 
 		return ad5360_write(indio_dev, AD5360_CMD_WRITE_DATA,
 				 chan->address, val, chan->scan_type.shift);
 
-	case (1 << IIO_CHAN_INFO_CALIBBIAS_SEPARATE):
+	case IIO_CHAN_INFO_CALIBBIAS:
 		if (val >= max_val || val < 0)
 			return -EINVAL;
 
 		return ad5360_write(indio_dev, AD5360_CMD_WRITE_OFFSET,
 				 chan->address, val, chan->scan_type.shift);
 
-	case (1 << IIO_CHAN_INFO_CALIBSCALE_SEPARATE):
+	case IIO_CHAN_INFO_CALIBSCALE:
 		if (val >= max_val || val < 0)
 			return -EINVAL;
 
 		return ad5360_write(indio_dev, AD5360_CMD_WRITE_GAIN,
 				 chan->address, val, chan->scan_type.shift);
 
-	case (1 << IIO_CHAN_INFO_OFFSET_SEPARATE):
+	case IIO_CHAN_INFO_OFFSET:
 		if (val <= -max_val || val > 0)
 			return -EINVAL;
 
@@ -371,19 +372,19 @@ static int ad5360_read_raw(struct iio_dev *indio_dev,
 			   long m)
 {
 	struct ad5360_state *st = iio_priv(indio_dev);
-	unsigned long scale_uv;
 	unsigned int ofs_index;
+	int scale_uv;
 	int ret;
 
 	switch (m) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		ret = ad5360_read(indio_dev, AD5360_READBACK_X1A,
 			chan->address);
 		if (ret < 0)
 			return ret;
 		*val = ret >> chan->scan_type.shift;
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_SCALE_SEPARATE):
+	case IIO_CHAN_INFO_SCALE:
 		/* vout = 4 * vref * dac_code */
 		scale_uv = ad5360_get_channel_vref(st, chan->channel) * 4 * 100;
 		if (scale_uv < 0)
@@ -393,21 +394,21 @@ static int ad5360_read_raw(struct iio_dev *indio_dev,
 		*val =  scale_uv / 100000;
 		*val2 = (scale_uv % 100000) * 10;
 		return IIO_VAL_INT_PLUS_MICRO;
-	case (1 << IIO_CHAN_INFO_CALIBBIAS_SEPARATE):
+	case IIO_CHAN_INFO_CALIBBIAS:
 		ret = ad5360_read(indio_dev, AD5360_READBACK_OFFSET,
 			chan->address);
 		if (ret < 0)
 			return ret;
 		*val = ret;
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_CALIBSCALE_SEPARATE):
+	case IIO_CHAN_INFO_CALIBSCALE:
 		ret = ad5360_read(indio_dev, AD5360_READBACK_GAIN,
 			chan->address);
 		if (ret < 0)
 			return ret;
 		*val = ret;
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_OFFSET_SEPARATE):
+	case IIO_CHAN_INFO_OFFSET:
 		ofs_index = ad5360_get_channel_vref_index(st, chan->channel);
 		ret = ad5360_read(indio_dev, AD5360_READBACK_SF,
 			AD5360_REG_SF_OFS(ofs_index));
@@ -439,8 +440,8 @@ static int __devinit ad5360_alloc_channels(struct iio_dev *indio_dev)
 	struct iio_chan_spec *channels;
 	unsigned int i;
 
-	channels = kcalloc(sizeof(struct iio_chan_spec),
-			st->chip_info->num_channels, GFP_KERNEL);
+	channels = kcalloc(st->chip_info->num_channels,
+			   sizeof(struct iio_chan_spec), GFP_KERNEL);
 
 	if (!channels)
 		return -ENOMEM;
@@ -464,7 +465,7 @@ static int __devinit ad5360_probe(struct spi_device *spi)
 	unsigned int i;
 	int ret;
 
-	indio_dev = iio_allocate_device(sizeof(*st));
+	indio_dev = iio_device_alloc(sizeof(*st));
 	if (indio_dev == NULL) {
 		dev_err(&spi->dev, "Failed to allocate iio device\n");
 		return  -ENOMEM;
@@ -519,7 +520,7 @@ error_free_reg:
 error_free_channels:
 	kfree(indio_dev->channels);
 error_free:
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 
 	return ret;
 }
@@ -536,7 +537,7 @@ static int __devexit ad5360_remove(struct spi_device *spi)
 	regulator_bulk_disable(st->chip_info->num_vrefs, st->vref_reg);
 	regulator_bulk_free(st->chip_info->num_vrefs, st->vref_reg);
 
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 
 	return 0;
 }
@@ -563,18 +564,7 @@ static struct spi_driver ad5360_driver = {
 	.remove = __devexit_p(ad5360_remove),
 	.id_table = ad5360_ids,
 };
-
-static __init int ad5360_spi_init(void)
-{
-	return spi_register_driver(&ad5360_driver);
-}
-module_init(ad5360_spi_init);
-
-static __exit void ad5360_spi_exit(void)
-{
-	spi_unregister_driver(&ad5360_driver);
-}
-module_exit(ad5360_spi_exit);
+module_spi_driver(ad5360_driver);
 
 MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");
 MODULE_DESCRIPTION("Analog Devices AD5360/61/62/63/70/71/72/73 DAC");

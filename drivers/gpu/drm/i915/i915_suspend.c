@@ -28,14 +28,19 @@
 #include "drm.h"
 #include "i915_drm.h"
 #include "intel_drv.h"
+#include "i915_reg.h"
 
 static bool i915_pipe_enabled(struct drm_device *dev, enum pipe pipe)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	u32	dpll_reg;
 
+	/* On IVB, 3rd pipe shares PLL with another one */
+	if (pipe > 1)
+		return false;
+
 	if (HAS_PCH_SPLIT(dev))
-		dpll_reg = (pipe == PIPE_A) ? _PCH_DPLL_A : _PCH_DPLL_B;
+		dpll_reg = _PCH_DPLL(pipe);
 	else
 		dpll_reg = (pipe == PIPE_A) ? _DPLL_A : _DPLL_B;
 
@@ -735,8 +740,11 @@ static void i915_restore_display(struct drm_device *dev)
 	if (HAS_PCH_SPLIT(dev)) {
 		I915_WRITE(BLC_PWM_PCH_CTL1, dev_priv->saveBLC_PWM_CTL);
 		I915_WRITE(BLC_PWM_PCH_CTL2, dev_priv->saveBLC_PWM_CTL2);
-		I915_WRITE(BLC_PWM_CPU_CTL, dev_priv->saveBLC_CPU_PWM_CTL);
+		/* NOTE: BLC_PWM_CPU_CTL must be written after BLC_PWM_CPU_CTL2;
+		 * otherwise we get blank eDP screen after S3 on some machines
+		 */
 		I915_WRITE(BLC_PWM_CPU_CTL2, dev_priv->saveBLC_CPU_PWM_CTL2);
+		I915_WRITE(BLC_PWM_CPU_CTL, dev_priv->saveBLC_CPU_PWM_CTL);
 		I915_WRITE(PCH_PP_ON_DELAYS, dev_priv->savePP_ON_DELAYS);
 		I915_WRITE(PCH_PP_OFF_DELAYS, dev_priv->savePP_OFF_DELAYS);
 		I915_WRITE(PCH_PP_DIVISOR, dev_priv->savePP_DIVISOR);
@@ -822,7 +830,7 @@ int i915_save_state(struct drm_device *dev)
 
 	if (IS_IRONLAKE_M(dev))
 		ironlake_disable_drps(dev);
-	if (IS_GEN6(dev))
+	if (INTEL_INFO(dev)->gen >= 6)
 		gen6_disable_rps(dev);
 
 	/* Cache mode state */
@@ -871,22 +879,6 @@ int i915_restore_state(struct drm_device *dev)
 		I915_WRITE(IER, dev_priv->saveIER);
 		I915_WRITE(IMR, dev_priv->saveIMR);
 	}
-	mutex_unlock(&dev->struct_mutex);
-
-	if (drm_core_check_feature(dev, DRIVER_MODESET))
-		intel_init_clock_gating(dev);
-
-	if (IS_IRONLAKE_M(dev)) {
-		ironlake_enable_drps(dev);
-		intel_init_emon(dev);
-	}
-
-	if (IS_GEN6(dev)) {
-		gen6_enable_rps(dev_priv);
-		gen6_update_ring_freq(dev_priv);
-	}
-
-	mutex_lock(&dev->struct_mutex);
 
 	/* Cache mode state */
 	I915_WRITE(CACHE_MODE_0, dev_priv->saveCACHE_MODE_0 | 0xffff0000);

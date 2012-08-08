@@ -17,7 +17,6 @@
 #include <linux/delay.h>
 #include <linux/pm.h>
 #include <linux/i2c.h>
-#include <linux/platform_device.h>
 #include <linux/spi/spi.h>
 #include <linux/slab.h>
 #include <linux/of_device.h>
@@ -182,7 +181,7 @@ SND_SOC_DAPM_OUTPUT("SPKOUTP"),
 SND_SOC_DAPM_OUTPUT("SPKOUTN"),
 };
 
-static const struct snd_soc_dapm_route audio_map[] = {
+static const struct snd_soc_dapm_route wm8510_dapm_routes[] = {
 	/* Mono output mixer */
 	{"Mono Mixer", "PCM Playback Switch", "DAC"},
 	{"Mono Mixer", "Aux Playback Switch", "Aux Input"},
@@ -213,17 +212,6 @@ static const struct snd_soc_dapm_route audio_map[] = {
 
 	{"ADC", NULL, "Boost Mixer"},
 };
-
-static int wm8510_add_widgets(struct snd_soc_codec *codec)
-{
-	struct snd_soc_dapm_context *dapm = &codec->dapm;
-
-	snd_soc_dapm_new_controls(dapm, wm8510_dapm_widgets,
-				  ARRAY_SIZE(wm8510_dapm_widgets));
-	snd_soc_dapm_add_routes(dapm, audio_map, ARRAY_SIZE(audio_map));
-
-	return 0;
-}
 
 struct pll_ {
 	unsigned int pre_div:4; /* prescale - 1 */
@@ -404,8 +392,7 @@ static int wm8510_pcm_hw_params(struct snd_pcm_substream *substream,
 				struct snd_pcm_hw_params *params,
 				struct snd_soc_dai *dai)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_codec *codec = rtd->codec;
+	struct snd_soc_codec *codec = dai->codec;
 	u16 iface = snd_soc_read(codec, WM8510_IFACE) & 0x19f;
 	u16 adn = snd_soc_read(codec, WM8510_ADD) & 0x1f1;
 
@@ -509,7 +496,7 @@ static int wm8510_set_bias_level(struct snd_soc_codec *codec,
 #define WM8510_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE |\
 	SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S32_LE)
 
-static struct snd_soc_dai_ops wm8510_dai_ops = {
+static const struct snd_soc_dai_ops wm8510_dai_ops = {
 	.hw_params	= wm8510_pcm_hw_params,
 	.digital_mute	= wm8510_mute,
 	.set_fmt	= wm8510_set_dai_fmt,
@@ -535,7 +522,7 @@ static struct snd_soc_dai_driver wm8510_dai = {
 	.symmetric_rates = 1,
 };
 
-static int wm8510_suspend(struct snd_soc_codec *codec, pm_message_t state)
+static int wm8510_suspend(struct snd_soc_codec *codec)
 {
 	wm8510_set_bias_level(codec, SND_SOC_BIAS_OFF);
 	return 0;
@@ -562,9 +549,6 @@ static int wm8510_probe(struct snd_soc_codec *codec)
 
 	/* power on device */
 	wm8510_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
-	snd_soc_add_controls(codec, wm8510_snd_controls,
-				ARRAY_SIZE(wm8510_snd_controls));
-	wm8510_add_widgets(codec);
 
 	return ret;
 }
@@ -588,6 +572,13 @@ static struct snd_soc_codec_driver soc_codec_dev_wm8510 = {
 	.reg_cache_size = ARRAY_SIZE(wm8510_reg),
 	.reg_word_size = sizeof(u16),
 	.reg_cache_default =wm8510_reg,
+
+	.controls = wm8510_snd_controls,
+	.num_controls = ARRAY_SIZE(wm8510_snd_controls),
+	.dapm_widgets = wm8510_dapm_widgets,
+	.num_dapm_widgets = ARRAY_SIZE(wm8510_dapm_widgets),
+	.dapm_routes = wm8510_dapm_routes,
+	.num_dapm_routes = ARRAY_SIZE(wm8510_dapm_routes),
 };
 
 static const struct of_device_id wm8510_of_match[] = {
@@ -667,7 +658,7 @@ MODULE_DEVICE_TABLE(i2c, wm8510_i2c_id);
 
 static struct i2c_driver wm8510_i2c_driver = {
 	.driver = {
-		.name = "wm8510-codec",
+		.name = "wm8510",
 		.owner = THIS_MODULE,
 		.of_match_table = wm8510_of_match,
 	},

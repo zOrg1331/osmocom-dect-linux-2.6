@@ -318,8 +318,7 @@ static int cs4271_hw_params(struct snd_pcm_substream *substream,
 			    struct snd_pcm_hw_params *params,
 			    struct snd_soc_dai *dai)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_codec *codec = rtd->codec;
+	struct snd_soc_codec *codec = dai->codec;
 	struct cs4271_private *cs4271 = snd_soc_codec_get_drvdata(codec);
 	int i, ret;
 	unsigned int ratio, val;
@@ -402,7 +401,7 @@ static const struct snd_kcontrol_new cs4271_snd_controls[] = {
 		7, 1, 1),
 };
 
-static struct snd_soc_dai_ops cs4271_dai_ops = {
+static const struct snd_soc_dai_ops cs4271_dai_ops = {
 	.hw_params	= cs4271_hw_params,
 	.set_sysclk	= cs4271_set_dai_sysclk,
 	.set_fmt	= cs4271_set_dai_fmt,
@@ -430,7 +429,7 @@ static struct snd_soc_dai_driver cs4271_dai = {
 };
 
 #ifdef CONFIG_PM
-static int cs4271_soc_suspend(struct snd_soc_codec *codec, pm_message_t mesg)
+static int cs4271_soc_suspend(struct snd_soc_codec *codec)
 {
 	int ret;
 	/* Set power-down bit */
@@ -513,7 +512,7 @@ static int cs4271_probe(struct snd_soc_codec *codec)
 	/* Power-up sequence requires 85 uS */
 	udelay(85);
 
-	return snd_soc_add_controls(codec, cs4271_snd_controls,
+	return snd_soc_add_codec_controls(codec, cs4271_snd_controls,
 		ARRAY_SIZE(cs4271_snd_controls));
 }
 

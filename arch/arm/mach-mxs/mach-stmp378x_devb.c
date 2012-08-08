@@ -85,6 +85,8 @@ static void __init stmp378x_dvb_init(void)
 {
 	int ret;
 
+	mx23_soc_init();
+
 	mxs_iomux_setup_multiple_pads(stmp378x_dvb_pads,
 			ARRAY_SIZE(stmp378x_dvb_pads));
 
@@ -117,4 +119,5 @@ MACHINE_START(STMP378X, "STMP378X")
 	.init_irq	= mx23_init_irq,
 	.timer		= &stmp378x_dvb_timer,
 	.init_machine	= stmp378x_dvb_init,
+	.restart	= mxs_restart,
 MACHINE_END

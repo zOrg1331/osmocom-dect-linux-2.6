@@ -17,7 +17,6 @@
 #include <linux/module.h>
 #include <linux/notifier.h>
 #include <linux/smp.h>
-#include <linux/sysdev.h>
 
 #include "tick-internal.h"
 
@@ -298,8 +297,7 @@ void clockevents_register_device(struct clock_event_device *dev)
 }
 EXPORT_SYMBOL_GPL(clockevents_register_device);
 
-static void clockevents_config(struct clock_event_device *dev,
-			       u32 freq)
+void clockevents_config(struct clock_event_device *dev, u32 freq)
 {
 	u64 sec;
 

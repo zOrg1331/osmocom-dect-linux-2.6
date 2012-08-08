@@ -84,9 +84,9 @@ MODULE_SUPPORTED_DEVICE("{"
 
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
-static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;/* Enable this card */
+static bool enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;/* Enable this card */
 static char *model[SNDRV_CARDS];
-static int omni[SNDRV_CARDS];				/* Delta44 & 66 Omni I/O support */
+static bool omni[SNDRV_CARDS];				/* Delta44 & 66 Omni I/O support */
 static int cs8427_timeout[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS-1)] = 500}; /* CS8427 S/PDIF transceiver reset timeout value in msec */
 static int dxr_enable[SNDRV_CARDS];			/* DXR enable for DMX6FIRE */
 
@@ -2803,22 +2803,11 @@ static void __devexit snd_ice1712_remove(struct pci_dev *pci)
 	pci_set_drvdata(pci, NULL);
 }
 
-static struct pci_driver driver = {
+static struct pci_driver ice1712_driver = {
 	.name = KBUILD_MODNAME,
 	.id_table = snd_ice1712_ids,
 	.probe = snd_ice1712_probe,
 	.remove = __devexit_p(snd_ice1712_remove),
 };
 
-static int __init alsa_card_ice1712_init(void)
-{
-	return pci_register_driver(&driver);
-}
-
-static void __exit alsa_card_ice1712_exit(void)
-{
-	pci_unregister_driver(&driver);
-}
-
-module_init(alsa_card_ice1712_init)
-module_exit(alsa_card_ice1712_exit)
+module_pci_driver(ice1712_driver);

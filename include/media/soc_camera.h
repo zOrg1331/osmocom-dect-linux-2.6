@@ -56,10 +56,15 @@ struct soc_camera_device {
 	};
 };
 
+/* Host supports programmable stride */
+#define SOCAM_HOST_CAP_STRIDE		(1 << 0)
+
 struct soc_camera_host {
 	struct v4l2_device v4l2_dev;
 	struct list_head list;
-	unsigned char nr;				/* Host number */
+	struct mutex host_lock;		/* Protect during probing */
+	unsigned char nr;		/* Host number */
+	u32 capabilities;
 	void *priv;
 	const char *drv_name;
 	struct soc_camera_host_ops *ops;
@@ -94,10 +99,10 @@ struct soc_camera_host_ops {
 			      struct soc_camera_device *);
 	int (*reqbufs)(struct soc_camera_device *, struct v4l2_requestbuffers *);
 	int (*querycap)(struct soc_camera_host *, struct v4l2_capability *);
-	int (*set_bus_param)(struct soc_camera_device *, __u32);
+	int (*set_bus_param)(struct soc_camera_device *);
 	int (*get_parm)(struct soc_camera_device *, struct v4l2_streamparm *);
 	int (*set_parm)(struct soc_camera_device *, struct v4l2_streamparm *);
-	int (*enum_fsizes)(struct soc_camera_device *, struct v4l2_frmsizeenum *);
+	int (*enum_framesizes)(struct soc_camera_device *, struct v4l2_frmsizeenum *);
 	unsigned int (*poll)(struct file *, poll_table *);
 };
 

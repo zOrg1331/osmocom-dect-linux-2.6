@@ -141,23 +141,6 @@ static inline struct sk_buff *ip_finish_skb(struct sock *sk, struct flowi4 *fl4)
 extern int		ip4_datagram_connect(struct sock *sk, 
 					     struct sockaddr *uaddr, int addr_len);
 
-/*
- *	Map a multicast IP onto multicast MAC for type Token Ring.
- *      This conforms to RFC1469 Option 2 Multicasting i.e.
- *      using a functional address to transmit / receive 
- *      multicast packets.
- */
-
-static inline void ip_tr_mc_map(__be32 addr, char *buf)
-{
-	buf[0]=0xC0;
-	buf[1]=0x00;
-	buf[2]=0x00;
-	buf[3]=0x04;
-	buf[4]=0x00;
-	buf[5]=0x00;
-}
-
 struct ip_reply_arg {
 	struct kvec iov[1];   
 	int	    flags;
@@ -221,9 +204,6 @@ static inline int inet_is_reserved_local_port(int port)
 }
 
 extern int sysctl_ip_nonlocal_bind;
-
-extern struct ctl_path net_core_path[];
-extern struct ctl_path net_ipv4_ctl_path[];
 
 /* From inetpeer.c */
 extern int inet_peer_threshold;
@@ -353,14 +333,14 @@ static inline void ip_ipgre_mc_map(__be32 naddr, const unsigned char *broadcast,
 		memcpy(buf, &naddr, sizeof(naddr));
 }
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 #include <linux/ipv6.h>
 #endif
 
 static __inline__ void inet_reset_saddr(struct sock *sk)
 {
 	inet_sk(sk)->inet_rcv_saddr = inet_sk(sk)->inet_saddr = 0;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	if (sk->sk_family == PF_INET6) {
 		struct ipv6_pinfo *np = inet6_sk(sk);
 
@@ -379,7 +359,7 @@ static inline int sk_mc_loop(struct sock *sk)
 	switch (sk->sk_family) {
 	case AF_INET:
 		return inet_sk(sk)->mc_loop;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
 		return inet6_sk(sk)->mc_loop;
 #endif
@@ -388,7 +368,7 @@ static inline int sk_mc_loop(struct sock *sk)
 	return 1;
 }
 
-extern int	ip_call_ra_chain(struct sk_buff *skb);
+extern bool ip_call_ra_chain(struct sk_buff *skb);
 
 /*
  *	Functions provided by ip_fragment.c
@@ -450,7 +430,7 @@ extern int ip_options_rcv_srr(struct sk_buff *skb);
  *	Functions provided by ip_sockglue.c
  */
 
-extern int	ip_queue_rcv_skb(struct sock *sk, struct sk_buff *skb);
+extern void	ipv4_pktinfo_prepare(struct sk_buff *skb);
 extern void	ip_cmsg_recv(struct msghdr *msg, struct sk_buff *skb);
 extern int	ip_cmsg_send(struct net *net,
 			     struct msghdr *msg, struct ipcm_cookie *ipc);

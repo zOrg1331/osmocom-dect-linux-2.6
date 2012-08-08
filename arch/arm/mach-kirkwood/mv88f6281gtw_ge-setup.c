@@ -23,7 +23,6 @@
 #include <linux/gpio_keys.h>
 #include <linux/spi/flash.h>
 #include <linux/spi/spi.h>
-#include <linux/spi/orion_spi.h>
 #include <net/dsa.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -169,4 +168,5 @@ MACHINE_START(MV88F6281GTW_GE, "Marvell 88F6281 GTW GE Board")
 	.init_early	= kirkwood_init_early,
 	.init_irq	= kirkwood_init_irq,
 	.timer		= &kirkwood_timer,
+	.restart	= kirkwood_restart,
 MACHINE_END

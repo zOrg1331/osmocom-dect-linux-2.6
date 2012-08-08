@@ -161,7 +161,6 @@ rd88f5181l_ge_pci_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 
 static struct hw_pci rd88f5181l_ge_pci __initdata = {
 	.nr_controllers	= 2,
-	.swizzle	= pci_std_swizzle,
 	.setup		= orion5x_pci_sys_setup,
 	.scan		= orion5x_pci_sys_scan_bus,
 	.map_irq	= rd88f5181l_ge_pci_map_irq,
@@ -187,4 +186,5 @@ MACHINE_START(RD88F5181L_GE, "Marvell Orion-VoIP GE Reference Design")
 	.init_irq	= orion5x_init_irq,
 	.timer		= &orion5x_timer,
 	.fixup		= tag_fixup_mem32,
+	.restart	= orion5x_restart,
 MACHINE_END

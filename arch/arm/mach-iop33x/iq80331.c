@@ -84,11 +84,10 @@ iq80331_pci_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 }
 
 static struct hw_pci iq80331_pci __initdata = {
-	.swizzle	= pci_std_swizzle,
 	.nr_controllers = 1,
+	.ops		= &iop3xx_ops,
 	.setup		= iop3xx_pci_setup,
 	.preinit	= iop3xx_pci_preinit_cond,
-	.scan		= iop3xx_pci_scan_bus,
 	.map_irq	= iq80331_pci_map_irq,
 };
 
@@ -146,4 +145,5 @@ MACHINE_START(IQ80331, "Intel IQ80331")
 	.init_irq	= iop33x_init_irq,
 	.timer		= &iq80331_timer,
 	.init_machine	= iq80331_init_machine,
+	.restart	= iop3xx_restart,
 MACHINE_END

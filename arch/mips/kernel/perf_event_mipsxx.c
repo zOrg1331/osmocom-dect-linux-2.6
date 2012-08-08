@@ -162,11 +162,6 @@ static unsigned int counters_total_to_per_cpu(unsigned int counters)
 	return counters >> vpe_shift();
 }
 
-static unsigned int counters_per_cpu_to_total(unsigned int counters)
-{
-	return counters << vpe_shift();
-}
-
 #else /* !CONFIG_MIPS_MT_SMP */
 #define vpe_id()	0
 
@@ -606,6 +601,10 @@ static int mipspmu_event_init(struct perf_event *event)
 {
 	int err = 0;
 
+	/* does not support taken branch sampling */
+	if (has_branch_stack(event))
+		return -EOPNOTSUPP;
+
 	switch (event->attr.type) {
 	case PERF_TYPE_RAW:
 	case PERF_TYPE_HARDWARE:
@@ -621,11 +620,6 @@ static int mipspmu_event_init(struct perf_event *event)
 		return -ENODEV;
 
 	if (!atomic_inc_not_zero(&active_events)) {
-		if (atomic_read(&active_events) > MIPS_MAX_HWEVENTS) {
-			atomic_dec(&active_events);
-			return -EINVAL;
-		}
-
 		mutex_lock(&pmu_reserve_mutex);
 		if (atomic_read(&active_events) == 0)
 			err = mipspmu_get_irq();
@@ -638,11 +632,7 @@ static int mipspmu_event_init(struct perf_event *event)
 	if (err)
 		return err;
 
-	err = __hw_perf_event_init(event);
-	if (err)
-		hw_perf_event_destroy(event);
-
-	return err;
+	return __hw_perf_event_init(event);
 }
 
 static struct pmu pmu = {
@@ -712,18 +702,6 @@ static const struct mips_perf_event *mipspmu_map_cache_event(u64 config)
 
 }
 
-static int validate_event(struct cpu_hw_events *cpuc,
-	       struct perf_event *event)
-{
-	struct hw_perf_event fake_hwc = event->hw;
-
-	/* Allow mixed event group. So return 1 to pass validation. */
-	if (event->pmu != &pmu || event->state <= PERF_EVENT_STATE_OFF)
-		return 1;
-
-	return mipsxx_pmu_alloc_counter(cpuc, &fake_hwc) >= 0;
-}
-
 static int validate_group(struct perf_event *event)
 {
 	struct perf_event *sibling, *leader = event->group_leader;
@@ -731,15 +709,15 @@ static int validate_group(struct perf_event *event)
 
 	memset(&fake_cpuc, 0, sizeof(fake_cpuc));
 
-	if (!validate_event(&fake_cpuc, leader))
+	if (mipsxx_pmu_alloc_counter(&fake_cpuc, &leader->hw) < 0)
 		return -EINVAL;
 
 	list_for_each_entry(sibling, &leader->sibling_list, group_entry) {
-		if (!validate_event(&fake_cpuc, sibling))
+		if (mipsxx_pmu_alloc_counter(&fake_cpuc, &sibling->hw) < 0)
 			return -EINVAL;
 	}
 
-	if (!validate_event(&fake_cpuc, event))
+	if (mipsxx_pmu_alloc_counter(&fake_cpuc, &event->hw) < 0)
 		return -EINVAL;
 
 	return 0;
@@ -1279,13 +1257,14 @@ static int __hw_perf_event_init(struct perf_event *event)
 	}
 
 	err = 0;
-	if (event->group_leader != event) {
+	if (event->group_leader != event)
 		err = validate_group(event);
-		if (err)
-			return -EINVAL;
-	}
 
 	event->destroy = hw_perf_event_destroy;
+
+	if (err)
+		event->destroy(event);
+
 	return err;
 }
 
@@ -1341,7 +1320,7 @@ static int mipsxx_pmu_handle_shared_irq(void)
 
 	regs = get_irq_regs();
 
-	perf_sample_data_init(&data, 0);
+	perf_sample_data_init(&data, 0, 0);
 
 	switch (counters) {
 #define HANDLE_COUNTER(n)						\
@@ -1380,20 +1359,10 @@ static irqreturn_t mipsxx_pmu_handle_irq(int irq, void *dev)
 }
 
 /* 24K */
-#define IS_UNSUPPORTED_24K_EVENT(r, b)					\
-	((b) == 12 || (r) == 151 || (r) == 152 || (b) == 26 ||		\
-	 (b) == 27 || (r) == 28 || (r) == 158 || (b) == 31 ||		\
-	 (b) == 32 || (b) == 34 || (b) == 36 || (r) == 168 ||		\
-	 (r) == 172 || (b) == 47 || ((b) >= 56 && (b) <= 63) ||		\
-	 ((b) >= 68 && (b) <= 127))
 #define IS_BOTH_COUNTERS_24K_EVENT(b)					\
 	((b) == 0 || (b) == 1 || (b) == 11)
 
 /* 34K */
-#define IS_UNSUPPORTED_34K_EVENT(r, b)					\
-	((b) == 12 || (r) == 27 || (r) == 158 || (b) == 36 ||		\
-	 (b) == 38 || (r) == 175 || ((b) >= 56 && (b) <= 63) ||		\
-	 ((b) >= 68 && (b) <= 127))
 #define IS_BOTH_COUNTERS_34K_EVENT(b)					\
 	((b) == 0 || (b) == 1 || (b) == 11)
 #ifdef CONFIG_MIPS_MT_SMP
@@ -1406,20 +1375,10 @@ static irqreturn_t mipsxx_pmu_handle_irq(int irq, void *dev)
 #endif
 
 /* 74K */
-#define IS_UNSUPPORTED_74K_EVENT(r, b)					\
-	((r) == 5 || ((r) >= 135 && (r) <= 137) ||			\
-	 ((b) >= 10 && (b) <= 12) || (b) == 22 || (b) == 27 ||		\
-	 (b) == 33 || (b) == 34 || ((b) >= 47 && (b) <= 49) ||		\
-	 (r) == 178 || (b) == 55 || (b) == 57 || (b) == 60 ||		\
-	 (b) == 61 || (r) == 62 || (r) == 191 ||			\
-	 ((b) >= 64 && (b) <= 127))
 #define IS_BOTH_COUNTERS_74K_EVENT(b)					\
 	((b) == 0 || (b) == 1)
 
 /* 1004K */
-#define IS_UNSUPPORTED_1004K_EVENT(r, b)				\
-	((b) == 12 || (r) == 27 || (r) == 158 || (b) == 38 ||		\
-	 (r) == 175 || (b) == 63 || ((b) >= 68 && (b) <= 127))
 #define IS_BOTH_COUNTERS_1004K_EVENT(b)					\
 	((b) == 0 || (b) == 1 || (b) == 11)
 #ifdef CONFIG_MIPS_MT_SMP
@@ -1445,11 +1404,10 @@ static const struct mips_perf_event *mipsxx_pmu_map_raw_event(u64 config)
 	unsigned int raw_id = config & 0xff;
 	unsigned int base_id = raw_id & 0x7f;
 
+	raw_event.event_id = base_id;
+
 	switch (current_cpu_type()) {
 	case CPU_24K:
-		if (IS_UNSUPPORTED_24K_EVENT(raw_id, base_id))
-			return ERR_PTR(-EOPNOTSUPP);
-		raw_event.event_id = base_id;
 		if (IS_BOTH_COUNTERS_24K_EVENT(base_id))
 			raw_event.cntr_mask = CNTR_EVEN | CNTR_ODD;
 		else
@@ -1464,9 +1422,6 @@ static const struct mips_perf_event *mipsxx_pmu_map_raw_event(u64 config)
 #endif
 		break;
 	case CPU_34K:
-		if (IS_UNSUPPORTED_34K_EVENT(raw_id, base_id))
-			return ERR_PTR(-EOPNOTSUPP);
-		raw_event.event_id = base_id;
 		if (IS_BOTH_COUNTERS_34K_EVENT(base_id))
 			raw_event.cntr_mask = CNTR_EVEN | CNTR_ODD;
 		else
@@ -1482,9 +1437,6 @@ static const struct mips_perf_event *mipsxx_pmu_map_raw_event(u64 config)
 #endif
 		break;
 	case CPU_74K:
-		if (IS_UNSUPPORTED_74K_EVENT(raw_id, base_id))
-			return ERR_PTR(-EOPNOTSUPP);
-		raw_event.event_id = base_id;
 		if (IS_BOTH_COUNTERS_74K_EVENT(base_id))
 			raw_event.cntr_mask = CNTR_EVEN | CNTR_ODD;
 		else
@@ -1495,9 +1447,6 @@ static const struct mips_perf_event *mipsxx_pmu_map_raw_event(u64 config)
 #endif
 		break;
 	case CPU_1004K:
-		if (IS_UNSUPPORTED_1004K_EVENT(raw_id, base_id))
-			return ERR_PTR(-EOPNOTSUPP);
-		raw_event.event_id = base_id;
 		if (IS_BOTH_COUNTERS_1004K_EVENT(base_id))
 			raw_event.cntr_mask = CNTR_EVEN | CNTR_ODD;
 		else
@@ -1578,7 +1527,8 @@ init_hw_perf_events(void)
 		irq = MSC01E_INT_BASE + MSC01E_INT_PERFCTR;
 	} else {
 #endif
-		if (cp0_perfcount_irq >= 0)
+		if ((cp0_perfcount_irq >= 0) &&
+				(cp0_compare_irq != cp0_perfcount_irq))
 			irq = MIPS_CPU_IRQ_BASE + cp0_perfcount_irq;
 		else
 			irq = -1;

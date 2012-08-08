@@ -26,6 +26,7 @@
 #include <linux/cache.h>
 #include <linux/audit.h>
 #include <net/dst.h>
+#include <net/flow.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
 #ifdef CONFIG_XFRM_STATISTICS
@@ -56,20 +57,20 @@ static int xfrm_bundle_ok(struct xfrm_dst *xdst);
 static struct xfrm_policy *__xfrm_policy_unlink(struct xfrm_policy *pol,
 						int dir);
 
-static inline int
+static inline bool
 __xfrm4_selector_match(const struct xfrm_selector *sel, const struct flowi *fl)
 {
 	const struct flowi4 *fl4 = &fl->u.ip4;
 
-	return  addr_match(&fl4->daddr, &sel->daddr, sel->prefixlen_d) &&
-		addr_match(&fl4->saddr, &sel->saddr, sel->prefixlen_s) &&
+	return  addr4_match(fl4->daddr, sel->daddr.a4, sel->prefixlen_d) &&
+		addr4_match(fl4->saddr, sel->saddr.a4, sel->prefixlen_s) &&
 		!((xfrm_flowi_dport(fl, &fl4->uli) ^ sel->dport) & sel->dport_mask) &&
 		!((xfrm_flowi_sport(fl, &fl4->uli) ^ sel->sport) & sel->sport_mask) &&
 		(fl4->flowi4_proto == sel->proto || !sel->proto) &&
 		(fl4->flowi4_oif == sel->ifindex || !sel->ifindex);
 }
 
-static inline int
+static inline bool
 __xfrm6_selector_match(const struct xfrm_selector *sel, const struct flowi *fl)
 {
 	const struct flowi6 *fl6 = &fl->u.ip6;
@@ -82,8 +83,8 @@ __xfrm6_selector_match(const struct xfrm_selector *sel, const struct flowi *fl)
 		(fl6->flowi6_oif == sel->ifindex || !sel->ifindex);
 }
 
-int xfrm_selector_match(const struct xfrm_selector *sel, const struct flowi *fl,
-			unsigned short family)
+bool xfrm_selector_match(const struct xfrm_selector *sel, const struct flowi *fl,
+			 unsigned short family)
 {
 	switch (family) {
 	case AF_INET:
@@ -91,7 +92,7 @@ int xfrm_selector_match(const struct xfrm_selector *sel, const struct flowi *fl,
 	case AF_INET6:
 		return __xfrm6_selector_match(sel, fl);
 	}
-	return 0;
+	return false;
 }
 
 static inline struct dst_entry *__xfrm_dst_lookup(struct net *net, int tos,
@@ -877,7 +878,8 @@ static int xfrm_policy_match(const struct xfrm_policy *pol,
 			     u8 type, u16 family, int dir)
 {
 	const struct xfrm_selector *sel = &pol->selector;
-	int match, ret = -ESRCH;
+	int ret = -ESRCH;
+	bool match;
 
 	if (pol->family != family ||
 	    (fl->flowi_mark & pol->mark.m) != pol->mark.v ||
@@ -1006,8 +1008,8 @@ static struct xfrm_policy *xfrm_sk_policy_lookup(struct sock *sk, int dir,
 
 	read_lock_bh(&xfrm_policy_lock);
 	if ((pol = sk->sk_policy[dir]) != NULL) {
-		int match = xfrm_selector_match(&pol->selector, fl,
-						sk->sk_family);
+		bool match = xfrm_selector_match(&pol->selector, fl,
+						 sk->sk_family);
 		int err = 0;
 
 		if (match) {
@@ -1340,7 +1342,7 @@ static inline struct xfrm_dst *xfrm_alloc_dst(struct net *net, int family)
 	case AF_INET:
 		dst_ops = &net->xfrm.xfrm4_dst_ops;
 		break;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	case AF_INET6:
 		dst_ops = &net->xfrm.xfrm6_dst_ops;
 		break;
@@ -1499,7 +1501,7 @@ static struct dst_entry *xfrm_bundle_create(struct xfrm_policy *policy,
 		goto free_dst;
 
 	/* Copy neighbour for reachability confirmation */
-	dst_set_neighbour(dst0, neigh_clone(dst_get_neighbour(dst)));
+	dst_set_neighbour(dst0, neigh_clone(dst_get_neighbour_noref(dst)));
 
 	xfrm_init_path((struct xfrm_dst *)dst0, dst, nfheader_len);
 	xfrm_init_pmtu(dst_prev);
@@ -1919,6 +1921,9 @@ no_transform:
 	}
 ok:
 	xfrm_pols_put(pols, drop_pols);
+	if (dst && dst->xfrm &&
+	    dst->xfrm->props.mode == XFRM_MODE_TUNNEL)
+		dst->flags |= DST_XFRM_TUNNEL;
 	return dst;
 
 nopol:
@@ -2445,7 +2450,7 @@ int xfrm_policy_register_afinfo(struct xfrm_policy_afinfo *afinfo)
 		case AF_INET:
 			xfrm_dst_ops = &net->xfrm.xfrm4_dst_ops;
 			break;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 		case AF_INET6:
 			xfrm_dst_ops = &net->xfrm.xfrm6_dst_ops;
 			break;
@@ -2495,7 +2500,7 @@ static void __net_init xfrm_dst_ops_init(struct net *net)
 	afinfo = xfrm_policy_afinfo[AF_INET];
 	if (afinfo)
 		net->xfrm.xfrm4_dst_ops = *afinfo->dst_ops;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	afinfo = xfrm_policy_afinfo[AF_INET6];
 	if (afinfo)
 		net->xfrm.xfrm6_dst_ops = *afinfo->dst_ops;
@@ -2767,8 +2772,8 @@ EXPORT_SYMBOL_GPL(xfrm_audit_policy_delete);
 #endif
 
 #ifdef CONFIG_XFRM_MIGRATE
-static int xfrm_migrate_selector_match(const struct xfrm_selector *sel_cmp,
-				       const struct xfrm_selector *sel_tgt)
+static bool xfrm_migrate_selector_match(const struct xfrm_selector *sel_cmp,
+					const struct xfrm_selector *sel_tgt)
 {
 	if (sel_cmp->proto == IPSEC_ULPROTO_ANY) {
 		if (sel_tgt->family == sel_cmp->family &&
@@ -2778,14 +2783,14 @@ static int xfrm_migrate_selector_match(const struct xfrm_selector *sel_cmp,
 				  sel_cmp->family) == 0 &&
 		    sel_tgt->prefixlen_d == sel_cmp->prefixlen_d &&
 		    sel_tgt->prefixlen_s == sel_cmp->prefixlen_s) {
-			return 1;
+			return true;
 		}
 	} else {
 		if (memcmp(sel_tgt, sel_cmp, sizeof(*sel_tgt)) == 0) {
-			return 1;
+			return true;
 		}
 	}
-	return 0;
+	return false;
 }
 
 static struct xfrm_policy * xfrm_migrate_policy_find(const struct xfrm_selector *sel,

@@ -23,8 +23,8 @@
 #include <linux/slab.h>
 #include <linux/module.h>
 
-#include "../iio.h"
-#include "../sysfs.h"
+#include <linux/iio/iio.h>
+#include <linux/iio/sysfs.h>
 
 #define KXSD9_REG_X		0x00
 #define KXSD9_REG_Y		0x02
@@ -140,7 +140,7 @@ static int kxsd9_write_raw(struct iio_dev *indio_dev,
 {
 	int ret = -EINVAL;
 
-	if (mask == (1 << IIO_CHAN_INFO_SCALE_SHARED)) {
+	if (mask == IIO_CHAN_INFO_SCALE) {
 		/* Check no integer component */
 		if (val)
 			return -EINVAL;
@@ -158,13 +158,13 @@ static int kxsd9_read_raw(struct iio_dev *indio_dev,
 	struct kxsd9_state *st = iio_priv(indio_dev);
 
 	switch (mask) {
-	case 0:
+	case IIO_CHAN_INFO_RAW:
 		ret = kxsd9_read(indio_dev, chan->address);
 		if (ret < 0)
 			goto error_ret;
 		*val = ret;
 		break;
-	case (1 << IIO_CHAN_INFO_SCALE_SHARED):
+	case IIO_CHAN_INFO_SCALE:
 		ret = spi_w8r8(st->us, KXSD9_READ(KXSD9_REG_CTRL_C));
 		if (ret)
 			goto error_ret;
@@ -181,7 +181,8 @@ error_ret:
 		.type = IIO_ACCEL,					\
 		.modified = 1,						\
 		.channel2 = IIO_MOD_##axis,				\
-		.info_mask = 1 << IIO_CHAN_INFO_SCALE_SHARED,		\
+		.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |		\
+			IIO_CHAN_INFO_SCALE_SHARED_BIT,			\
 		.address = KXSD9_REG_##axis,				\
 	}
 
@@ -189,6 +190,7 @@ static struct iio_chan_spec kxsd9_channels[] = {
 	KXSD9_ACCEL_CHAN(X), KXSD9_ACCEL_CHAN(Y), KXSD9_ACCEL_CHAN(Z),
 	{
 		.type = IIO_VOLTAGE,
+		.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT,
 		.indexed = 1,
 		.address = KXSD9_REG_AUX,
 	}
@@ -226,7 +228,7 @@ static int __devinit kxsd9_probe(struct spi_device *spi)
 	struct kxsd9_state *st;
 	int ret = 0;
 
-	indio_dev = iio_allocate_device(sizeof(*st));
+	indio_dev = iio_device_alloc(sizeof(*st));
 	if (indio_dev == NULL) {
 		ret = -ENOMEM;
 		goto error_ret;
@@ -254,7 +256,7 @@ static int __devinit kxsd9_probe(struct spi_device *spi)
 	return 0;
 
 error_free_dev:
-	iio_free_device(indio_dev);
+	iio_device_free(indio_dev);
 error_ret:
 	return ret;
 }
@@ -262,14 +264,16 @@ error_ret:
 static int __devexit kxsd9_remove(struct spi_device *spi)
 {
 	iio_device_unregister(spi_get_drvdata(spi));
-	iio_free_device(spi_get_drvdata(spi));
+	iio_device_free(spi_get_drvdata(spi));
 
 	return 0;
 }
 
 static const struct spi_device_id kxsd9_id[] = {
-	{"kxsd9", 0}
+	{"kxsd9", 0},
+	{ },
 };
+MODULE_DEVICE_TABLE(spi, kxsd9_id);
 
 static struct spi_driver kxsd9_driver = {
 	.driver = {
@@ -280,18 +284,7 @@ static struct spi_driver kxsd9_driver = {
 	.remove = __devexit_p(kxsd9_remove),
 	.id_table = kxsd9_id,
 };
-
-static __init int kxsd9_spi_init(void)
-{
-	return spi_register_driver(&kxsd9_driver);
-}
-module_init(kxsd9_spi_init);
-
-static __exit void kxsd9_spi_exit(void)
-{
-	spi_unregister_driver(&kxsd9_driver);
-}
-module_exit(kxsd9_spi_exit);
+module_spi_driver(kxsd9_driver);
 
 MODULE_AUTHOR("Jonathan Cameron <jic23@cam.ac.uk>");
 MODULE_DESCRIPTION("Kionix KXSD9 SPI driver");

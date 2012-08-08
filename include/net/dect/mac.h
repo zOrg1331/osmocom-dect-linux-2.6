@@ -601,11 +601,9 @@ enum dect_release_reasons {
 
 struct dect_cctrl {
 	enum dect_cctrl_cmds		cmd;
+	u16				fmid;
+	u32				pmid;
 	union {
-		struct {
-			u16		fmid;
-			u32		pmid;
-		};
 		struct {
 			u8		lbn;
 			u8		ecn;
@@ -617,12 +615,11 @@ struct dect_cctrl {
 			u8		bz_mod;
 			u8		bz_ext_mod;
 			u8		acr;
-		};
+		} attr;
 		struct {
 			u8		lbn;
 			u8		reason;
-			u32		pmid;
-		};
+		} rel;
 	};
 };
 

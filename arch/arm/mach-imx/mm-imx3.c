@@ -26,13 +26,11 @@
 #include <asm/hardware/cache-l2x0.h>
 #include <asm/mach/map.h>
 
-#include <mach/common.h>
-#include <mach/devices-common.h>
-#include <mach/hardware.h>
-#include <mach/iomux-v3.h>
-#include <mach/irqs.h>
-
+#include "common.h"
 #include "crmregs-imx3.h"
+#include "devices/devices-common.h"
+#include "hardware.h"
+#include "iomux-v3.h"
 
 void __iomem *mx3_ccm_base;
 
@@ -109,9 +107,8 @@ void __init imx3_init_l2x0(void)
 	}
 
 	l2x0_base = ioremap(MX3x_L2CC_BASE_ADDR, 4096);
-	if (IS_ERR(l2x0_base)) {
-		printk(KERN_ERR "remapping L2 cache area failed with %ld\n",
-				PTR_ERR(l2x0_base));
+	if (!l2x0_base) {
+		printk(KERN_ERR "remapping L2 cache area failed\n");
 		return;
 	}
 
@@ -176,6 +173,8 @@ void __init imx31_soc_init(void)
 	int to_version = mx31_revision() >> 4;
 
 	imx3_init_l2x0();
+
+	mxc_device_init();
 
 	mxc_register_gpio("imx31-gpio", 0, MX31_GPIO1_BASE_ADDR, SZ_16K, MX31_INT_GPIO1, 0);
 	mxc_register_gpio("imx31-gpio", 1, MX31_GPIO2_BASE_ADDR, SZ_16K, MX31_INT_GPIO2, 0);
@@ -273,10 +272,11 @@ void __init imx35_soc_init(void)
 
 	imx3_init_l2x0();
 
-	/* i.mx35 has the i.mx31 type gpio */
-	mxc_register_gpio("imx31-gpio", 0, MX35_GPIO1_BASE_ADDR, SZ_16K, MX35_INT_GPIO1, 0);
-	mxc_register_gpio("imx31-gpio", 1, MX35_GPIO2_BASE_ADDR, SZ_16K, MX35_INT_GPIO2, 0);
-	mxc_register_gpio("imx31-gpio", 2, MX35_GPIO3_BASE_ADDR, SZ_16K, MX35_INT_GPIO3, 0);
+	mxc_device_init();
+
+	mxc_register_gpio("imx35-gpio", 0, MX35_GPIO1_BASE_ADDR, SZ_16K, MX35_INT_GPIO1, 0);
+	mxc_register_gpio("imx35-gpio", 1, MX35_GPIO2_BASE_ADDR, SZ_16K, MX35_INT_GPIO2, 0);
+	mxc_register_gpio("imx35-gpio", 2, MX35_GPIO3_BASE_ADDR, SZ_16K, MX35_INT_GPIO3, 0);
 
 	pinctrl_provide_dummies();
 	if (to_version == 1) {

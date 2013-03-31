@@ -23,6 +23,8 @@
  * USA
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/pnp.h>
@@ -110,30 +112,32 @@ static u8 fintek_cir_reg_read(struct fintek_dev *fintek, u8 offset)
 	return val;
 }
 
-#define pr_reg(text, ...) \
-	printk(KERN_INFO KBUILD_MODNAME ": " text, ## __VA_ARGS__)
-
 /* dump current cir register contents */
 static void cir_dump_regs(struct fintek_dev *fintek)
 {
 	fintek_config_mode_enable(fintek);
 	fintek_select_logical_dev(fintek, fintek->logical_dev_cir);
 
-	pr_reg("%s: Dump CIR logical device registers:\n", FINTEK_DRIVER_NAME);
-	pr_reg(" * CR CIR BASE ADDR: 0x%x\n",
-	       (fintek_cr_read(fintek, CIR_CR_BASE_ADDR_HI) << 8) |
+	pr_info("%s: Dump CIR logical device registers:\n", FINTEK_DRIVER_NAME);
+	pr_info(" * CR CIR BASE ADDR: 0x%x\n",
+		(fintek_cr_read(fintek, CIR_CR_BASE_ADDR_HI) << 8) |
 		fintek_cr_read(fintek, CIR_CR_BASE_ADDR_LO));
-	pr_reg(" * CR CIR IRQ NUM:   0x%x\n",
-	       fintek_cr_read(fintek, CIR_CR_IRQ_SEL));
+	pr_info(" * CR CIR IRQ NUM:   0x%x\n",
+		fintek_cr_read(fintek, CIR_CR_IRQ_SEL));
 
 	fintek_config_mode_disable(fintek);
 
-	pr_reg("%s: Dump CIR registers:\n", FINTEK_DRIVER_NAME);
-	pr_reg(" * STATUS:     0x%x\n", fintek_cir_reg_read(fintek, CIR_STATUS));
-	pr_reg(" * CONTROL:    0x%x\n", fintek_cir_reg_read(fintek, CIR_CONTROL));
-	pr_reg(" * RX_DATA:    0x%x\n", fintek_cir_reg_read(fintek, CIR_RX_DATA));
-	pr_reg(" * TX_CONTROL: 0x%x\n", fintek_cir_reg_read(fintek, CIR_TX_CONTROL));
-	pr_reg(" * TX_DATA:    0x%x\n", fintek_cir_reg_read(fintek, CIR_TX_DATA));
+	pr_info("%s: Dump CIR registers:\n", FINTEK_DRIVER_NAME);
+	pr_info(" * STATUS:     0x%x\n",
+		fintek_cir_reg_read(fintek, CIR_STATUS));
+	pr_info(" * CONTROL:    0x%x\n",
+		fintek_cir_reg_read(fintek, CIR_CONTROL));
+	pr_info(" * RX_DATA:    0x%x\n",
+		fintek_cir_reg_read(fintek, CIR_RX_DATA));
+	pr_info(" * TX_CONTROL: 0x%x\n",
+		fintek_cir_reg_read(fintek, CIR_TX_CONTROL));
+	pr_info(" * TX_DATA:    0x%x\n",
+		fintek_cir_reg_read(fintek, CIR_TX_DATA));
 }
 
 /* detect hardware features */
@@ -291,6 +295,7 @@ static void fintek_process_rx_ir_data(struct fintek_dev *fintek)
 {
 	DEFINE_IR_RAW_EVENT(rawir);
 	u8 sample;
+	bool event = false;
 	int i;
 
 	for (i = 0; i < fintek->pkts; i++) {
@@ -328,7 +333,9 @@ static void fintek_process_rx_ir_data(struct fintek_dev *fintek)
 			fit_dbg("Storing %s with duration %d",
 				rawir.pulse ? "pulse" : "space",
 				rawir.duration);
-			ir_raw_event_store_with_filter(fintek->rdev, &rawir);
+			if (ir_raw_event_store_with_filter(fintek->rdev,
+									&rawir))
+				event = true;
 			break;
 		}
 
@@ -338,8 +345,10 @@ static void fintek_process_rx_ir_data(struct fintek_dev *fintek)
 
 	fintek->pkts = 0;
 
-	fit_dbg("Calling ir_raw_event_handle");
-	ir_raw_event_handle(fintek->rdev);
+	if (event) {
+		fit_dbg("Calling ir_raw_event_handle");
+		ir_raw_event_handle(fintek->rdev);
+	}
 }
 
 /* copy data from hardware rx register into driver buffer */
@@ -532,7 +541,7 @@ static int fintek_probe(struct pnp_dev *pdev, const struct pnp_device_id *dev_id
 	/* Set up the rc device */
 	rdev->priv = fintek;
 	rdev->driver_type = RC_DRIVER_IR_RAW;
-	rdev->allowed_protos = RC_TYPE_ALL;
+	rdev->allowed_protos = RC_BIT_ALL;
 	rdev->open = fintek_open;
 	rdev->close = fintek_close;
 	rdev->input_name = FINTEK_DESCRIPTION;
@@ -581,7 +590,7 @@ failure:
 	return ret;
 }
 
-static void __devexit fintek_remove(struct pnp_dev *pdev)
+static void fintek_remove(struct pnp_dev *pdev)
 {
 	struct fintek_dev *fintek = pnp_get_drvdata(pdev);
 	unsigned long flags;
@@ -669,18 +678,18 @@ static struct pnp_driver fintek_driver = {
 	.id_table	= fintek_ids,
 	.flags		= PNP_DRIVER_RES_DO_NOT_CHANGE,
 	.probe		= fintek_probe,
-	.remove		= __devexit_p(fintek_remove),
+	.remove		= fintek_remove,
 	.suspend	= fintek_suspend,
 	.resume		= fintek_resume,
 	.shutdown	= fintek_shutdown,
 };
 
-int fintek_init(void)
+static int fintek_init(void)
 {
 	return pnp_register_driver(&fintek_driver);
 }
 
-void fintek_exit(void)
+static void fintek_exit(void)
 {
 	pnp_unregister_driver(&fintek_driver);
 }

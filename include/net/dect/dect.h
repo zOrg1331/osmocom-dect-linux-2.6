@@ -217,11 +217,11 @@ extern struct sock *dect_nlsk;
  * struct dect_llme_req - LLME netlink request
  *
  * @nlh:		netlink header
- * @nlpid:		netlink socket PID
+ * @nlportid:		netlink socket port id
  */
 struct dect_llme_req {
 	struct nlmsghdr		nlh;
-	u32			nlpid;
+	u32			nlportid;
 };
 
 #include <net/sock.h>

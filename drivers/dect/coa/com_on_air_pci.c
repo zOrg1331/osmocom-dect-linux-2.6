@@ -18,8 +18,7 @@
 #define PCI_VENDOR_ID_QUICKLOGIC	0x11e3
 #define PCI_DEVICE_ID_COA		0x0001
 
-static int __devinit coa_probe(struct pci_dev *pdev,
-			       const struct pci_device_id *ent)
+static int coa_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct dect_transceiver *trx;
 	struct coa_device *dev;
@@ -100,7 +99,7 @@ err1:
 	return err;
 }
 
-static void __devexit coa_remove(struct pci_dev *pdev)
+static void coa_remove(struct pci_dev *pdev)
 {
 	struct dect_transceiver *trx = pci_get_drvdata(pdev);
 	struct coa_device *dev = dect_transceiver_priv(trx);
@@ -142,7 +141,7 @@ static struct pci_driver coa_driver = {
 	.name		= KBUILD_MODNAME,
 	.id_table	= coa_pci_tbl,
 	.probe		= coa_probe,
-	.remove		= __devexit_p(coa_remove),
+	.remove		= coa_remove,
 	.suspend	= coa_suspend,
 	.resume		= coa_resume,
 };

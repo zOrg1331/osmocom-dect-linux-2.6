@@ -28,7 +28,7 @@
 #define KERN_DEBUG
 
 static void dect_notify_cell(u16 event, const struct dect_cell *cell,
-			     const struct nlmsghdr *nlh, u32 pid);
+			     const struct nlmsghdr *nlh, u32 portid);
 static void dect_cell_schedule_page(struct dect_cell *cell, u32 mask);
 
 static const u8 dect_fp_preamble[]	= { 0x55, 0x55, 0xe9, 0x8a};
@@ -5089,14 +5089,14 @@ static u32 dect_cell_alloc_index(void)
 
 static int dect_fill_cell(struct sk_buff *skb,
 			  const struct dect_cell *cell,
-			  u16 type, u32 pid, u32 seq, u16 flags)
+			  u16 type, u32 portid, u32 seq, u16 flags)
 {
 	const struct dect_transceiver *trx;
 	struct nlmsghdr *nlh;
 	struct dectmsg *dm;
 	struct nlattr *nest;
 
-	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*dm), flags);
+	nlh = nlmsg_put(skb, portid, seq, type, sizeof(*dm), flags);
 	if (nlh == NULL)
 		return -EMSGSIZE;
 	dm = nlmsg_data(nlh);
@@ -5142,7 +5142,7 @@ static int dect_dump_cell(struct sk_buff *skb,
 		if (idx < s_idx)
 			goto cont;
 		if (dect_fill_cell(skb, cell, DECT_NEW_CELL,
-				   NETLINK_CB(cb->skb).pid,
+				   NETLINK_CB(cb->skb).portid,
 				   cb->nlh->nlmsg_seq, NLM_F_MULTI) <= 0)
 			break;
 cont:
@@ -5154,7 +5154,7 @@ cont:
 }
 
 static void dect_notify_cell(u16 event, const struct dect_cell *cell,
-			     const struct nlmsghdr *nlh, u32 pid)
+			     const struct nlmsghdr *nlh, u32 portid)
 {
 	struct sk_buff *skb;
 	bool report = nlh ? nlmsg_report(nlh) : 0;
@@ -5165,16 +5165,17 @@ static void dect_notify_cell(u16 event, const struct dect_cell *cell,
 	if (skb == NULL)
 		goto err;
 
-	err = dect_fill_cell(skb, cell, event, pid, seq, NLMSG_DONE);
+	err = dect_fill_cell(skb, cell, event, portid, seq, NLMSG_DONE);
 	if (err < 0) {
 		WARN_ON(err == -EMSGSIZE);
 		kfree_skb(skb);
 		goto err;
 	}
-	nlmsg_notify(dect_nlsk, skb, pid, DECTNLGRP_CELL, report, GFP_KERNEL);
+	nlmsg_notify(dect_nlsk, skb, portid, DECTNLGRP_CELL, report,
+		     GFP_KERNEL);
 err:
 	if (err < 0)
-		netlink_set_err(dect_nlsk, pid, DECTNLGRP_CELL, err);
+		netlink_set_err(dect_nlsk, portid, DECTNLGRP_CELL, err);
 }
 
 static const struct nla_policy dect_cell_policy[DECTA_CELL_MAX + 1] = {
@@ -5242,7 +5243,7 @@ static int dect_new_cell(const struct sk_buff *skb,
 	}
 
 	list_add_tail(&cell->list, &dect_cell_list);
-	dect_notify_cell(DECT_NEW_CELL, cell, nlh, NETLINK_CB(skb).pid);
+	dect_notify_cell(DECT_NEW_CELL, cell, nlh, NETLINK_CB(skb).portid);
 	return 0;
 
 err:
@@ -5271,7 +5272,7 @@ static int dect_del_cell(const struct sk_buff *skb,
 
 	dect_cell_shutdown(cell);
 	list_del(&cell->list);
-	dect_notify_cell(DECT_DEL_CELL, cell, nlh, NETLINK_CB(skb).pid);
+	dect_notify_cell(DECT_DEL_CELL, cell, nlh, NETLINK_CB(skb).portid);
 	kfree(cell);
 	return 0;
 }
@@ -5280,7 +5281,7 @@ static int dect_get_cell(const struct sk_buff *in_skb,
 			 const struct nlmsghdr *nlh,
 			 const struct nlattr *tb[DECTA_CELL_MAX + 1])
 {
-	u32 pid = NETLINK_CB(in_skb).pid;
+	u32 portid = NETLINK_CB(in_skb).portid;
 	const struct dect_cell *cell = NULL;
 	struct dectmsg *dm;
 	struct sk_buff *skb;
@@ -5297,11 +5298,11 @@ static int dect_get_cell(const struct sk_buff *in_skb,
 	skb = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
 	if (skb == NULL)
 		return -ENOMEM;
-	err = dect_fill_cell(skb, cell, DECT_NEW_CELL, pid, nlh->nlmsg_seq,
+	err = dect_fill_cell(skb, cell, DECT_NEW_CELL, portid, nlh->nlmsg_seq,
 			     NLMSG_DONE);
 	if (err < 0)
 		goto err1;
-	return nlmsg_unicast(dect_nlsk, skb, pid);
+	return nlmsg_unicast(dect_nlsk, skb, portid);
 
 err1:
 	kfree_skb(skb);

@@ -37,11 +37,8 @@
 #include "recv_osdep.h"
 #include "xmit_osdep.h"
 #include "rtl8712_efuse.h"
-#include "usb_vendor_req.h"
 #include "usb_ops.h"
 #include "usb_osintf.h"
-
-#define DRVER  "v7_0.20100831"
 
 static struct usb_interface *pintf;
 
@@ -66,6 +63,8 @@ static struct usb_device_id rtl871x_usb_id_tbl[] = {
 	{USB_DEVICE(0x0B05, 0x1791)}, /* 11n mode disable */
 	/* Belkin */
 	{USB_DEVICE(0x050D, 0x945A)},
+	/* ISY IWL - Belkin clone */
+	{USB_DEVICE(0x050D, 0x11F1)},
 	/* Corega */
 	{USB_DEVICE(0x07AA, 0x0047)},
 	/* D-Link */
@@ -374,7 +373,7 @@ static int r871xu_drv_init(struct usb_interface *pusb_intf,
 	struct net_device *pnetdev;
 	struct usb_device *udev;
 
-	printk(KERN_INFO "r8712u: DriverVersion: %s\n", DRVER);
+	printk(KERN_INFO "r8712u: Staging version\n");
 	/* In this probe function, O.S. will provide the usb interface pointer
 	 * to driver. We have to increase the reference count of the usb device
 	 * structure by using the usb_get_dev function.

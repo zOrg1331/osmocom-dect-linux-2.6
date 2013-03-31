@@ -15,6 +15,7 @@
 
 #include <linux/amba/pl022.h>
 #include <linux/amba/pl08x.h>
+#include <linux/irqchip/spear-shirq.h>
 #include <linux/of_irq.h>
 #include <linux/io.h>
 #include <asm/hardware/pl080.h>
@@ -46,7 +47,8 @@ struct pl022_ssp_controller pl022_plat_data = {
 struct pl08x_platform_data pl080_plat_data = {
 	.memcpy_channel = {
 		.bus_id = "memcpy",
-		.cctl = (PL080_BSIZE_16 << PL080_CONTROL_SB_SIZE_SHIFT | \
+		.cctl_memcpy =
+			(PL080_BSIZE_16 << PL080_CONTROL_SB_SIZE_SHIFT | \
 			PL080_BSIZE_16 << PL080_CONTROL_DB_SIZE_SHIFT | \
 			PL080_WIDTH_32BIT << PL080_CONTROL_SWIDTH_SHIFT | \
 			PL080_WIDTH_32BIT << PL080_CONTROL_DWIDTH_SHIFT | \
@@ -120,6 +122,9 @@ struct sys_timer spear3xx_timer = {
 
 static const struct of_device_id vic_of_match[] __initconst = {
 	{ .compatible = "arm,pl190-vic", .data = vic_of_init, },
+	{ .compatible = "st,spear300-shirq", .data = spear300_shirq_of_init, },
+	{ .compatible = "st,spear310-shirq", .data = spear310_shirq_of_init, },
+	{ .compatible = "st,spear320-shirq", .data = spear320_shirq_of_init, },
 	{ /* Sentinel */ }
 };
 

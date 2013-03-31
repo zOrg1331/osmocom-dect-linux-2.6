@@ -1204,7 +1204,7 @@ static void dect_llme_req_init(struct dect_llme_req *lreq,
 			       const struct sk_buff *skb)
 {
 	memcpy(&lreq->nlh, nlh, sizeof(lreq->nlh));
-	lreq->nlpid = NETLINK_CB(skb).pid;
+	lreq->nlportid = NETLINK_CB(skb).portid;
 }
 
 static int dect_fill_ari(struct sk_buff *skb, const struct dect_ari *ari, int attr)
@@ -1426,7 +1426,7 @@ static void dect_llme_scan_result_notify(const struct dect_cluster *cl,
 					 const struct dect_scan_result *res)
 {
 	struct sk_buff *skb;
-	u32 pid = res->lreq.nlpid;
+	u32 portid = res->lreq.nlportid;
 	int err = 0;
 
 	skb = dect_llme_fill(cl, &res->lreq,
@@ -1436,10 +1436,10 @@ static void dect_llme_scan_result_notify(const struct dect_cluster *cl,
 		err = PTR_ERR(skb);
 		goto err;
 	}
-	nlmsg_notify(dect_nlsk, skb, pid, DECTNLGRP_LLME, 1, GFP_ATOMIC);
+	nlmsg_notify(dect_nlsk, skb, portid, DECTNLGRP_LLME, 1, GFP_ATOMIC);
 err:
 	if (err < 0)
-		netlink_set_err(dect_nlsk, pid, DECTNLGRP_LLME, err);
+		netlink_set_err(dect_nlsk, portid, DECTNLGRP_LLME, err);
 }
 
 static void dect_llme_mac_info_ind(const struct dect_cluster *cl,
@@ -1477,7 +1477,7 @@ static int dect_llme_mac_info_req(struct dect_cluster *cl,
 	if (IS_ERR(skb))
 		return PTR_ERR(skb);
 
-	return nlmsg_unicast(dect_nlsk, skb, lreq.nlpid);
+	return nlmsg_unicast(dect_nlsk, skb, lreq.nlportid);
 }
 
 static int dect_llme_mac_info_res(struct dect_cluster *cl,
@@ -1813,7 +1813,7 @@ nla_put_failure:
 
 static int dect_fill_cluster(struct sk_buff *skb,
 			     const struct dect_cluster *cl,
-			     u16 type, u32 pid, u32 seq, u16 flags)
+			     u16 type, u32 portid, u32 seq, u16 flags)
 {
 	struct nlmsghdr *nlh;
 	struct dectmsg *dm;
@@ -1821,7 +1821,7 @@ static int dect_fill_cluster(struct sk_buff *skb,
 	struct dect_cell_handle *ch;
 	struct dect_mbc *mbc;
 
-	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*dm), flags);
+	nlh = nlmsg_put(skb, portid, seq, type, sizeof(*dm), flags);
 	if (nlh == NULL)
 		return -EMSGSIZE;
 
@@ -1873,7 +1873,7 @@ static int dect_dump_cluster(struct sk_buff *skb,
 		if (idx < s_idx)
 			goto cont;
 		if (dect_fill_cluster(skb, cl, DECT_NEW_CLUSTER,
-				      NETLINK_CB(cb->skb).pid,
+				      NETLINK_CB(cb->skb).portid,
 				      cb->nlh->nlmsg_seq, NLM_F_MULTI) <= 0)
 			break;
 cont:
@@ -1885,7 +1885,7 @@ cont:
 }
 
 static void dect_notify_cluster(u16 event, const struct dect_cluster *cl,
-				const struct nlmsghdr *nlh, u32 pid)
+				const struct nlmsghdr *nlh, u32 portid)
 {
 	struct sk_buff *skb;
 	bool report = nlh ? nlmsg_report(nlh) : 0;
@@ -1896,16 +1896,17 @@ static void dect_notify_cluster(u16 event, const struct dect_cluster *cl,
 	if (skb == NULL)
 		goto err;
 
-	err = dect_fill_cluster(skb, cl, event, pid, seq, NLMSG_DONE);
+	err = dect_fill_cluster(skb, cl, event, portid, seq, NLMSG_DONE);
 	if (err < 0) {
 		WARN_ON(err == -EMSGSIZE);
 		kfree_skb(skb);
 		goto err;
 	}
-	nlmsg_notify(dect_nlsk, skb, pid, DECTNLGRP_CLUSTER, report, GFP_KERNEL);
+	nlmsg_notify(dect_nlsk, skb, portid, DECTNLGRP_CLUSTER, report,
+		     GFP_KERNEL);
 err:
 	if (err < 0)
-		netlink_set_err(dect_nlsk, pid, DECTNLGRP_CLUSTER, err);
+		netlink_set_err(dect_nlsk, portid, DECTNLGRP_CLUSTER, err);
 }
 
 static const struct nla_policy dect_cluster_policy[DECTA_CLUSTER_MAX + 1] = {
@@ -1971,7 +1972,7 @@ static int dect_new_cluster(const struct sk_buff *skb,
 		goto err1;
 
 	list_add_tail(&cl->list, &dect_cluster_list);
-	dect_notify_cluster(DECT_NEW_CLUSTER, cl, nlh, NETLINK_CB(skb).pid);
+	dect_notify_cluster(DECT_NEW_CLUSTER, cl, nlh, NETLINK_CB(skb).portid);
 	return 0;
 
 err1:
@@ -1999,7 +2000,7 @@ static int dect_del_cluster(const struct sk_buff *skb,
 	dect_cluster_shutdown(cl);
 	list_del(&cl->list);
 
-	dect_notify_cluster(DECT_DEL_CLUSTER, cl, nlh, NETLINK_CB(skb).pid);
+	dect_notify_cluster(DECT_DEL_CLUSTER, cl, nlh, NETLINK_CB(skb).portid);
 	kfree(cl);
 	return 0;
 }
@@ -2008,7 +2009,7 @@ static int dect_get_cluster(const struct sk_buff *in_skb,
 			    const struct nlmsghdr *nlh,
 			    const struct nlattr *tb[DECTA_CLUSTER_MAX + 1])
 {
-	u32 pid = NETLINK_CB(in_skb).pid;
+	u32 portid = NETLINK_CB(in_skb).portid;
 	const struct dect_cluster *cl;
 	struct dectmsg *dm;
 	struct sk_buff *skb;
@@ -2027,11 +2028,11 @@ static int dect_get_cluster(const struct sk_buff *in_skb,
 	skb = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
 	if (skb == NULL)
 		return -ENOMEM;
-	err = dect_fill_cluster(skb, cl, DECT_NEW_CLUSTER, pid,
+	err = dect_fill_cluster(skb, cl, DECT_NEW_CLUSTER, portid,
 			        nlh->nlmsg_seq, NLMSG_DONE);
 	if (err < 0)
 		goto err1;
-	return nlmsg_unicast(dect_nlsk, skb, pid);
+	return nlmsg_unicast(dect_nlsk, skb, portid);
 
 err1:
 	kfree_skb(skb);

@@ -128,12 +128,16 @@ static void dect_netlink_rcv(struct sk_buff *skb)
 	dect_unlock();
 }
 
+static struct netlink_kernel_cfg dect_netlink_cfg = {
+	.groups = DECTNLGRP_MAX,
+	.input	= dect_netlink_rcv,
+};
+
 int __init dect_netlink_module_init(void)
 {
 	struct sock *sk;
 
-	sk = netlink_kernel_create(&init_net, NETLINK_DECT, DECTNLGRP_MAX,
-				   dect_netlink_rcv, NULL, THIS_MODULE);
+	sk = netlink_kernel_create(&init_net, NETLINK_DECT, &dect_netlink_cfg);
 	if (sk == NULL)
 		return -ENOMEM;
 	dect_nlsk = sk;

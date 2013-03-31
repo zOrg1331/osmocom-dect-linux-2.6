@@ -1,8 +1,7 @@
 /*
- *  drivers/s390/cio/cio.c
  *   S/390 common I/O routines -- low level i/o calls
  *
- *    Copyright IBM Corp. 1999,2008
+ *    Copyright IBM Corp. 1999, 2008
  *    Author(s): Ingo Adlung (adlung@de.ibm.com)
  *		 Cornelia Huck (cornelia.huck@de.ibm.com)
  *		 Arnd Bergmann (arndb@de.ibm.com)
@@ -612,7 +611,7 @@ void __irq_entry do_IRQ(struct pt_regs *regs)
 	tpi_info = (struct tpi_info *)&S390_lowcore.subchannel_id;
 	irb = (struct irb *)&S390_lowcore.irb;
 	do {
-		kstat_cpu(smp_processor_id()).irqs[IO_INTERRUPT]++;
+		kstat_incr_irqs_this_cpu(IO_INTERRUPT, NULL);
 		if (tpi_info->adapter_IO) {
 			do_adapter_IO(tpi_info->isc);
 			continue;
@@ -620,7 +619,7 @@ void __irq_entry do_IRQ(struct pt_regs *regs)
 		sch = (struct subchannel *)(unsigned long)tpi_info->intparm;
 		if (!sch) {
 			/* Clear pending interrupt condition. */
-			kstat_cpu(smp_processor_id()).irqs[IOINT_CIO]++;
+			inc_irq_stat(IRQIO_CIO);
 			tsch(tpi_info->schid, irb);
 			continue;
 		}
@@ -634,9 +633,9 @@ void __irq_entry do_IRQ(struct pt_regs *regs)
 			if (sch->driver && sch->driver->irq)
 				sch->driver->irq(sch);
 			else
-				kstat_cpu(smp_processor_id()).irqs[IOINT_CIO]++;
+				inc_irq_stat(IRQIO_CIO);
 		} else
-			kstat_cpu(smp_processor_id()).irqs[IOINT_CIO]++;
+			inc_irq_stat(IRQIO_CIO);
 		spin_unlock(sch->lock);
 		/*
 		 * Are more interrupts pending?
@@ -679,7 +678,7 @@ static void cio_tsch(struct subchannel *sch)
 	if (sch->driver && sch->driver->irq)
 		sch->driver->irq(sch);
 	else
-		kstat_cpu(smp_processor_id()).irqs[IOINT_CIO]++;
+		inc_irq_stat(IRQIO_CIO);
 	if (!irq_context) {
 		irq_exit();
 		_local_bh_enable();
@@ -1030,7 +1029,7 @@ extern void do_reipl_asm(__u32 schid);
 /* Make sure all subchannels are quiet before we re-ipl an lpar. */
 void reipl_ccw_dev(struct ccw_dev_id *devid)
 {
-	struct subchannel_id schid;
+	struct subchannel_id uninitialized_var(schid);
 
 	s390_reset_system(NULL, NULL);
 	if (reipl_find_schid(devid, &schid) != 0)

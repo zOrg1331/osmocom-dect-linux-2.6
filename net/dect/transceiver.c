@@ -730,7 +730,7 @@ nla_put_failure:
 
 static int dect_fill_transceiver(struct sk_buff *skb,
 				 const struct dect_transceiver *trx,
-				 u16 type, u32 pid, u32 seq, u16 flags)
+				 u16 type, u32 portid, u32 seq, u16 flags)
 {
 	const struct dect_transceiver_stats *stats = &trx->stats;
 	struct nlattr *nest, *chan;
@@ -738,7 +738,7 @@ static int dect_fill_transceiver(struct sk_buff *skb,
 	struct dectmsg *dm;
 	u8 slot;
 
-	nlh = nlmsg_put(skb, pid, seq, type, sizeof(*dm), flags);
+	nlh = nlmsg_put(skb, portid, seq, type, sizeof(*dm), flags);
 	if (nlh == NULL)
 		return -EMSGSIZE;
 
@@ -831,7 +831,7 @@ static int dect_get_transceiver(const struct sk_buff *in_skb,
 				const struct nlmsghdr *nlh,
 				const struct nlattr *tb[DECTA_TRANSCEIVER_MAX + 1])
 {
-	u32 pid = NETLINK_CB(in_skb).pid;
+	u32 portid = NETLINK_CB(in_skb).portid;
 	const struct dect_transceiver *trx;
 	struct sk_buff *skb;
 	int err;
@@ -846,11 +846,11 @@ static int dect_get_transceiver(const struct sk_buff *in_skb,
 	skb = alloc_skb(NLMSG_GOODSIZE, GFP_KERNEL);
 	if (skb == NULL)
 		return -ENOMEM;
-	err = dect_fill_transceiver(skb, trx, DECT_NEW_TRANSCEIVER, pid,
+	err = dect_fill_transceiver(skb, trx, DECT_NEW_TRANSCEIVER, portid,
 				    nlh->nlmsg_seq, NLMSG_DONE);
 	if (err < 0)
 		goto err1;
-	return nlmsg_unicast(dect_nlsk, skb, pid);
+	return nlmsg_unicast(dect_nlsk, skb, portid);
 
 err1:
 	kfree_skb(skb);
@@ -869,7 +869,7 @@ static int dect_dump_transceiver(struct sk_buff *skb,
 		if (idx < s_idx)
 			goto cont;
 		if (dect_fill_transceiver(skb, trx, DECT_NEW_TRANSCEIVER,
-					  NETLINK_CB(cb->skb).pid,
+					  NETLINK_CB(cb->skb).portid,
 					  cb->nlh->nlmsg_seq, NLM_F_MULTI) <= 0)
 			break;
 cont:
@@ -881,7 +881,7 @@ cont:
 }
 
 static void dect_notify_transceiver(u16 event, const struct dect_transceiver *trx,
-				    const struct nlmsghdr *nlh, u32 pid)
+				    const struct nlmsghdr *nlh, u32 portid)
 {
 	struct sk_buff *skb;
 	bool report = nlh ? nlmsg_report(nlh) : 0;
@@ -892,16 +892,17 @@ static void dect_notify_transceiver(u16 event, const struct dect_transceiver *tr
 	if (skb == NULL)
 		goto err;
 
-	err = dect_fill_transceiver(skb, trx, event, pid, seq, NLMSG_DONE);
+	err = dect_fill_transceiver(skb, trx, event, portid, seq, NLMSG_DONE);
 	if (err < 0) {
 		WARN_ON(err == -EMSGSIZE);
 		kfree_skb(skb);
 		goto err;
 	}
-	nlmsg_notify(dect_nlsk, skb, pid, DECTNLGRP_TRANSCEIVER, report, GFP_KERNEL);
+	nlmsg_notify(dect_nlsk, skb, portid, DECTNLGRP_TRANSCEIVER, report,
+		     GFP_KERNEL);
 err:
 	if (err < 0)
-		netlink_set_err(dect_nlsk, pid, DECTNLGRP_TRANSCEIVER, err);
+		netlink_set_err(dect_nlsk, portid, DECTNLGRP_TRANSCEIVER, err);
 }
 
 static int dect_transceiver_notify(struct dect_transceiver *trx,

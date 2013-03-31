@@ -201,14 +201,24 @@ ENTRY(startup_64)
 	 */
 #ifdef CONFIG_EFI_STUB
 	/*
-	 * The entry point for the PE/COFF executable is 0x210, so only
-	 * legacy boot loaders will execute this jmp.
+	 * The entry point for the PE/COFF executable is efi_pe_entry, so
+	 * only legacy boot loaders will execute this jmp.
 	 */
 	jmp	preferred_addr
 
-	.org 0x210
+ENTRY(efi_pe_entry)
 	mov	%rcx, %rdi
 	mov	%rdx, %rsi
+	pushq	%rdi
+	pushq	%rsi
+	call	make_boot_params
+	cmpq	$0,%rax
+	je	1f
+	mov	%rax, %rdx
+	popq	%rsi
+	popq	%rdi
+
+ENTRY(efi_stub_entry)
 	call	efi_main
 	movq	%rax,%rsi
 	cmpq	$0,%rax

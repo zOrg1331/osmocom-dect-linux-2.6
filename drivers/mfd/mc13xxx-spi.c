@@ -28,10 +28,13 @@
 static const struct spi_device_id mc13xxx_device_id[] = {
 	{
 		.name = "mc13783",
-		.driver_data = MC13XXX_ID_MC13783,
+		.driver_data = (kernel_ulong_t)&mc13xxx_variant_mc13783,
 	}, {
 		.name = "mc13892",
-		.driver_data = MC13XXX_ID_MC13892,
+		.driver_data = (kernel_ulong_t)&mc13xxx_variant_mc13892,
+	}, {
+		.name = "mc34708",
+		.driver_data = (kernel_ulong_t)&mc13xxx_variant_mc34708,
 	}, {
 		/* sentinel */
 	}
@@ -39,8 +42,9 @@ static const struct spi_device_id mc13xxx_device_id[] = {
 MODULE_DEVICE_TABLE(spi, mc13xxx_device_id);
 
 static const struct of_device_id mc13xxx_dt_ids[] = {
-	{ .compatible = "fsl,mc13783", .data = (void *) MC13XXX_ID_MC13783, },
-	{ .compatible = "fsl,mc13892", .data = (void *) MC13XXX_ID_MC13892, },
+	{ .compatible = "fsl,mc13783", .data = &mc13xxx_variant_mc13783, },
+	{ .compatible = "fsl,mc13892", .data = &mc13xxx_variant_mc13892, },
+	{ .compatible = "fsl,mc34708", .data = &mc13xxx_variant_mc34708, },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, mc13xxx_dt_ids);
@@ -119,17 +123,11 @@ static struct regmap_bus regmap_mc13xxx_bus = {
 
 static int mc13xxx_spi_probe(struct spi_device *spi)
 {
-	const struct of_device_id *of_id;
-	struct spi_driver *sdrv = to_spi_driver(spi->dev.driver);
 	struct mc13xxx *mc13xxx;
 	struct mc13xxx_platform_data *pdata = dev_get_platdata(&spi->dev);
 	int ret;
 
-	of_id = of_match_device(mc13xxx_dt_ids, &spi->dev);
-	if (of_id)
-		sdrv->id_table = &mc13xxx_device_id[(enum mc13xxx_id) of_id->data];
-
-	mc13xxx = kzalloc(sizeof(*mc13xxx), GFP_KERNEL);
+	mc13xxx = devm_kzalloc(&spi->dev, sizeof(*mc13xxx), GFP_KERNEL);
 	if (!mc13xxx)
 		return -ENOMEM;
 
@@ -139,34 +137,32 @@ static int mc13xxx_spi_probe(struct spi_device *spi)
 	mc13xxx->dev = &spi->dev;
 	mutex_init(&mc13xxx->lock);
 
-	mc13xxx->regmap = regmap_init(&spi->dev, &regmap_mc13xxx_bus, &spi->dev,
-					&mc13xxx_regmap_spi_config);
-
+	mc13xxx->regmap = devm_regmap_init(&spi->dev, &regmap_mc13xxx_bus,
+					   &spi->dev,
+					   &mc13xxx_regmap_spi_config);
 	if (IS_ERR(mc13xxx->regmap)) {
 		ret = PTR_ERR(mc13xxx->regmap);
 		dev_err(mc13xxx->dev, "Failed to initialize register map: %d\n",
 				ret);
 		dev_set_drvdata(&spi->dev, NULL);
-		kfree(mc13xxx);
 		return ret;
 	}
 
-	ret = mc13xxx_common_init(mc13xxx, pdata, spi->irq);
+	if (spi->dev.of_node) {
+		const struct of_device_id *of_id =
+			of_match_device(mc13xxx_dt_ids, &spi->dev);
 
-	if (ret) {
-		dev_set_drvdata(&spi->dev, NULL);
+		mc13xxx->variant = of_id->data;
 	} else {
-		const struct spi_device_id *devid =
-			spi_get_device_id(spi);
-		if (!devid || devid->driver_data != mc13xxx->ictype)
-			dev_warn(mc13xxx->dev,
-				"device id doesn't match auto detection!\n");
+		const struct spi_device_id *id_entry = spi_get_device_id(spi);
+
+		mc13xxx->variant = (void *)id_entry->driver_data;
 	}
 
-	return ret;
+	return mc13xxx_common_init(mc13xxx, pdata, spi->irq);
 }
 
-static int __devexit mc13xxx_spi_remove(struct spi_device *spi)
+static int mc13xxx_spi_remove(struct spi_device *spi)
 {
 	struct mc13xxx *mc13xxx = dev_get_drvdata(&spi->dev);
 
@@ -183,7 +179,7 @@ static struct spi_driver mc13xxx_spi_driver = {
 		.of_match_table = mc13xxx_dt_ids,
 	},
 	.probe = mc13xxx_spi_probe,
-	.remove = __devexit_p(mc13xxx_spi_remove),
+	.remove = mc13xxx_spi_remove,
 };
 
 static int __init mc13xxx_init(void)

@@ -64,8 +64,6 @@
 // send and receive non-IEEE 802.1X frames
 #define WLAN_STA_AUTHORIZED      BIT5
 
-//#define MAX_RATE            12
-
 #define MAX_WPA_IE_LEN      64
 
 
@@ -92,7 +90,6 @@ typedef struct tagSRSNCapObject {
 } SRSNCapObject, *PSRSNCapObject;
 
 // BSS info(AP)
-#pragma pack(1)
 typedef struct tagKnownBSS {
     // BSS info
     BOOL            bActive;

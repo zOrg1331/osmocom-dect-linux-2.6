@@ -1,5 +1,4 @@
 /*
- *  drivers/s390/char/tape_34xx.c
  *    tape device discipline for 3480/3490 tapes.
  *
  *    Copyright IBM Corp. 2001, 2009
@@ -1194,7 +1193,7 @@ static struct ccw_driver tape_34xx_driver = {
 	.set_online = tape_34xx_online,
 	.set_offline = tape_generic_offline,
 	.freeze = tape_generic_pm_suspend,
-	.int_class = IOINT_TAP,
+	.int_class = IRQIO_TAP,
 };
 
 static int

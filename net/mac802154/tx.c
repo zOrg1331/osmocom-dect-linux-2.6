@@ -85,8 +85,11 @@ netdev_tx_t mac802154_tx(struct mac802154_priv *priv, struct sk_buff *skb,
 
 	if (!(priv->phy->channels_supported[page] & (1 << chan))) {
 		WARN_ON(1);
+		kfree_skb(skb);
 		return NETDEV_TX_OK;
 	}
+
+	mac802154_monitors_rx(mac802154_to_priv(&priv->hw), skb);
 
 	if (!(priv->hw.flags & IEEE802154_HW_OMIT_CKSUM)) {
 		u16 crc = crc_ccitt(0, skb->data, skb->len);
@@ -96,13 +99,15 @@ netdev_tx_t mac802154_tx(struct mac802154_priv *priv, struct sk_buff *skb,
 	}
 
 	if (skb_cow_head(skb, priv->hw.extra_tx_headroom)) {
-		dev_kfree_skb(skb);
+		kfree_skb(skb);
 		return NETDEV_TX_OK;
 	}
 
 	work = kzalloc(sizeof(struct xmit_work), GFP_ATOMIC);
-	if (!work)
+	if (!work) {
+		kfree_skb(skb);
 		return NETDEV_TX_BUSY;
+	}
 
 	INIT_WORK(&work->work, mac802154_xmit_worker);
 	work->skb = skb;

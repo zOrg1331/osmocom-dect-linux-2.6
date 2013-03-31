@@ -21,7 +21,7 @@
 
 #include "atl1c.h"
 
-#define ATL1C_DRV_VERSION "1.0.1.0-NAPI"
+#define ATL1C_DRV_VERSION "1.0.1.1-NAPI"
 char atl1c_driver_name[] = "atl1c";
 char atl1c_driver_version[] = ATL1C_DRV_VERSION;
 
@@ -149,7 +149,7 @@ static void atl1c_reset_pcie(struct atl1c_hw *hw, u32 flag)
 	data &= ~(PCI_ERR_UNC_DLP | PCI_ERR_UNC_FCP);
 	pci_write_config_dword(pdev, pos + PCI_ERR_UNCOR_SEVER, data);
 	/* clear error status */
-	pci_write_config_word(pdev, pci_pcie_cap(pdev) + PCI_EXP_DEVSTA,
+	pcie_capability_write_word(pdev, PCI_EXP_DEVSTA,
 			PCI_EXP_DEVSTA_NFED |
 			PCI_EXP_DEVSTA_FED |
 			PCI_EXP_DEVSTA_CED |
@@ -166,7 +166,7 @@ static void atl1c_reset_pcie(struct atl1c_hw *hw, u32 flag)
 	msleep(5);
 }
 
-/*
+/**
  * atl1c_irq_enable - Enable default interrupt generation settings
  * @adapter: board private structure
  */
@@ -179,7 +179,7 @@ static inline void atl1c_irq_enable(struct atl1c_adapter *adapter)
 	}
 }
 
-/*
+/**
  * atl1c_irq_disable - Mask off interrupt generation on the NIC
  * @adapter: board private structure
  */
@@ -192,7 +192,7 @@ static inline void atl1c_irq_disable(struct atl1c_adapter *adapter)
 	synchronize_irq(adapter->pdev->irq);
 }
 
-/*
+/**
  * atl1c_irq_reset - reset interrupt confiure on the NIC
  * @adapter: board private structure
  */
@@ -220,7 +220,7 @@ static u32 atl1c_wait_until_idle(struct atl1c_hw *hw, u32 modu_ctrl)
 	return data;
 }
 
-/*
+/**
  * atl1c_phy_config - Timer Call-back
  * @data: pointer to netdev cast into an unsigned long
  */
@@ -360,7 +360,7 @@ static void atl1c_del_timer(struct atl1c_adapter *adapter)
 }
 
 
-/*
+/**
  * atl1c_tx_timeout - Respond to a Tx Hang
  * @netdev: network interface device structure
  */
@@ -373,7 +373,7 @@ static void atl1c_tx_timeout(struct net_device *netdev)
 	schedule_work(&adapter->common_task);
 }
 
-/*
+/**
  * atl1c_set_multi - Multicast and Promiscuous mode set
  * @netdev: network interface device structure
  *
@@ -452,7 +452,7 @@ static void atl1c_restore_vlan(struct atl1c_adapter *adapter)
 	atl1c_vlan_mode(adapter->netdev, adapter->netdev->features);
 }
 
-/*
+/**
  * atl1c_set_mac - Change the Ethernet Address of the NIC
  * @netdev: network interface device structure
  * @p: pointer to an address structure
@@ -517,7 +517,7 @@ static int atl1c_set_features(struct net_device *netdev,
 	return 0;
 }
 
-/*
+/**
  * atl1c_change_mtu - Change the Maximum Transfer Unit
  * @netdev: network interface device structure
  * @new_mtu: new value for maximum frame size
@@ -576,12 +576,6 @@ static void atl1c_mdio_write(struct net_device *netdev, int phy_id,
 	atl1c_write_phy_reg(&adapter->hw, reg_num, val);
 }
 
-/*
- * atl1c_mii_ioctl -
- * @netdev:
- * @ifreq:
- * @cmd:
- */
 static int atl1c_mii_ioctl(struct net_device *netdev,
 			   struct ifreq *ifr, int cmd)
 {
@@ -632,12 +626,6 @@ out:
 	return retval;
 }
 
-/*
- * atl1c_ioctl -
- * @netdev:
- * @ifreq:
- * @cmd:
- */
 static int atl1c_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 {
 	switch (cmd) {
@@ -650,12 +638,12 @@ static int atl1c_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 	}
 }
 
-/*
+/**
  * atl1c_alloc_queues - Allocate memory for all rings
  * @adapter: board private structure to initialize
  *
  */
-static int __devinit atl1c_alloc_queues(struct atl1c_adapter *adapter)
+static int atl1c_alloc_queues(struct atl1c_adapter *adapter)
 {
 	return 0;
 }
@@ -714,7 +702,7 @@ struct atl1c_platform_patch {
 	u32 patch_flag;
 #define ATL1C_LINK_PATCH	0x1
 };
-static const struct atl1c_platform_patch plats[] __devinitdata = {
+static const struct atl1c_platform_patch plats[] = {
 {0x2060, 0xC1, 0x1019, 0x8152, 0x1},
 {0x2060, 0xC1, 0x1019, 0x2060, 0x1},
 {0x2060, 0xC1, 0x1019, 0xE000, 0x1},
@@ -737,8 +725,10 @@ static const struct atl1c_platform_patch plats[] __devinitdata = {
 {0},
 };
 
-static void __devinit atl1c_patch_assign(struct atl1c_hw *hw)
+static void atl1c_patch_assign(struct atl1c_hw *hw)
 {
+	struct pci_dev	*pdev = hw->adapter->pdev;
+	u32 misc_ctrl;
 	int i = 0;
 
 	hw->msi_lnkpatch = false;
@@ -753,8 +743,20 @@ static void __devinit atl1c_patch_assign(struct atl1c_hw *hw)
 		}
 		i++;
 	}
+
+	if (hw->device_id == PCI_DEVICE_ID_ATHEROS_L2C_B2 &&
+	    hw->revision_id == L2CB_V21) {
+		/* config acess mode */
+		pci_write_config_dword(pdev, REG_PCIE_IND_ACC_ADDR,
+				       REG_PCIE_DEV_MISC_CTRL);
+		pci_read_config_dword(pdev, REG_PCIE_IND_ACC_DATA, &misc_ctrl);
+		misc_ctrl &= ~0x100;
+		pci_write_config_dword(pdev, REG_PCIE_IND_ACC_ADDR,
+				       REG_PCIE_DEV_MISC_CTRL);
+		pci_write_config_dword(pdev, REG_PCIE_IND_ACC_DATA, misc_ctrl);
+	}
 }
-/*
+/**
  * atl1c_sw_init - Initialize general software structures (struct atl1c_adapter)
  * @adapter: board private structure to initialize
  *
@@ -762,7 +764,7 @@ static void __devinit atl1c_patch_assign(struct atl1c_hw *hw)
  * Fields are initialized based on PCI device information and
  * OS network device settings (MTU size).
  */
-static int __devinit atl1c_sw_init(struct atl1c_adapter *adapter)
+static int atl1c_sw_init(struct atl1c_adapter *adapter)
 {
 	struct atl1c_hw *hw   = &adapter->hw;
 	struct pci_dev	*pdev = adapter->pdev;
@@ -780,7 +782,7 @@ static int __devinit atl1c_sw_init(struct atl1c_adapter *adapter)
 	hw->device_id = pdev->device;
 	hw->subsystem_vendor_id = pdev->subsystem_vendor;
 	hw->subsystem_id = pdev->subsystem_device;
-	AT_READ_REG(hw, PCI_CLASS_REVISION, &revision);
+	pci_read_config_dword(pdev, PCI_CLASS_REVISION, &revision);
 	hw->revision_id = revision & 0xFF;
 	/* before link up, we assume hibernate is true */
 	hw->hibernate = true;
@@ -852,7 +854,7 @@ static inline void atl1c_clean_buffer(struct pci_dev *pdev,
 	buffer_info->skb = NULL;
 	ATL1C_SET_BUFFER_STATE(buffer_info, ATL1C_BUFFER_FREE);
 }
-/*
+/**
  * atl1c_clean_tx_ring - Free Tx-skb
  * @adapter: board private structure
  */
@@ -877,7 +879,7 @@ static void atl1c_clean_tx_ring(struct atl1c_adapter *adapter,
 	tpd_ring->next_to_use = 0;
 }
 
-/*
+/**
  * atl1c_clean_rx_ring - Free rx-reservation skbs
  * @adapter: board private structure
  */
@@ -930,7 +932,7 @@ static void atl1c_init_ring_ptrs(struct atl1c_adapter *adapter)
 	}
 }
 
-/*
+/**
  * atl1c_free_ring_resources - Free Tx / RX descriptor Resources
  * @adapter: board private structure
  *
@@ -953,7 +955,7 @@ static void atl1c_free_ring_resources(struct atl1c_adapter *adapter)
 	}
 }
 
-/*
+/**
  * atl1c_setup_mem_resources - allocate Tx / RX descriptor resources
  * @adapter: board private structure
  *
@@ -988,12 +990,12 @@ static int atl1c_setup_ring_resources(struct atl1c_adapter *adapter)
 	}
 	for (i = 0; i < AT_MAX_TRANSMIT_QUEUE; i++) {
 		tpd_ring[i].buffer_info =
-			(struct atl1c_buffer *) (tpd_ring->buffer_info + count);
+			(tpd_ring->buffer_info + count);
 		count += tpd_ring[i].count;
 	}
 
 	rfd_ring->buffer_info =
-		(struct atl1c_buffer *) (tpd_ring->buffer_info + count);
+		(tpd_ring->buffer_info + count);
 	count += rfd_ring->count;
 	rx_desc_count += rfd_ring->count;
 
@@ -1226,7 +1228,7 @@ static void atl1c_start_mac(struct atl1c_adapter *adapter)
  */
 static int atl1c_reset_mac(struct atl1c_hw *hw)
 {
-	struct atl1c_adapter *adapter = (struct atl1c_adapter *)hw->adapter;
+	struct atl1c_adapter *adapter = hw->adapter;
 	struct pci_dev *pdev = adapter->pdev;
 	u32 ctrl_data = 0;
 
@@ -1362,7 +1364,7 @@ static void atl1c_set_aspm(struct atl1c_hw *hw, u16 link_speed)
 	return;
 }
 
-/*
+/**
  * atl1c_configure - Configure Transmit&Receive Unit after Reset
  * @adapter: board private structure
  *
@@ -1476,7 +1478,7 @@ static void atl1c_update_hw_stats(struct atl1c_adapter *adapter)
 	}
 }
 
-/*
+/**
  * atl1c_get_stats - Get System Network Statistics
  * @netdev: network interface device structure
  *
@@ -1530,8 +1532,7 @@ static inline void atl1c_clear_phy_int(struct atl1c_adapter *adapter)
 static bool atl1c_clean_tx_irq(struct atl1c_adapter *adapter,
 				enum atl1c_trans_queue type)
 {
-	struct atl1c_tpd_ring *tpd_ring = (struct atl1c_tpd_ring *)
-				&adapter->tpd_ring[type];
+	struct atl1c_tpd_ring *tpd_ring = &adapter->tpd_ring[type];
 	struct atl1c_buffer *buffer_info;
 	struct pci_dev *pdev = adapter->pdev;
 	u16 next_to_clean = atomic_read(&tpd_ring->next_to_clean);
@@ -1558,11 +1559,10 @@ static bool atl1c_clean_tx_irq(struct atl1c_adapter *adapter,
 	return true;
 }
 
-/*
+/**
  * atl1c_intr - Interrupt Handler
  * @irq: interrupt number
  * @data: pointer to a network interface device structure
- * @pt_regs: CPU registers structure
  */
 static irqreturn_t atl1c_intr(int irq, void *data)
 {
@@ -1652,6 +1652,7 @@ static int atl1c_alloc_rx_buffer(struct atl1c_adapter *adapter)
 	u16 num_alloc = 0;
 	u16 rfd_next_to_use, next_next;
 	struct atl1c_rx_free_desc *rfd_desc;
+	dma_addr_t mapping;
 
 	next_next = rfd_next_to_use = rfd_ring->next_to_use;
 	if (++next_next == rfd_ring->count)
@@ -1678,9 +1679,18 @@ static int atl1c_alloc_rx_buffer(struct atl1c_adapter *adapter)
 		ATL1C_SET_BUFFER_STATE(buffer_info, ATL1C_BUFFER_BUSY);
 		buffer_info->skb = skb;
 		buffer_info->length = adapter->rx_buffer_len;
-		buffer_info->dma = pci_map_single(pdev, vir_addr,
+		mapping = pci_map_single(pdev, vir_addr,
 						buffer_info->length,
 						PCI_DMA_FROMDEVICE);
+		if (unlikely(pci_dma_mapping_error(pdev, mapping))) {
+			dev_kfree_skb(skb);
+			buffer_info->skb = NULL;
+			buffer_info->length = 0;
+			ATL1C_SET_BUFFER_STATE(buffer_info, ATL1C_BUFFER_FREE);
+			netif_warn(adapter, rx_err, adapter->netdev, "RX pci_map_single failed");
+			break;
+		}
+		buffer_info->dma = mapping;
 		ATL1C_SET_PCIMAP_TYPE(buffer_info, ATL1C_PCIMAP_SINGLE,
 			ATL1C_PCIMAP_FROMDEVICE);
 		rfd_desc->buffer_addr = cpu_to_le64(buffer_info->dma);
@@ -1813,9 +1823,8 @@ rrs_checked:
 		atl1c_alloc_rx_buffer(adapter);
 }
 
-/*
+/**
  * atl1c_clean - NAPI Rx polling callback
- * @adapter: board private structure
  */
 static int atl1c_clean(struct napi_struct *napi, int budget)
 {
@@ -2016,7 +2025,29 @@ check_sum:
 	return 0;
 }
 
-static void atl1c_tx_map(struct atl1c_adapter *adapter,
+static void atl1c_tx_rollback(struct atl1c_adapter *adpt,
+			      struct atl1c_tpd_desc *first_tpd,
+			      enum atl1c_trans_queue type)
+{
+	struct atl1c_tpd_ring *tpd_ring = &adpt->tpd_ring[type];
+	struct atl1c_buffer *buffer_info;
+	struct atl1c_tpd_desc *tpd;
+	u16 first_index, index;
+
+	first_index = first_tpd - (struct atl1c_tpd_desc *)tpd_ring->desc;
+	index = first_index;
+	while (index != tpd_ring->next_to_use) {
+		tpd = ATL1C_TPD_DESC(tpd_ring, index);
+		buffer_info = &tpd_ring->buffer_info[index];
+		atl1c_clean_buffer(adpt->pdev, buffer_info, 0);
+		memset(tpd, 0, sizeof(struct atl1c_tpd_desc));
+		if (++index == tpd_ring->count)
+			index = 0;
+	}
+	tpd_ring->next_to_use = first_index;
+}
+
+static int atl1c_tx_map(struct atl1c_adapter *adapter,
 		      struct sk_buff *skb, struct atl1c_tpd_desc *tpd,
 			enum atl1c_trans_queue type)
 {
@@ -2041,7 +2072,10 @@ static void atl1c_tx_map(struct atl1c_adapter *adapter,
 		buffer_info->length = map_len;
 		buffer_info->dma = pci_map_single(adapter->pdev,
 					skb->data, hdr_len, PCI_DMA_TODEVICE);
-		ATL1C_SET_BUFFER_STATE(buffer_info, ATL1C_BUFFER_BUSY);
+		if (unlikely(pci_dma_mapping_error(adapter->pdev,
+						   buffer_info->dma)))
+			goto err_dma;
+
 		ATL1C_SET_PCIMAP_TYPE(buffer_info, ATL1C_PCIMAP_SINGLE,
 			ATL1C_PCIMAP_TODEVICE);
 		mapped_len += map_len;
@@ -2063,6 +2097,10 @@ static void atl1c_tx_map(struct atl1c_adapter *adapter,
 		buffer_info->dma =
 			pci_map_single(adapter->pdev, skb->data + mapped_len,
 					buffer_info->length, PCI_DMA_TODEVICE);
+		if (unlikely(pci_dma_mapping_error(adapter->pdev,
+						   buffer_info->dma)))
+			goto err_dma;
+
 		ATL1C_SET_BUFFER_STATE(buffer_info, ATL1C_BUFFER_BUSY);
 		ATL1C_SET_PCIMAP_TYPE(buffer_info, ATL1C_PCIMAP_SINGLE,
 			ATL1C_PCIMAP_TODEVICE);
@@ -2084,6 +2122,9 @@ static void atl1c_tx_map(struct atl1c_adapter *adapter,
 						    frag, 0,
 						    buffer_info->length,
 						    DMA_TO_DEVICE);
+		if (dma_mapping_error(&adapter->pdev->dev, buffer_info->dma))
+			goto err_dma;
+
 		ATL1C_SET_BUFFER_STATE(buffer_info, ATL1C_BUFFER_BUSY);
 		ATL1C_SET_PCIMAP_TYPE(buffer_info, ATL1C_PCIMAP_PAGE,
 			ATL1C_PCIMAP_TODEVICE);
@@ -2096,6 +2137,13 @@ static void atl1c_tx_map(struct atl1c_adapter *adapter,
 	/* The last buffer info contain the skb address,
 	   so it will be free after unmap */
 	buffer_info->skb = skb;
+
+	return 0;
+
+err_dma:
+	buffer_info->dma = 0;
+	buffer_info->length = 0;
+	return -1;
 }
 
 static void atl1c_tx_queue(struct atl1c_adapter *adapter, struct sk_buff *skb,
@@ -2158,10 +2206,18 @@ static netdev_tx_t atl1c_xmit_frame(struct sk_buff *skb,
 	if (skb_network_offset(skb) != ETH_HLEN)
 		tpd->word1 |= 1 << TPD_ETH_TYPE_SHIFT; /* Ethernet frame */
 
-	atl1c_tx_map(adapter, skb, tpd, type);
-	atl1c_tx_queue(adapter, skb, tpd, type);
+	if (atl1c_tx_map(adapter, skb, tpd, type) < 0) {
+		netif_info(adapter, tx_done, adapter->netdev,
+			   "tx-skb droppted due to dma error\n");
+		/* roll back tpd/buffer */
+		atl1c_tx_rollback(adapter, tpd, type);
+		spin_unlock_irqrestore(&adapter->tx_lock, flags);
+		dev_kfree_skb(skb);
+	} else {
+		atl1c_tx_queue(adapter, skb, tpd, type);
+		spin_unlock_irqrestore(&adapter->tx_lock, flags);
+	}
 
-	spin_unlock_irqrestore(&adapter->tx_lock, flags);
 	return NETDEV_TX_OK;
 }
 
@@ -2270,7 +2326,7 @@ static void atl1c_down(struct atl1c_adapter *adapter)
 	atl1c_reset_dma_ring(adapter);
 }
 
-/*
+/**
  * atl1c_open - Called when a network interface is made active
  * @netdev: network interface device structure
  *
@@ -2309,7 +2365,7 @@ err_up:
 	return err;
 }
 
-/*
+/**
  * atl1c_close - Disables a network interface
  * @netdev: network interface device structure
  *
@@ -2432,7 +2488,7 @@ static int atl1c_init_netdev(struct net_device *netdev, struct pci_dev *pdev)
 	return 0;
 }
 
-/*
+/**
  * atl1c_probe - Device Initialization Routine
  * @pdev: PCI device information struct
  * @ent: entry in atl1c_pci_tbl
@@ -2443,8 +2499,7 @@ static int atl1c_init_netdev(struct net_device *netdev, struct pci_dev *pdev)
  * The OS initialization, configuring of the adapter private structure,
  * and a hardware reset occur.
  */
-static int __devinit atl1c_probe(struct pci_dev *pdev,
-				 const struct pci_device_id *ent)
+static int atl1c_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct net_device *netdev;
 	struct atl1c_adapter *adapter;
@@ -2579,7 +2634,7 @@ err_dma:
 	return err;
 }
 
-/*
+/**
  * atl1c_remove - Device Removal Routine
  * @pdev: PCI device information struct
  *
@@ -2588,7 +2643,7 @@ err_dma:
  * Hot-Plug event, or because the driver is going to be removed from
  * memory.
  */
-static void __devexit atl1c_remove(struct pci_dev *pdev)
+static void atl1c_remove(struct pci_dev *pdev)
 {
 	struct net_device *netdev = pci_get_drvdata(pdev);
 	struct atl1c_adapter *adapter = netdev_priv(netdev);
@@ -2605,7 +2660,7 @@ static void __devexit atl1c_remove(struct pci_dev *pdev)
 	free_netdev(netdev);
 }
 
-/*
+/**
  * atl1c_io_error_detected - called when PCI error is detected
  * @pdev: Pointer to PCI device
  * @state: The current pci connection state
@@ -2633,7 +2688,7 @@ static pci_ers_result_t atl1c_io_error_detected(struct pci_dev *pdev,
 	return PCI_ERS_RESULT_NEED_RESET;
 }
 
-/*
+/**
  * atl1c_io_slot_reset - called after the pci bus has been reset.
  * @pdev: Pointer to PCI device
  *
@@ -2661,7 +2716,7 @@ static pci_ers_result_t atl1c_io_slot_reset(struct pci_dev *pdev)
 	return PCI_ERS_RESULT_RECOVERED;
 }
 
-/*
+/**
  * atl1c_io_resume - called when traffic can start flowing again.
  * @pdev: Pointer to PCI device
  *
@@ -2686,7 +2741,7 @@ static void atl1c_io_resume(struct pci_dev *pdev)
 	netif_device_attach(netdev);
 }
 
-static struct pci_error_handlers atl1c_err_handler = {
+static const struct pci_error_handlers atl1c_err_handler = {
 	.error_detected = atl1c_io_error_detected,
 	.slot_reset = atl1c_io_slot_reset,
 	.resume = atl1c_io_resume,
@@ -2698,13 +2753,13 @@ static struct pci_driver atl1c_driver = {
 	.name     = atl1c_driver_name,
 	.id_table = atl1c_pci_tbl,
 	.probe    = atl1c_probe,
-	.remove   = __devexit_p(atl1c_remove),
+	.remove   = atl1c_remove,
 	.shutdown = atl1c_shutdown,
 	.err_handler = &atl1c_err_handler,
 	.driver.pm = &atl1c_pm_ops,
 };
 
-/*
+/**
  * atl1c_init_module - Driver Registration Routine
  *
  * atl1c_init_module is the first routine called when the driver is
@@ -2715,7 +2770,7 @@ static int __init atl1c_init_module(void)
 	return pci_register_driver(&atl1c_driver);
 }
 
-/*
+/**
  * atl1c_exit_module - Driver Exit Cleanup Routine
  *
  * atl1c_exit_module is called just before the driver is removed

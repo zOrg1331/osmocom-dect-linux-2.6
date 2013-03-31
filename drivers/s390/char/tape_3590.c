@@ -1,5 +1,4 @@
 /*
- *  drivers/s390/char/tape_3590.c
  *    tape device discipline for 3590 tapes.
  *
  *    Copyright IBM Corp. 2001, 2009
@@ -1657,7 +1656,7 @@ static struct ccw_driver tape_3590_driver = {
 	.set_offline = tape_generic_offline,
 	.set_online = tape_3590_online,
 	.freeze = tape_generic_pm_suspend,
-	.int_class = IOINT_TAP,
+	.int_class = IRQIO_TAP,
 };
 
 /*

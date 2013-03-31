@@ -412,7 +412,7 @@ dbx500_regulator_info[DB8500_NUM_REGULATORS] = {
 	},
 };
 
-static __devinit int db8500_regulator_register(struct platform_device *pdev,
+static int db8500_regulator_register(struct platform_device *pdev,
 					struct regulator_init_data *init_data,
 					int id,
 					struct device_node *np)
@@ -474,7 +474,7 @@ static struct of_regulator_match db8500_regulator_matches[] = {
 	{ .name	= "db8500_esram34_ret",   .driver_data = (void *) DB8500_REGULATOR_SWITCH_ESRAM34RET, },
 };
 
-static __devinit int
+static int
 db8500_regulator_of_probe(struct platform_device *pdev,
 			struct device_node *np)
 {
@@ -491,7 +491,7 @@ db8500_regulator_of_probe(struct platform_device *pdev,
 	return 0;
 }
 
-static int __devinit db8500_regulator_probe(struct platform_device *pdev)
+static int db8500_regulator_probe(struct platform_device *pdev)
 {
 	struct regulator_init_data *db8500_init_data =
 					dev_get_platdata(&pdev->dev);
@@ -547,16 +547,10 @@ static int __exit db8500_regulator_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id db8500_prcmu_regulator_match[] = {
-        { .compatible = "stericsson,db8500-prcmu-regulator", },
-        {}
-};
-
 static struct platform_driver db8500_regulator_driver = {
 	.driver = {
 		.name = "db8500-prcmu-regulators",
 		.owner = THIS_MODULE,
-		.of_match_table = db8500_prcmu_regulator_match,
 	},
 	.probe = db8500_regulator_probe,
 	.remove = __exit_p(db8500_regulator_remove),

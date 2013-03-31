@@ -13,12 +13,8 @@
 #include <linux/errno.h>
 #include <asm/cacheflush.h>
 #include <asm/cp15.h>
-#include <mach/common.h>
 
-int platform_cpu_kill(unsigned int cpu)
-{
-	return 1;
-}
+#include "common.h"
 
 static inline void cpu_enter_lowpower(void)
 {
@@ -42,43 +38,19 @@ static inline void cpu_enter_lowpower(void)
 	  : "cc");
 }
 
-static inline void cpu_leave_lowpower(void)
-{
-	unsigned int v;
-
-	asm volatile(
-		"mrc	p15, 0, %0, c1, c0, 0\n"
-	"	orr	%0, %0, %1\n"
-	"	mcr	p15, 0, %0, c1, c0, 0\n"
-	"	mrc	p15, 0, %0, c1, c0, 1\n"
-	"	orr	%0, %0, %2\n"
-	"	mcr	p15, 0, %0, c1, c0, 1\n"
-	  : "=&r" (v)
-	  : "Ir" (CR_C), "Ir" (0x40)
-	  : "cc");
-}
-
 /*
  * platform-specific code to shutdown a CPU
  *
  * Called with IRQs disabled
  */
-void platform_cpu_die(unsigned int cpu)
+void imx_cpu_die(unsigned int cpu)
 {
 	cpu_enter_lowpower();
-	imx_enable_cpu(cpu, false);
 	cpu_do_idle();
-	cpu_leave_lowpower();
-
-	/* We should never return from idle */
-	panic("cpu %d unexpectedly exit from shutdown\n", cpu);
 }
 
-int platform_cpu_disable(unsigned int cpu)
+int imx_cpu_kill(unsigned int cpu)
 {
-	/*
-	 * we don't allow CPU 0 to be shutdown (it is still too special
-	 * e.g. clock tick interrupts)
-	 */
-	return cpu == 0 ? -EPERM : 0;
+	imx_enable_cpu(cpu, false);
+	return 1;
 }
